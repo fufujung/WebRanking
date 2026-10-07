@@ -7,7 +7,7 @@ export function Avatar({ src, name, size = "md", round }: { src?: string | null;
   // eslint-disable-next-line @next/next/no-img-element
   if (src) return <img className={cls} src={src} alt="" />;
   const words = name.trim().split(/\s+/).filter(Boolean);
-  const initials = (words.length > 1 ? words.map((w) => w[0]).join("") : name.trim()).slice(0, words.length > 1 ? 2 : 3).toUpperCase();
+  const initials = (words.length > 1 ? words.map((w) => w[0]).join("") : name.trim()).slice(0, words.length > 1 || round ? 2 : 3).toUpperCase();
   return <span className={cls}>{initials}</span>;
 }
 

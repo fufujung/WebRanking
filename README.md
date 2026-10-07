@@ -6,7 +6,7 @@ A website for tournament results, team and player rankings, with an API-key–pr
 
 | ส่วน | เทคโนโลยี | ที่อยู่ตอนรันในเครื่อง |
 | --- | --- | --- |
-| Frontend (`apps/web`) | Next.js 16, React 19, TypeScript, ฟอนต์ Inter + Noto Sans Thai | http://localhost:3000 |
+| Frontend (`apps/web`) | Next.js 16, React 19, TypeScript, ฟอนต์ IBM Plex Sans Thai Looped, ธีมขาว แดง ดำ | http://localhost:3000 |
 | Backend (`apps/api`) | Node.js, Express 5, TypeScript, Prisma, SQLite | http://localhost:4000 |
 | เอกสาร API | OpenAPI 3 + Swagger UI | http://localhost:4000/docs |
 

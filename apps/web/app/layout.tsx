@@ -1,7 +1,7 @@
-import "@fontsource-variable/inter";
-import "@fontsource/noto-sans-thai/400.css";
-import "@fontsource/noto-sans-thai/600.css";
-import "@fontsource/noto-sans-thai/700.css";
+import "@fontsource/ibm-plex-sans-thai-looped/400.css";
+import "@fontsource/ibm-plex-sans-thai-looped/500.css";
+import "@fontsource/ibm-plex-sans-thai-looped/600.css";
+import "@fontsource/ibm-plex-sans-thai-looped/700.css";
 import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";

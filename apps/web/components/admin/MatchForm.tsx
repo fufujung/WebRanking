@@ -198,7 +198,7 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
         {id && rows.length === 0 && <span className="muted small">ทีมนี้ยังไม่มีผู้เล่น เพิ่มจากรายชื่อด้านล่างได้</span>}
         {rows.length > 0 && (
           <div style={{ overflowX: "auto" }}>
-            <table>
+            <table className="stat-table">
               <thead>
                 <tr>
                   <th>ลงเล่น</th>
@@ -222,7 +222,7 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
                           onChange={(e) => update(i, { [k]: e.target.value.replace(/[^\d]/g, "") })}
                           aria-label={`${STAT_LABEL[k]} ของ ${playerById.get(l.playerId)?.name ?? ""}`}
                           placeholder="0"
-                          style={{ width: 72, textAlign: "right", padding: "6px 8px" }}
+                          style={{ width: 64, textAlign: "right", padding: "6px 8px" }}
                         />
                       </td>
                     ))}
