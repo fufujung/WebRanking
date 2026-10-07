@@ -257,3 +257,22 @@ td { vertical-align: middle; }
 @media (max-width: 760px) { .header-tools { flex: 1 1 100%; } }
 .theme-toggle { background: transparent; border: 1px solid var(--search-border); color: var(--on-black); border-radius: 9px; width: 42px; height: 42px; flex: none; font-size: 18px; line-height: 1; cursor: pointer; font-family: inherit; }
 .theme-toggle:hover { border-color: var(--on-black-muted); }
+
+/* MVP / SVP badges, coloured like the in-game labels. */
+.award { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 1px 6px; border-radius: 6px; line-height: 1.5; white-space: nowrap; }
+.award-MVP { background: #f5b400; color: #1a1300; }
+.award-SVP { background: #6d7cff; color: #fff; }
+.score-table td, .score-table th { white-space: nowrap; }
+.score-table td, .score-table th { padding-left: 8px; padding-right: 8px; }
+.score-table td:first-child, .score-table th:first-child { padding-left: 12px; }
+.game-card { padding: 16px; }
+.game-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.game-score { font-weight: 700; font-size: 20px; font-variant-numeric: tabular-nums; }
+.game-shot { display: block; max-width: 100%; border-radius: 10px; border: 1px solid var(--border); }
+.game-shot-thumb { width: 220px; max-width: 100%; }
+.new-team { display: flex; flex-direction: column; gap: 4px; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+.shot-chip { margin: 0; width: 120px; display: flex; flex-direction: column; gap: 4px; }
+.shot-chip img { width: 120px; height: 68px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.game-form-top { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+h4 { font-size: 15px; font-weight: 700; }

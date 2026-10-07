@@ -2,16 +2,20 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiOrNull } from "@/lib/api";
 import { isAdmin } from "@/lib/auth";
-import type { MatchDetail } from "@/lib/types";
+import type { MatchDetail, MatchGame } from "@/lib/types";
 import { fmtDateTime } from "@/lib/format";
-import { Avatar, Delta, Empty, PlayerLink } from "@/components/ui";
+import { Avatar, Delta, Empty } from "@/components/ui";
+import { ScoreTable } from "@/components/ScoreTable";
 
 export default async function MatchPage({ params }: { params: Promise<{ id: string }> }) {
   const m = await apiOrNull<MatchDetail>(`/matches/${encodeURIComponent((await params).id)}`);
   if (!m) notFound();
   const admin = await isAdmin();
-  const side = (teamId: string) => m.playerStats.filter((s) => s.teamId === teamId);
   const result = (id: string) => (m.winnerId === null ? "เสมอ" : m.winnerId === id ? "ชนะ" : "แพ้");
+  const gameRows = (g: MatchGame, teamId: string) =>
+    g.playerStats.filter((s) => s.teamId === teamId).map((s) => ({ ...s, key: s.id }));
+  const totalRows = (teamId: string) =>
+    m.players.filter((p) => p.teamId === teamId).map((p) => ({ ...p, key: p.player.id, rating: p.avgRating }));
 
   return (
     <>
@@ -29,7 +33,8 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
           </Link>
           <div className="stack" style={{ alignItems: "center", gap: 6 }}>
             <span className="score" style={{ fontSize: 34 }}>{m.scoreA} : {m.scoreB}</span>
-            <span className="muted small">{fmtDateTime(m.playedAt)}</span>
+            <span className="muted small">{m.games.length ? `${m.games.length} เกม · ` : ""}{fmtDateTime(m.playedAt)}</span>
+            {m.source === "discord" && <span className="muted small">บันทึกจาก Discord</span>}
           </div>
           <Link href={`/teams/${m.teamB.id}`} className="stack" style={{ alignItems: "center", gap: 8 }}>
             <Avatar src={m.teamB.logoUrl} name={m.teamB.tag || m.teamB.name} size="lg" />
@@ -40,41 +45,60 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
       </div>
       {m.notes && <p className="card">{m.notes}</p>}
 
-      <div className="grid grid-2 mt">
-        {[m.teamA, m.teamB].map((team) => {
-          const lines = side(team.id);
-          return (
-            <section key={team.id}>
-              <h2>{team.name}</h2>
-              {lines.length === 0 ? <Empty>ไม่มีสถิติผู้เล่น</Empty> : (
-                <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>ผู้เล่น</th><th className="num">K</th><th className="num">D</th><th className="num">A</th><th className="num">คะแนน</th></tr></thead>
-                    <tbody>
-                      {lines.map((l) => (
-                        <tr key={l.id}>
-                          <td><PlayerLink player={l.player} /></td>
-                          <td className="num">{l.kills}</td>
-                          <td className="num">{l.deaths}</td>
-                          <td className="num">{l.assists}</td>
-                          <td className="num"><strong>{l.score}</strong></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-          );
-        })}
-      </div>
+      {m.games.length === 0 ? (
+        <Empty>ไม่มีรายละเอียดรายเกม</Empty>
+      ) : (
+        m.games.map((g) => (
+          <section key={g.id} className="card game-card mt">
+            <div className="game-head">
+              <h2 style={{ margin: 0 }}>เกม {g.number}</h2>
+              <span className="game-score">
+                <span className={g.scoreA > g.scoreB ? "" : "muted"}>{m.teamA.name} {g.scoreA}</span>
+                {" : "}
+                <span className={g.scoreB > g.scoreA ? "" : "muted"}>{g.scoreB} {m.teamB.name}</span>
+              </span>
+            </div>
+            <div className="grid grid-2">
+              {[m.teamA, m.teamB].map((team) => {
+                const rows = gameRows(g, team.id);
+                return (
+                  <div key={team.id}>
+                    <h3 className="small" style={{ margin: "0 0 6px" }}>{team.name}</h3>
+                    {rows.length ? <ScoreTable rows={rows} /> : <Empty>ไม่มีสถิติผู้เล่น</Empty>}
+                  </div>
+                );
+              })}
+            </div>
+            {g.imageUrl && (
+              <a href={g.imageUrl} target="_blank" rel="noreferrer" className="mt" style={{ display: "inline-block" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className="game-shot game-shot-thumb" src={g.imageUrl} alt={`สกอร์บอร์ดเกม ${g.number}`} />
+              </a>
+            )}
+          </section>
+        ))
+      )}
+
+      {m.games.length > 1 && (
+        <section className="mt">
+          <h2>สถิติรวมทั้งซีรีส์</h2>
+          <div className="grid grid-2">
+            {[m.teamA, m.teamB].map((team) => (
+              <div key={team.id}>
+                <h3 className="small" style={{ margin: "0 0 6px" }}>{team.name}</h3>
+                <ScoreTable rows={totalRows(team.id)} ratingLabel="เรตติ้งเฉลี่ย" />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {m.imageUrl && (
         <section className="mt">
-          <h2>ภาพผลการแข่ง</h2>
+          <h2>ภาพเพิ่มเติม</h2>
           <a href={m.imageUrl} target="_blank" rel="noreferrer">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="shot" src={m.imageUrl} alt="ภาพหน้าจอผลการแข่ง" />
+            <img className="game-shot" src={m.imageUrl} alt="ภาพผลการแข่ง" />
           </a>
         </section>
       )}

@@ -1,4 +1,4 @@
-// Creates the first API key (written to apps/web/.env.local) and, on an empty database, demo data.
+// Creates API keys for the website (apps/web/.env.local) and the Discord bot (apps/bot/.env) and, on an empty database, demo data.
 import "../src/env.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -8,8 +8,10 @@ import { createApiKey } from "../src/lib/apiKeys.js";
 import { saveMatch } from "../src/lib/matchWrite.js";
 
 const webEnv = path.resolve(import.meta.dirname, "../../web/.env.local");
+const botEnv = path.resolve(import.meta.dirname, "../../bot/.env");
+const freshDatabase = (await prisma.apiKey.count()) === 0;
 
-if ((await prisma.apiKey.count()) === 0 || !fs.existsSync(webEnv)) {
+if (freshDatabase || !fs.existsSync(webEnv)) {
   const { key } = await createApiKey("Website (server-side)", "admin");
   const adminPassword = randomBytes(6).toString("hex");
   fs.writeFileSync(
@@ -24,6 +26,26 @@ if ((await prisma.apiKey.count()) === 0 || !fs.existsSync(webEnv)) {
   );
   console.log(`Wrote ${webEnv}`);
   console.log(`Admin password for the website: ${adminPassword}`);
+}
+
+// The Discord bot gets its own key. A DISCORD_TOKEN already pasted into apps/bot/.env is kept.
+const botLines = fs.existsSync(botEnv) ? fs.readFileSync(botEnv, "utf8").split(/\r?\n/) : [];
+const botValue = (name: string) => botLines.find((l) => l.startsWith(`${name}=`))?.slice(name.length + 1).trim();
+if (freshDatabase || !botValue("API_KEY")) {
+  const { key } = await createApiKey("Discord bot", "admin");
+  fs.writeFileSync(
+    botEnv,
+    [
+      "# Paste the bot token from https://discord.com/developers/applications (Bot > Reset Token). Keep it secret.",
+      `DISCORD_TOKEN=${botValue("DISCORD_TOKEN") ?? ""}`,
+      `API_URL=http://localhost:${process.env.PORT ?? 4000}`,
+      `API_KEY=${key}`,
+      "# Address of the website, used for links in Discord",
+      `SITE_URL=${botValue("SITE_URL") || "http://localhost:3000"}`,
+      "",
+    ].join("\n"),
+  );
+  console.log(`Wrote ${botEnv}`);
 }
 
 if (process.argv.includes("--no-demo") || (await prisma.team.count()) > 0) {

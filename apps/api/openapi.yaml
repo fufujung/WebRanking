@@ -70,8 +70,8 @@ paths:
         - $ref: "#/components/parameters/offset"
         - name: sort
           in: query
-          schema: { type: string, enum: [score, kills, kda, wins, winRate, avgScore, assists], default: score }
-        - { name: minMatches, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+          schema: { type: string, enum: [pts, ppg, avgRating, reb, ast, blk, stl, lbr, mvp, wins, winRate, games], default: pts }
+        - { name: minGames, in: query, description: Only players with at least this many games (minMatches is accepted as an alias), schema: { type: integer, minimum: 0, default: 0 } }
         - { name: teamId, in: query, schema: { type: string } }
       responses:
         "200":
@@ -259,9 +259,10 @@ paths:
   /api/v1/matches:
     get:
       tags: [Matches]
-      summary: List matches, newest first
+      summary: List series, newest first
       parameters:
         - { name: tournamentId, in: query, schema: { type: string } }
+        - { name: sort, in: query, description: "played = by match date, created = by when it was recorded", schema: { type: string, enum: [played, created], default: played } }
         - { name: teamId, in: query, schema: { type: string } }
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/offset"
@@ -269,8 +270,11 @@ paths:
         "200": { description: Matches }
     post:
       tags: [Matches]
-      summary: Record a match result with optional player stat lines (admin)
-      description: Both teams are registered in the tournament automatically. The winner is the team with the higher score; equal scores are a draw.
+      summary: Record a series with its games and player stat lines (admin)
+      description: >-
+        A match is a series (e.g. Bo3); scoreA/scoreB are games won and are counted from `games` when left out.
+        Teams and players can be given by id or by name: unknown names are created. Both teams are registered in the
+        tournament automatically. Sending a `sourceRef` that was already recorded returns 409 with the existing matchId.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/MatchInput" } } }
@@ -278,11 +282,21 @@ paths:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Match" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "This sourceRef was already recorded; details.matchId is the existing match" }
+  /api/v1/matches/by-source:
+    get:
+      tags: [Matches]
+      summary: Find a series by where it came from (e.g. a Discord message id)
+      parameters:
+        - { name: ref, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Match, content: { application/json: { schema: { $ref: "#/components/schemas/Match" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/matches/{id}:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:
       tags: [Matches]
-      summary: Match with player stat lines
+      summary: Series with its games, per-game stat lines and per-player totals
       responses:
         "200": { description: Match, content: { application/json: { schema: { $ref: "#/components/schemas/Match" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -341,24 +355,27 @@ paths:
       summary: Whether reading results from images is configured
       responses:
         "200": { description: "{ enabled: boolean }" }
-  /api/v1/extract/match:
+  /api/v1/extract/series:
     post:
       tags: [Images]
-      summary: Read a match result from an uploaded screenshot (admin)
-      description: Returns a suggested result for review. Nothing is saved. Needs ANTHROPIC_API_KEY on the server; returns 503 otherwise.
+      summary: Read a series from scoreboard screenshots and the result post text (admin)
+      description: >-
+        Returns a draft (same shape as MatchInput, plus Thai `warnings` to check) for review. Nothing is saved.
+        Needs ANTHROPIC_API_KEY on the server; returns 503 otherwise.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [imageUrl]
+              required: [imageUrls]
               properties:
-                imageUrl: { type: string }
+                imageUrls: { type: array, minItems: 1, maxItems: 6, items: { type: string }, description: One scoreboard per game, in order }
+                text: { type: string, description: 'The post text, e.g. "WD 2-0 Pai Nai"' }
                 teamAId: { type: string }
                 teamBId: { type: string }
       responses:
-        "200": { description: Suggested result }
+        "200": { description: "{ raw, draft }" }
         "503": { description: Image reading not configured }
   /api/v1/keys:
     get:
@@ -468,17 +485,23 @@ components:
     PlayerStats:
       type: object
       properties:
-        matches: { type: integer }
-        wins: { type: integer }
-        losses: { type: integer }
-        draws: { type: integer }
+        matches: { type: integer, description: Series played }
+        wins: { type: integer, description: Games }
+        losses: { type: integer, description: Games }
         winRate: { type: number }
-        kills: { type: integer }
-        deaths: { type: integer }
-        assists: { type: integer }
-        score: { type: integer }
-        kda: { type: number, description: (kills + assists) / max(1, deaths) }
-        avgScore: { type: number }
+        games: { type: integer }
+        pts: { type: integer }
+        reb: { type: integer }
+        blk: { type: integer }
+        stl: { type: integer }
+        ast: { type: integer }
+        lbr: { type: integer }
+        ppg: { type: number, description: Points per game }
+        rpg: { type: number }
+        apg: { type: number }
+        avgRating: { type: number, nullable: true }
+        mvp: { type: integer }
+        svp: { type: integer }
     Tournament:
       type: object
       properties:
@@ -503,28 +526,47 @@ components:
         endDate: { type: string, format: date-time, nullable: true }
     PlayerStatInput:
       type: object
-      required: [playerId]
+      description: Give playerId or name. A name is matched to the side's team, then to any player, else created.
+      required: [side]
       properties:
         playerId: { type: string }
-        teamId: { type: string, description: Defaults to the player's current team; must be one of the two match teams }
-        kills: { type: integer, minimum: 0 }
-        deaths: { type: integer, minimum: 0 }
-        assists: { type: integer, minimum: 0 }
-        score: { type: integer, minimum: 0 }
+        name: { type: string }
+        side: { type: string, enum: [A, B] }
+        pts: { type: integer, minimum: 0 }
+        reb: { type: integer, minimum: 0 }
+        blk: { type: integer, minimum: 0 }
+        stl: { type: integer, minimum: 0 }
+        ast: { type: integer, minimum: 0 }
+        lbr: { type: integer, minimum: 0 }
+        rating: { type: number, nullable: true }
+        award: { type: string, enum: [MVP, SVP], nullable: true }
+    GameInput:
+      type: object
+      required: [scoreA, scoreB]
+      properties:
+        scoreA: { type: integer, minimum: 0 }
+        scoreB: { type: integer, minimum: 0 }
+        imageUrl: { type: string, nullable: true, description: Scoreboard screenshot }
+        players: { type: array, maxItems: 20, items: { $ref: "#/components/schemas/PlayerStatInput" } }
     MatchInput:
       type: object
-      required: [tournamentId, teamAId, teamBId, scoreA, scoreB]
+      required: [tournamentId]
+      description: Give each team by id or name, and either scoreA/scoreB or games.
       properties:
         tournamentId: { type: string }
         teamAId: { type: string }
         teamBId: { type: string }
-        scoreA: { type: integer, minimum: 0 }
+        teamAName: { type: string }
+        teamBName: { type: string }
+        scoreA: { type: integer, minimum: 0, description: Games won by team A }
         scoreB: { type: integer, minimum: 0 }
         round: { type: string, nullable: true }
         notes: { type: string, nullable: true }
         imageUrl: { type: string, nullable: true, description: Screenshot of the result }
         playedAt: { type: string, format: date-time }
-        playerStats: { type: array, items: { $ref: "#/components/schemas/PlayerStatInput" } }
+        source: { type: string, nullable: true, example: discord }
+        sourceRef: { type: string, nullable: true, description: Unique id of the origin (e.g. Discord message id) to prevent recording it twice }
+        games: { type: array, maxItems: 9, items: { $ref: "#/components/schemas/GameInput" } }
     Match:
       type: object
       properties:

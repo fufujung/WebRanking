@@ -309,6 +309,8 @@ describe("tournament flow", () => {
     assert.equal((await call("GET", "/api/v1/teams?search=x")).body.total, 0, "nothing created by the rejected duplicate");
     assert.equal((await call("GET", "/api/v1/matches/by-source?ref=discord-msg-1")).body.matchId, res.body.id);
     assert.equal((await call("GET", "/api/v1/matches/by-source?ref=nope")).body.matchId, null);
+    const recorded = await call("GET", "/api/v1/matches?sort=created&limit=1");
+    assert.equal(recorded.body.data[0].id, res.body.id, "sort=created lists the latest recorded first, whatever its date");
     assert.equal((await call("DELETE", `/api/v1/matches/${res.body.id}`)).status, 204);
     assert.equal((await call("DELETE", `/api/v1/teams/${res.body.teamBId}`)).status, 204);
     for (const name of ["Rookie", "EGOIST<1>"]) assert.equal((await call("DELETE", `/api/v1/players/${idOf(name)}`)).status, 204);

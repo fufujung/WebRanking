@@ -12,7 +12,12 @@ const exact: Record<string, string> = {
   "Image reading is not configured. Set ANTHROPIC_API_KEY on the API server, or type the result in manually.":
     "ยังไม่ได้เปิดระบบอ่านรูป (ตั้ง ANTHROPIC_API_KEY ที่ API) กรอกผลเองได้เลย",
   "A team cannot play against itself": "ทีมทั้งสองฝั่งต้องไม่ใช่ทีมเดียวกัน",
-  "Each player can only have one stat line per match": "ผู้เล่นหนึ่งคนกรอกสถิติได้ครั้งเดียวต่อแมตช์",
+  "Each player can only appear once per game": "ผู้เล่นหนึ่งคนใส่ได้ครั้งเดียวต่อเกม",
+  "Give a playerId or a player name": "ทุกแถวต้องมีชื่อผู้เล่น",
+  "Choose team A": "กรุณาเลือกทีม A",
+  "Choose team B": "กรุณาเลือกทีม B",
+  "Enter the series score or at least one game": "กรุณากรอกผลซีรีส์ หรือเพิ่มอย่างน้อย 1 เกม",
+  "This result has already been recorded": "ผลนี้ถูกบันทึกไปแล้ว",
   "Must be an http(s) URL or an uploaded file path": "ลิงก์รูปไม่ถูกต้อง",
   "Invalid or revoked API key": "API key ของเว็บไม่ถูกต้องหรือถูกยกเลิก (ตรวจ API_KEY ใน .env.local)",
   "Missing API key. Send it in the X-API-Key header.": "ยังไม่ได้ตั้ง API_KEY ใน .env.local ของเว็บ",
@@ -28,7 +33,7 @@ const notFound: Record<string, string> = { Team: "ทีม", Tournament: "ท�
 
 const fieldNames: Record<string, string> = {
   name: "ชื่อ", tag: "ตัวย่อ", startDate: "วันเริ่ม", endDate: "วันจบ", logoUrl: "โลโก้", avatarUrl: "รูปโปรไฟล์",
-  scoreA: "สกอร์ทีม A", scoreB: "สกอร์ทีม B", teamBId: "ทีม B", teamAId: "ทีม A", playerStats: "สถิติผู้เล่น",
+  scoreA: "ผลซีรีส์", scoreB: "ผลซีรีส์", teamBId: "ทีม B", teamAId: "ทีม A", games: "สกอร์บอร์ด",
   imageUrl: "รูปผลการแข่ง", placement: "อันดับ", round: "รอบ", notes: "หมายเหตุ",
 };
 
@@ -36,8 +41,8 @@ export function thai(message: string): string {
   if (exact[message]) return exact[message];
   const nf = /^(\w+) not found$/.exec(message);
   if (nf) return `ไม่พบ${notFound[nf[1]] ?? "ข้อมูล"} อาจถูกลบไปแล้ว`;
-  const player = /^Player "(.+)" must be assigned to one of the two teams in this match$/.exec(message);
-  if (player) return `ผู้เล่น "${player[1]}" ต้องอยู่ในหนึ่งในสองทีมของแมตช์นี้`;
+  const player = /^Player (.+) not found$/.exec(message);
+  if (player) return "ไม่พบผู้เล่นบางคน อาจถูกลบไปแล้ว";
   return message;
 }
 

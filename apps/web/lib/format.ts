@@ -24,3 +24,15 @@ export function toDateTimeInput(d: string | Date | null | undefined) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 16);
 }
+
+/** Column headers as the game shows them, with a Thai explanation for the tooltip. */
+export const statLabels = {
+  pts: { short: "PTS", th: "แต้ม" },
+  reb: { short: "REB", th: "รีบาวด์" },
+  blk: { short: "BLK", th: "บล็อก" },
+  stl: { short: "STL", th: "ขโมยบอล" },
+  ast: { short: "AST", th: "แอสซิสต์" },
+  lbr: { short: "LBR", th: "LBR (ตามในเกม)" },
+} as const;
+
+export const fmtRating = (r: number | null | undefined) => (r === null || r === undefined || r === 0 ? "-" : r.toFixed(1));

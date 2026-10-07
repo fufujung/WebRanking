@@ -36,7 +36,7 @@ const step = (s) => console.log("✓", s);
 const uniq = Date.now().toString().slice(-5);
 
 console.log("— Public pages");
-const paths = ["/", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=kda", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", "/admin/login"];
+const paths = ["/", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=ppg", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", "/admin/login"];
 for (const p of paths) {
   await page.goto(base + p);
   await page.waitForLoadState("networkidle");
@@ -194,10 +194,14 @@ for (const [ti, team] of teamNames.entries()) {
 }
 step("4 players created via team dropdown + 'save and add another'");
 
-// Record a match
+// Record a series: 3 games with basketball scoreboards
 await page.goto(base + "/admin/matches/new");
 const cupValue = await page.locator("option", { hasText: `E2E Cup ${uniq}` }).getAttribute("value");
 await page.selectOption("select >> nth=0", cupValue);
+await page.click("button:has-text('บันทึกผลการแข่ง')");
+await page.waitForSelector("[role=alert]");
+step("missing team rejected: " + (await page.textContent("[role=alert]")));
+
 const [comboA, comboB] = [page.getByRole("combobox", { name: "ทีม A" }), page.getByRole("combobox", { name: "ทีม B" })];
 await comboA.click();
 await comboA.fill("alpha " + uniq);
@@ -208,53 +212,104 @@ const sameTeamOpts = await page.locator(".combo-list [role=option]").count();
 if (sameTeamOpts !== 0) throw new Error("team A should be excluded from team B dropdown");
 await comboB.fill("bravo " + uniq);
 await page.locator(".combo-list [role=option]").first().click();
-const rows = await page.locator("tbody tr").count();
-if (rows !== 4) throw new Error("expected roster of 4 players, got " + rows);
-step("roster auto-filled after choosing teams (4 rows), same team excluded");
+step("teams chosen, same team excluded from the other side");
 
-// Submit without scores
+// Screenshot via the AI section, then "fill in myself" makes game 1 with that image
+await dropFile(".drop >> nth=0", SHOT, "image/png");
+await page.waitForSelector(".shot-chip img");
+const aiBtn = page.locator("button:has-text('ให้ AI อ่าน')");
+step("AI read button present, disabled without key: " + (await aiBtn.isDisabled()));
+await page.click("button:has-text('ใช้รูปนี้แล้วกรอกเอง')");
+const game = (n) => page.locator(`section[aria-label="เกม ${n}"]`);
+await game(1).waitFor();
+const names1 = await game(1).locator('input[list]').evaluateAll((els) => els.map((e) => e.value));
+if (names1.length !== 6) throw new Error("expected 3 rows per side, got " + names1.length);
+for (const n of [`P01-${uniq}`, `P02-${uniq}`, `P11-${uniq}`, `P12-${uniq}`]) if (!names1.includes(n)) throw new Error(`roster ${n} not filled: ${names1}`);
+if (!(await game(1).locator("img.drop-preview, .drop img").first().isVisible())) throw new Error("game 1 screenshot not attached");
+step("game 1 created from the screenshot with both rosters filled (2 + 1 empty row per side)");
+
 await page.click("button:has-text('บันทึกผลการแข่ง')");
 await page.waitForSelector("[role=alert]");
-step("missing score rejected: " + (await page.textContent("[role=alert]")));
+step("missing game score rejected: " + (await page.textContent("[role=alert]")));
 
-await page.fill('input[aria-label="สกอร์ทีม A"]', "13");
-await page.fill('input[aria-label="สกอร์ทีม B"]', "8");
+async function fillGame(n, a, b, base) {
+  await page.fill(`input[aria-label="สกอร์ทีม A เกม ${n}"]`, String(a));
+  await page.fill(`input[aria-label="สกอร์ทีม B เกม ${n}"]`, String(b));
+  const stats = game(n).locator('tbody input[inputmode="numeric"]');
+  const count = await stats.count();
+  for (let i = 0; i < count; i++) {
+    // rows with no name stay empty
+    const name = await stats.nth(i).locator("xpath=ancestor::tr//input[@list]").inputValue();
+    if (name) await stats.nth(i).fill(String(base + i));
+  }
+}
+// A new player typed into the empty Alpha row
+const newName = `Rookie-${uniq}`;
+await game(1).locator("input[list]").nth(2).fill(newName);
+if (!(await game(1).locator("text=ผู้เล่นใหม่").first().isVisible())) throw new Error("new player not flagged");
+await fillGame(1, 21, 15, 1);
+const firstStat = game(1).locator('tbody input[inputmode="numeric"]').first();
+await firstStat.fill("1a2");
+if ((await firstStat.inputValue()) !== "12") throw new Error("non-digits not stripped");
+await game(1).locator('input[aria-label^="เรตติ้งของ"]').first().fill("16.9x");
+if ((await game(1).locator('input[aria-label^="เรตติ้งของ"]').first().inputValue()) !== "16.9") throw new Error("rating not cleaned");
+await game(1).locator('select[aria-label^="รางวัลของ"]').first().selectOption("MVP");
+await game(1).locator('select[aria-label^="รางวัลของ"]').nth(3).selectOption("SVP");
+
+// Games 2 and 3 copy the line-up of the game before
+await page.click("button:has-text('+ เพิ่มเกม')");
+const names2 = await game(2).locator("input[list]").evaluateAll((els) => els.map((e) => e.value));
+if (!names2.includes(newName)) throw new Error("line-up not copied to game 2: " + names2);
+await fillGame(2, 10, 21, 3);
+await page.click("button:has-text('+ เพิ่มเกม')");
+await fillGame(3, 21, 18, 2);
+// same player twice in one game
+await game(3).locator("input[list]").nth(1).fill(`P01-${uniq}`);
+await page.click("button:has-text('บันทึกผลการแข่ง')");
+await page.waitForSelector("[role=alert]");
+step("duplicate player in a game rejected: " + (await page.textContent("[role=alert]")));
+await game(3).locator("input[list]").nth(1).fill(`P02-${uniq}`);
 await page.fill('input[placeholder="เช่น รอบแบ่งกลุ่ม, Final"]', "Final");
-const statInputs = page.locator('tbody input[inputmode="numeric"]');
-const n = await statInputs.count();
-for (let i = 0; i < n; i++) await statInputs.nth(i).fill(String(10 + i));
-// letters are stripped
-await statInputs.nth(0).fill("1a2");
-if ((await statInputs.nth(0).inputValue()) !== "12") throw new Error("non-digits not stripped");
-// one player did not play
-await page.locator('tbody input[type="checkbox"]').nth(3).uncheck();
-await dropFile(".drop", SHOT, "image/png");
-await page.waitForSelector(".drop img");
-const aiBtn = page.locator("button:has-text('ให้ AI อ่านผลจากรูป')");
-step("AI read button present, disabled without key: " + (await aiBtn.isDisabled()));
+const placeholderSeries = await page.getAttribute('input[aria-label="ผลซีรีส์ทีม A"]', "placeholder");
+if (placeholderSeries !== "2") throw new Error("series not counted from games: " + placeholderSeries);
 await page.screenshot({ path: OUT + "/match-form.png", fullPage: true });
 await page.click("button:has-text('บันทึกผลการแข่ง')");
 await page.waitForURL(/\/matches\/[^/]+$/);
-const score = await page.textContent(".score");
-if (!score.includes("13") || !score.includes("8")) throw new Error("bad score " + score);
-const statRows = await page.locator("tbody tr").count();
-if (statRows !== 3) throw new Error("expected 3 stat lines, got " + statRows);
-if (!(await page.locator("img.shot").evaluate((el) => el.complete && el.naturalWidth > 0))) throw new Error("screenshot missing");
+const score = await page.textContent(".hero .score");
+if (!score.includes("2 : 1")) throw new Error("bad series score " + score);
+const cards = await page.locator(".game-card").count();
+if (cards !== 3) throw new Error("expected 3 game cards, got " + cards);
+if (!(await page.locator("img.game-shot").first().evaluate((el) => el.complete && el.naturalWidth > 0))) throw new Error("game screenshot missing");
+const body = await page.locator("main").textContent();
+for (const t of [newName, "MVP", "SVP", "16.9"]) if (!body.includes(t)) throw new Error(`match page missing ${t}`);
 const matchUrl = page.url();
 await page.screenshot({ path: OUT + "/match-saved.png", fullPage: true });
-step("match saved: score, 3 stat lines, screenshot shown");
+step("series saved 2 : 1 with 3 game scoreboards, screenshot, MVP/SVP, new player created");
 
-// Edit match: flip result
+// Edit: Bravo wins game 1 instead
 await page.click("a:has-text('แก้ไขผลการแข่ง')");
 await page.waitForURL(/\/admin\/matches\//);
-const keptRows = await page.locator('tbody input[type="checkbox"]:checked').count();
-if (keptRows !== 3) throw new Error("edit form should load 3 played rows, got " + keptRows);
-await page.fill('input[aria-label="สกอร์ทีม A"]', "5");
+await game(3).waitFor();
+const loadedRows = await game(1).locator("input[list]").count();
+if (loadedRows !== 5) throw new Error("edit form should load the 5 named rows of game 1, got " + loadedRows);
+await page.fill('input[aria-label="สกอร์ทีม A เกม 1"]', "5");
 await page.click("button:has-text('บันทึกการแก้ไข')");
 await page.waitForURL(matchUrl);
 const t2 = await page.locator(".hero").textContent();
-if (!t2.includes("5 : 8")) throw new Error("edit not saved: " + t2);
-step("match edited (5 : 8)");
+if (!t2.includes("1 : 2")) throw new Error("edit not saved: " + t2);
+step("series edited (1 : 2)");
+
+// The new player has a profile with game stats
+await page.click(`a:has-text("${newName}")`);
+await page.waitForURL(/\/players\//);
+const profile = await page.locator("main").textContent();
+if (!profile.includes("Alpha")) throw new Error("new player should be on Alpha: " + profile.slice(0, 200));
+step("new player's profile shows their team and games");
+
+// Player ranking
+await page.goto(base + "/rankings/players?sort=mvp");
+if (!(await page.locator("tbody").textContent()).includes(`P01-${uniq}`)) throw new Error("MVP player missing from ranking");
+step("player ranking by MVP lists the player");
 
 // Rankings reflect result
 await page.goto(base + "/rankings?q=" + uniq);

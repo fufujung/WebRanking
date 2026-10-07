@@ -11,14 +11,19 @@ export const matches = Router();
 
 matches.get("/", async (req, res) => {
   const q = pagination
-    .extend({ tournamentId: z.string().optional(), teamId: z.string().optional() })
+    .extend({
+      tournamentId: z.string().optional(),
+      teamId: z.string().optional(),
+      /** played = newest game date first (default); created = most recently recorded first. */
+      sort: z.enum(["played", "created"]).default("played"),
+    })
     .parse(req.query);
   const where = {
     ...(q.tournamentId ? { tournamentId: q.tournamentId } : {}),
     ...(q.teamId ? { OR: [{ teamAId: q.teamId }, { teamBId: q.teamId }] } : {}),
   };
   const [data, total] = await Promise.all([
-    prisma.match.findMany({ where, include: matchInclude, orderBy: matchOrder, take: q.limit, skip: q.offset }),
+    prisma.match.findMany({ where, include: matchInclude, orderBy: q.sort === "created" ? { createdAt: "desc" } : matchOrder, take: q.limit, skip: q.offset }),
     prisma.match.count({ where }),
   ]);
   res.json({ data, total, limit: q.limit, offset: q.offset });

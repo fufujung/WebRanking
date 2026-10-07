@@ -131,15 +131,26 @@ export async function removeEntry(tournamentId: string, teamId: string): Promise
 // Matches
 export interface MatchPayload {
   tournamentId: string;
-  teamAId: string;
-  teamBId: string;
-  scoreA: number;
-  scoreB: number;
+  /** A team id, or a name for a team that will be created. */
+  teamAId?: string;
+  teamAName?: string;
+  teamBId?: string;
+  teamBName?: string;
+  /** Games won; left out to count from the games. */
+  scoreA?: number;
+  scoreB?: number;
   round: string | null;
   notes: string | null;
   imageUrl: string | null;
+  source: string | null;
+  sourceRef: string | null;
   playedAt?: string;
-  playerStats: { playerId: string; teamId: string; kills: number; deaths: number; assists: number; score: number }[];
+  games: {
+    scoreA: number;
+    scoreB: number;
+    imageUrl: string | null;
+    players: ({ playerId?: string; name: string; side: "A" | "B"; rating: number | null; award: "MVP" | "SVP" | null } & Record<"pts" | "reb" | "blk" | "stl" | "ast" | "lbr", number>)[];
+  }[];
 }
 
 export async function saveMatch(id: string | null, payload: MatchPayload): Promise<FormState> {

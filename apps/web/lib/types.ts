@@ -34,18 +34,31 @@ export interface TeamStats {
 }
 
 export interface PlayerStats {
+  /** Series played. */
   matches: number;
+  games: number;
   wins: number;
   losses: number;
-  draws: number;
   winRate: number;
-  kills: number;
-  deaths: number;
-  assists: number;
-  score: number;
-  kda: number;
-  avgScore: number;
+  pts: number;
+  reb: number;
+  blk: number;
+  stl: number;
+  ast: number;
+  lbr: number;
+  ppg: number;
+  rpg: number;
+  apg: number;
+  avgRating: number;
+  mvp: number;
+  svp: number;
 }
+
+export type Award = "MVP" | "SVP";
+
+/** The six numbers on the in-game scoreboard. */
+export const STAT_KEYS = ["pts", "reb", "blk", "stl", "ast", "lbr"] as const;
+export type StatKey = (typeof STAT_KEYS)[number];
 
 export interface Player {
   id: string;
@@ -90,19 +103,38 @@ export interface Match {
   tournament: { id: string; name: string };
 }
 
-export interface StatLine {
+export interface StatLine extends Record<StatKey, number> {
   id: string;
   playerId: string;
   teamId: string;
-  kills: number;
-  deaths: number;
-  assists: number;
-  score: number;
+  rating: number | null;
+  award: Award | null;
   player: Pick<Player, "id" | "name" | "nickname" | "avatarUrl" | "teamId">;
 }
 
-export interface MatchDetail extends Match {
+export interface MatchGame {
+  id: string;
+  number: number;
+  scoreA: number;
+  scoreB: number;
+  imageUrl: string | null;
   playerStats: StatLine[];
+}
+
+export interface SeriesTotals extends Record<StatKey, number> {
+  player: StatLine["player"];
+  teamId: string;
+  games: number;
+  mvp: number;
+  svp: number;
+  avgRating: number | null;
+}
+
+export interface MatchDetail extends Match {
+  source: string | null;
+  sourceRef: string | null;
+  games: MatchGame[];
+  players: SeriesTotals[];
 }
 
 export interface TeamDetail extends Team {
@@ -115,7 +147,7 @@ export interface TeamDetail extends Team {
 
 export interface PlayerDetail extends Player {
   stats: PlayerStats;
-  recentMatches: { match: Match; team: TeamSummary; kills: number; deaths: number; assists: number; score: number }[];
+  recentGames: ({ match: Match; game: { number: number; scoreA: number; scoreB: number }; team: TeamSummary; rating: number | null; award: Award | null } & Record<StatKey, number>)[];
 }
 
 export interface Standing extends TeamStats {

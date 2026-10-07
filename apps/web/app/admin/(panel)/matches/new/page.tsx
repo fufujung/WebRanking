@@ -14,11 +14,11 @@ export default async function NewMatch({ searchParams }: { searchParams: Promise
     fetchAll<Player>("/players"),
     api<{ enabled: boolean }>("/extract/status"),
   ]);
-  if (tournaments.length === 0 || teams.length < 2) {
+  if (tournaments.length === 0) {
     return (
       <div className="card empty">
         <h1>ยังบันทึกผลไม่ได้</h1>
-        <p>ต้องมีทัวร์นาเมนต์อย่างน้อย 1 รายการ และทีมอย่างน้อย 2 ทีมก่อน</p>
+        <p>ต้องมีทัวร์นาเมนต์อย่างน้อย 1 รายการก่อน</p>
         <div className="row" style={{ justifyContent: "center" }}>
           <Link className="btn" href="/admin/tournaments/new">+ ทัวร์นาเมนต์</Link>
           <Link className="btn" href="/admin/teams/new">+ ทีม</Link>

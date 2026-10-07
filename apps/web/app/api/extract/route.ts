@@ -3,10 +3,10 @@ import { isAdmin } from "@/lib/auth";
 import { API_URL } from "@/lib/api";
 import { thai } from "@/lib/messages";
 
-/** Asks the API to read a match result from an uploaded screenshot. Admin only; nothing is saved. */
+/** Asks the API to read a series result (post text + scoreboard screenshots). Admin only; nothing is saved. */
 export async function POST(req: Request) {
   if (!(await isAdmin())) return NextResponse.json({ error: "กรุณาเข้าสู่ระบบก่อน" }, { status: 401 });
-  const res = await fetch(`${API_URL}/api/v1/extract/match`, {
+  const res = await fetch(`${API_URL}/api/v1/extract/series`, {
     method: "POST",
     headers: { "X-API-Key": process.env.API_KEY ?? "", "Content-Type": "application/json" },
     body: JSON.stringify(await req.json().catch(() => ({}))),

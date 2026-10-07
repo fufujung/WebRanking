@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { Match, Status, TeamSummary } from "@/lib/types";
+import type { Award, Match, Status, TeamSummary } from "@/lib/types";
 import { fmtDateTime, signed, statusLabel } from "@/lib/format";
 
 export function Avatar({ src, name, size = "md", round }: { src?: string | null; name: string; size?: "md" | "lg"; round?: boolean }) {
@@ -31,6 +31,15 @@ export function PlayerLink({ player }: { player: { id: string; name: string; nic
         )}
       </span>
     </Link>
+  );
+}
+
+/** MVP (best on the winning side) / SVP (best on the losing side), as the game awards them. */
+export function AwardBadge({ award, count }: { award: Award; count?: number }) {
+  return (
+    <span className={`award award-${award}`} title={award === "MVP" ? "ผู้เล่นยอดเยี่ยมฝั่งชนะ" : "ผู้เล่นยอดเยี่ยมฝั่งแพ้"}>
+      {award}{count && count > 1 ? ` ×${count}` : ""}
+    </span>
   );
 }
 

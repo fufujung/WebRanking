@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiOrNull } from "@/lib/api";
 import type { TeamDetail } from "@/lib/types";
-import { fmtDate } from "@/lib/format";
+import { fmtDate, fmtRating } from "@/lib/format";
 import { Avatar, Delta, Empty, PlayerLink, Result, StatTile, StatusBadge, TeamLink } from "@/components/ui";
 
 export default async function TeamPage({ params }: { params: Promise<{ id: string }> }) {
@@ -39,17 +39,18 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>ผู้เล่น</th><th>ตำแหน่ง</th><th className="num">แข่ง</th><th className="num">K / D / A</th><th className="num">KDA</th><th className="num">คะแนนเฉลี่ย</th></tr>
+              <tr><th>ผู้เล่น</th><th>ตำแหน่ง</th><th className="num">เกม</th><th className="num">เรตติ้งเฉลี่ย</th><th className="num">แต้มเฉลี่ย</th><th className="num">REB / AST / BLK</th><th className="num">MVP</th></tr>
             </thead>
             <tbody>
               {team.players.map((p) => (
                 <tr key={p.id}>
                   <td><PlayerLink player={p} /></td>
                   <td className="muted">{p.role ?? "-"}</td>
-                  <td className="num">{p.stats.matches}</td>
-                  <td className="num">{p.stats.kills} / {p.stats.deaths} / {p.stats.assists}</td>
-                  <td className="num"><strong>{p.stats.kda.toFixed(2)}</strong></td>
-                  <td className="num">{p.stats.avgScore}</td>
+                  <td className="num">{p.stats.games}</td>
+                  <td className="num"><strong>{fmtRating(p.stats.avgRating)}</strong></td>
+                  <td className="num">{p.stats.ppg}</td>
+                  <td className="num">{p.stats.reb} / {p.stats.ast} / {p.stats.blk}</td>
+                  <td className="num">{p.stats.mvp}</td>
                 </tr>
               ))}
             </tbody>
