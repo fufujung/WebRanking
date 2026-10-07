@@ -70,6 +70,7 @@ model TournamentEntry {
   @@unique([tournamentId, teamId])
 }
 
+/// A series between two teams (e.g. best of 3). scoreA/scoreB are games won.
 model Match {
   id           String   @id @default(cuid())
   tournamentId String
@@ -81,37 +82,62 @@ model Match {
   winnerId     String? // null = draw
   ratingDeltaA Int      @default(0)
   ratingDeltaB Int      @default(0)
-  imageUrl     String? // screenshot of the result, kept as evidence
+  imageUrl     String? // optional extra evidence; per-game screenshots live on MatchGame
   notes        String?
+  source       String? // where the result came from, e.g. "discord"
+  sourceRef    String?  @unique // e.g. the Discord message id, so a post is never recorded twice
   playedAt     DateTime @default(now())
   createdAt    DateTime @default(now())
 
-  tournament Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  teamA      Team              @relation("TeamA", fields: [teamAId], references: [id], onDelete: Cascade)
-  teamB      Team              @relation("TeamB", fields: [teamBId], references: [id], onDelete: Cascade)
-  winner     Team?             @relation("Winner", fields: [winnerId], references: [id], onDelete: Cascade)
+  tournament  Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  teamA       Team              @relation("TeamA", fields: [teamAId], references: [id], onDelete: Cascade)
+  teamB       Team              @relation("TeamB", fields: [teamBId], references: [id], onDelete: Cascade)
+  winner      Team?             @relation("Winner", fields: [winnerId], references: [id], onDelete: Cascade)
+  games       MatchGame[]
   playerStats MatchPlayerStat[]
 
   @@index([playedAt])
 }
 
-/// One player's stat line in one match.
-model MatchPlayerStat {
-  id       String @id @default(cuid())
+/// One game of a series, with its own scoreboard and screenshot.
+model MatchGame {
+  id       String  @id @default(cuid())
   matchId  String
+  number   Int
+  scoreA   Int
+  scoreB   Int
+  imageUrl String?
+
+  match       Match             @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  playerStats MatchPlayerStat[]
+
+  @@unique([matchId, number])
+}
+
+/// One player's line on one game's scoreboard.
+model MatchPlayerStat {
+  id       String  @id @default(cuid())
+  matchId  String
+  gameId   String
   playerId String
   teamId   String
-  kills    Int    @default(0)
-  deaths   Int    @default(0)
-  assists  Int    @default(0)
-  score    Int    @default(0)
+  pts      Int     @default(0)
+  reb      Int     @default(0)
+  blk      Int     @default(0)
+  stl      Int     @default(0)
+  ast      Int     @default(0)
+  lbr      Int     @default(0)
+  rating   Float? // the in-game rating shown under the player's badge, e.g. 16.9
+  award    String? // MVP | SVP
 
-  match  Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  match  Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  game   MatchGame @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  team   Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  @@unique([matchId, playerId])
+  @@unique([gameId, playerId])
   @@index([playerId])
+  @@index([matchId])
 }
 
 model ApiKey {

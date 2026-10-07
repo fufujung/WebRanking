@@ -65,36 +65,79 @@ export const datesInOrder = (t: { startDate?: Date; endDate?: Date | null }) =>
   !t.startDate || !t.endDate || t.endDate >= t.startDate;
 
 const count = z.coerce.number().int().min(0).max(100000);
+const optionalCount = z.preprocess((v) => (v === "" || v === null ? undefined : v), count.optional());
 
-export const playerStatInput = z.object({
-  playerId: z.string().min(1),
-  teamId: z.string().min(1).optional(),
-  kills: count.default(0),
-  deaths: count.default(0),
-  assists: count.default(0),
-  score: count.default(0),
+/** Lower-cases and drops spaces/punctuation so "EGOIST<1>" and "egoist 1" compare equal. */
+export const normaliseName = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+
+export const awards = ["MVP", "SVP"] as const;
+
+/** An id that may be left out, null or blank. */
+const optionalRef = z.string().trim().nullish().transform((v) => v || undefined);
+
+/** One row of a game's scoreboard. Give playerId, or a name to match (or create) the player. */
+export const playerStatInput = z
+  .object({
+    playerId: optionalRef,
+    name: z.string().trim().min(1).max(100).nullish().transform((v) => v ?? undefined),
+    side: z.enum(["A", "B"]),
+    pts: count.default(0),
+    reb: count.default(0),
+    blk: count.default(0),
+    stl: count.default(0),
+    ast: count.default(0),
+    lbr: count.default(0),
+    rating: z.preprocess((v) => (v === "" ? null : v), z.coerce.number().min(0).max(1000).nullish()).transform((v) => v ?? null),
+    award: z.preprocess((v) => (v === "" ? null : v), z.enum(awards).nullish()).transform((v) => v ?? null),
+  })
+  .refine((p) => p.playerId || p.name, { message: "Give a playerId or a player name", path: ["name"] });
+
+export const gameInput = z.object({
+  scoreA: count,
+  scoreB: count,
+  imageUrl,
+  players: z.array(playerStatInput).max(20).default([]),
 });
 
+const playerKey = (p: z.infer<typeof playerStatInput>) => p.playerId ?? `name:${normaliseName(p.name ?? "")}`;
+
+/**
+ * A series result. Teams are given by id, or by name (an unknown name creates the team).
+ * scoreA/scoreB are games won; when left out they are counted from the games.
+ */
 export const matchInput = z
   .object({
     tournamentId: z.string().min(1),
-    teamAId: z.string().min(1),
-    teamBId: z.string().min(1),
-    scoreA: count,
-    scoreB: count,
+    teamAId: optionalRef,
+    teamAName: z.string().trim().max(100).nullish().transform((v) => v || undefined),
+    teamBId: optionalRef,
+    teamBName: z.string().trim().max(100).nullish().transform((v) => v || undefined),
+    scoreA: optionalCount,
+    scoreB: optionalCount,
     round: optionalText(60),
     notes: optionalText(1000),
     imageUrl,
     playedAt: z.coerce.date().optional(),
-    playerStats: z.array(playerStatInput).max(100).default([]),
+    source: optionalText(40),
+    sourceRef: optionalText(200),
+    games: z.array(gameInput).max(9).default([]),
   })
-  .refine((m) => m.teamAId !== m.teamBId, {
-    message: "A team cannot play against itself",
-    path: ["teamBId"],
+  .refine((m) => m.teamAId || m.teamAName, { message: "Choose team A", path: ["teamAId"] })
+  .refine((m) => m.teamBId || m.teamBName, { message: "Choose team B", path: ["teamBId"] })
+  .refine(
+    (m) =>
+      m.teamAId && m.teamBId
+        ? m.teamAId !== m.teamBId
+        : !(m.teamAName && m.teamBName && normaliseName(m.teamAName) === normaliseName(m.teamBName)),
+    { message: "A team cannot play against itself", path: ["teamBId"] },
+  )
+  .refine((m) => m.games.length > 0 || (m.scoreA !== undefined && m.scoreB !== undefined), {
+    message: "Enter the series score or at least one game",
+    path: ["scoreA"],
   })
-  .refine((m) => new Set(m.playerStats.map((p) => p.playerId)).size === m.playerStats.length, {
-    message: "Each player can only have one stat line per match",
-    path: ["playerStats"],
+  .refine((m) => m.games.every((g) => new Set(g.players.map(playerKey)).size === g.players.length), {
+    message: "Each player can only appear once per game",
+    path: ["games"],
   });
 
 export const entryInput = z.object({

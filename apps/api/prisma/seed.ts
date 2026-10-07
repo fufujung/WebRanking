@@ -5,7 +5,7 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { prisma } from "../src/lib/db.js";
 import { createApiKey } from "../src/lib/apiKeys.js";
-import { recomputeRatings, winnerOf } from "../src/lib/elo.js";
+import { saveMatch } from "../src/lib/matchWrite.js";
 
 const webEnv = path.resolve(import.meta.dirname, "../../web/.env.local");
 
@@ -32,10 +32,10 @@ if (process.argv.includes("--no-demo") || (await prisma.team.count()) > 0) {
 }
 
 const teamDefs = [
-  { name: "Thunder Hawks", tag: "THK", country: "Thailand", players: ["Ace", "Blaze", "Comet", "Dash", "Echo"] },
-  { name: "Siam Dragons", tag: "SDG", country: "Thailand", players: ["Falcon", "Ghost", "Hunter", "Ion", "Jet"] },
-  { name: "Night Owls", tag: "NOW", country: "Vietnam", players: ["Kite", "Lynx", "Moss", "Nova", "Orbit"] },
-  { name: "Red Tigers", tag: "RTG", country: "Malaysia", players: ["Pike", "Quill", "Raven", "Storm", "Tusk"] },
+  { name: "Thunder Hawks", tag: "THK", country: "Thailand", players: ["Ace", "Blaze", "Comet", "Dash"] },
+  { name: "Siam Dragons", tag: "SDG", country: "Thailand", players: ["Falcon", "Ghost", "Hunter", "Ion"] },
+  { name: "Night Owls", tag: "NOW", country: "Thailand", players: ["Kite", "Lynx", "Moss", "Nova"] },
+  { name: "Red Tigers", tag: "RTG", country: "Thailand", players: ["Pike", "Quill", "Raven", "Storm"] },
 ];
 const teams = [];
 for (const def of teamDefs) {
@@ -44,7 +44,7 @@ for (const def of teamDefs) {
       name: def.name,
       tag: def.tag,
       country: def.country,
-      players: { create: def.players.map((n) => ({ name: n, nickname: n.toLowerCase(), country: def.country })) },
+      players: { create: def.players.map((n) => ({ name: n, country: def.country })) },
     },
     include: { players: true },
   });
@@ -53,58 +53,75 @@ for (const def of teamDefs) {
 
 const day = 86_400_000;
 const now = Date.now();
+const game = "Basketball 3v3";
 const cup = await prisma.tournament.create({
-  data: { name: "Bangkok Masters 2026", game: "Valorant", location: "Bangkok", status: "COMPLETED", startDate: new Date(now - 40 * day), endDate: new Date(now - 38 * day) },
+  data: { name: "Bangkok Masters 2026", game, location: "Discord", status: "COMPLETED", startDate: new Date(now - 40 * day), endDate: new Date(now - 38 * day) },
 });
 const league = await prisma.tournament.create({
-  data: { name: "SEA Championship Season 1", game: "Valorant", location: "Online", status: "ONGOING", startDate: new Date(now - 10 * day) },
+  data: { name: "SEA Championship Season 1", game, location: "Discord", status: "ONGOING", startDate: new Date(now - 10 * day) },
 });
 await prisma.tournament.create({
-  data: { name: "Chiang Mai Open", game: "Valorant", location: "Chiang Mai", status: "UPCOMING", startDate: new Date(now + 20 * day) },
+  data: { name: "Chiang Mai Open", game, location: "Discord", status: "UPCOMING", startDate: new Date(now + 20 * day) },
 });
 
 let seed = 7;
-const rand = (max: number) => ((seed = (seed * 9301 + 49297) % 233280) / 233280) * max;
-const fixtures: [string, number, number, number, number][] = [
-  [cup.id, 0, 1, 13, 9], [cup.id, 2, 3, 11, 13], [cup.id, 0, 3, 13, 7], [cup.id, 1, 2, 13, 11],
-  [league.id, 0, 2, 13, 10], [league.id, 1, 3, 9, 13], [league.id, 0, 1, 12, 14], [league.id, 2, 3, 13, 13],
+const rand = (max: number) => Math.floor(((seed = (seed * 9301 + 49297) % 233280) / 233280) * (max + 1));
+
+/** Splits a team's game score between its three starters and fills in the rest of the scoreboard. */
+function scoreboard(players: { id: string }[], side: "A" | "B", points: number, won: boolean) {
+  const a = rand(points);
+  const b = rand(points - a);
+  const split = [a, b, points - a - b];
+  return players.slice(0, 3).map((p, i) => ({
+    playerId: p.id,
+    side,
+    pts: split[i],
+    reb: rand(10),
+    blk: rand(3),
+    stl: rand(2),
+    ast: rand(6),
+    lbr: rand(4),
+    rating: Math.round((8 + split[i] * 0.6 + rand(6)) * 10) / 10,
+    award: null as "MVP" | "SVP" | null,
+    won,
+  }));
+}
+
+const fixtures: [string, number, number, [number, number][]][] = [
+  [cup.id, 0, 1, [[26, 13], [14, 8]]],
+  [cup.id, 2, 3, [[21, 18], [15, 21], [12, 21]]],
+  [cup.id, 0, 3, [[21, 17], [21, 19]]],
+  [cup.id, 1, 2, [[18, 21], [21, 11], [21, 16]]],
+  [league.id, 0, 2, [[21, 9], [19, 21], [21, 14]]],
+  [league.id, 1, 3, [[13, 21], [17, 21]]],
+  [league.id, 0, 1, [[16, 21], [21, 19], [18, 21]]],
+  [league.id, 2, 3, [[21, 20], [20, 21], [21, 17]]],
 ];
-for (const [i, [tournamentId, a, b, scoreA, scoreB]] of fixtures.entries()) {
-  const teamA = teams[a];
-  const teamB = teams[b];
-  for (const t of [teamA, teamB]) {
-    await prisma.tournamentEntry.upsert({
-      where: { tournamentId_teamId: { tournamentId, teamId: t.id } },
-      create: { tournamentId, teamId: t.id },
-      update: {},
-    });
-  }
-  await prisma.match.create({
-    data: {
-      tournamentId,
-      teamAId: teamA.id,
-      teamBId: teamB.id,
-      scoreA,
-      scoreB,
-      winnerId: winnerOf(teamA.id, teamB.id, scoreA, scoreB),
-      round: tournamentId === cup.id ? (["Semi-final", "Semi-final", "Final", "Third place"][i]) : `Week ${i - 3}`,
-      playedAt: new Date((tournamentId === cup.id ? now - 39 * day : now - 9 * day) + i * 3600_000),
-      playerStats: {
-        create: [...teamA.players, ...teamB.players].map((p) => ({
-          playerId: p.id,
-          teamId: p.teamId!,
-          kills: Math.round(8 + rand(20)),
-          deaths: Math.round(8 + rand(15)),
-          assists: Math.round(2 + rand(10)),
-          score: Math.round(120 + rand(220)),
-        })),
-      },
-    },
+for (const [i, [tournamentId, a, b, gameScores]] of fixtures.entries()) {
+  const games = gameScores.map(([sa, sb]) => {
+    const rows = [...scoreboard(teams[a].players, "A", sa, sa > sb), ...scoreboard(teams[b].players, "B", sb, sb > sa)];
+    const byRating = [...rows].sort((x, y) => (y.rating ?? 0) - (x.rating ?? 0));
+    byRating.find((r) => r.won)!.award = "MVP";
+    byRating.find((r) => !r.won)!.award = "SVP";
+    return { scoreA: sa, scoreB: sb, imageUrl: null, players: rows.map(({ won: _won, ...r }) => r) };
+  });
+  await saveMatch({
+    tournamentId,
+    teamAId: teams[a].id,
+    teamBId: teams[b].id,
+    scoreA: undefined,
+    scoreB: undefined,
+    round: tournamentId === cup.id ? ["Semi-final", "Semi-final", "Final", "Third place"][i] : `Week ${i - 3}`,
+    notes: null,
+    imageUrl: null,
+    source: null,
+    sourceRef: null,
+    playedAt: new Date((tournamentId === cup.id ? now - 39 * day : now - 9 * day) + i * 3600_000),
+    games,
   });
 }
 await prisma.tournamentEntry.updateMany({ where: { tournamentId: cup.id, teamId: teams[0].id }, data: { placement: 1 } });
 await prisma.tournamentEntry.updateMany({ where: { tournamentId: cup.id, teamId: teams[3].id }, data: { placement: 2 } });
 await prisma.tournamentEntry.updateMany({ where: { tournamentId: cup.id, teamId: teams[1].id }, data: { placement: 3 } });
-await recomputeRatings();
 console.log("Seeded demo teams, players, tournaments and matches.");
 await prisma.$disconnect();

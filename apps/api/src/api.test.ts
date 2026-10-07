@@ -154,43 +154,63 @@ describe("tournament flow", () => {
     assert.equal(patched.status, 400, "end before existing start is rejected on update too");
   });
 
-  test("match validation", async () => {
-    const base = { tournamentId: ids.cup, teamAId: ids.Alpha, teamBId: ids.Bravo, scoreA: 13, scoreB: 7 };
-    assert.equal((await call("POST", "/api/v1/matches", { ...base, teamBId: ids.Alpha })).status, 400);
-    assert.equal((await call("POST", "/api/v1/matches", { ...base, scoreA: -1 })).status, 400);
-    assert.equal((await call("POST", "/api/v1/matches", { ...base, tournamentId: "nope" })).status, 404);
-    assert.equal((await call("POST", "/api/v1/matches", { ...base, teamAId: "nope" })).status, 404);
-    // c1 plays for Charlie, who is not in this match.
-    const wrongTeam = await call("POST", "/api/v1/matches", { ...base, playerStats: [{ playerId: ids.c1 }] });
-    assert.equal(wrongTeam.status, 400);
-    // A free agent must be given a side explicitly.
-    assert.equal((await call("POST", "/api/v1/matches", { ...base, playerStats: [{ playerId: ids.free }] })).status, 400);
-    const dup = await call("POST", "/api/v1/matches", { ...base, playerStats: [{ playerId: ids.a1 }, { playerId: ids.a1 }] });
-    assert.equal(dup.status, 400);
-    assert.equal((await call("GET", "/api/v1/matches")).body.total, 0, "nothing saved by rejected requests");
+  /** A scoreboard row with every stat set to n. */
+  const row = (side: "A" | "B", who: Record<string, unknown>, n = 1, extra: Record<string, unknown> = {}) => ({
+    side, pts: n, reb: n, blk: n, stl: n, ast: n, lbr: n, ...who, ...extra,
   });
 
-  test("record a match: winner, ratings, auto-registration, stat lines", async () => {
+  test("match validation", async () => {
+    const base = { tournamentId: ids.cup, teamAId: ids.Alpha, teamBId: ids.Bravo, scoreA: 2, scoreB: 0 };
+    const post = (body: unknown) => call("POST", "/api/v1/matches", body);
+    assert.equal((await post({ ...base, teamBId: ids.Alpha })).status, 400);
+    assert.equal((await post({ ...base, scoreA: -1 })).status, 400);
+    assert.equal((await post({ ...base, scoreA: undefined, scoreB: undefined })).status, 400, "needs a series score or games");
+    assert.equal((await post({ ...base, tournamentId: "nope" })).status, 404);
+    assert.equal((await post({ ...base, teamAId: "nope" })).status, 404);
+    assert.equal((await post({ ...base, teamAId: undefined })).status, 400, "team A is required");
+    assert.equal((await post({ ...base, teamAId: undefined, teamBId: undefined, teamAName: "x y", teamBName: "X-Y" })).status, 400, "same name twice");
+    const game = (players: unknown[]) => ({ ...base, games: [{ scoreA: 21, scoreB: 10, players }] });
+    assert.equal((await post(game([{ side: "A" }]))).status, 400, "a row needs a player");
+    assert.equal((await post(game([row("C" as "A", { playerId: ids.a1 })]))).status, 400, "side must be A or B");
+    assert.equal((await post(game([row("A", { playerId: ids.a1 }), row("B", { playerId: ids.a1 })]))).status, 400, "same player twice in a game");
+    assert.equal((await post(game([row("A", { name: "New One" }), row("A", { name: "new one" })]))).status, 400, "same name twice in a game");
+    assert.equal((await post(game([row("A", { playerId: "ghost" })]))).status, 404);
+    assert.equal((await post(game([row("A", { playerId: ids.a1, award: "GOAT" })]))).status, 400);
+    assert.equal((await call("GET", "/api/v1/matches")).body.total, 0, "nothing saved by rejected requests");
+    assert.equal((await call("GET", "/api/v1/players?search=New One")).body.total, 0, "no players created by rejected requests");
+  });
+
+  test("record a series: games, winner, ratings, auto-registration, scoreboards", async () => {
     const res = await call("POST", "/api/v1/matches", {
       tournamentId: ids.cup,
       teamAId: ids.Alpha,
       teamBId: ids.Bravo,
-      scoreA: 13,
-      scoreB: 7,
       round: "Final",
       playedAt: "2026-05-01T10:00:00Z",
-      playerStats: [
-        { playerId: ids.a1, kills: 20, deaths: 10, assists: 5, score: 300 },
-        { playerId: ids.a2, kills: 10, deaths: 0, assists: 2, score: 150 },
-        { playerId: ids.b1, kills: 12, deaths: 15, assists: 3, score: 200 },
-        { playerId: ids.free, teamId: ids.Bravo, kills: 1, deaths: 2, assists: 3, score: 4 },
+      games: [
+        {
+          scoreA: 26,
+          scoreB: 13,
+          players: [
+            row("A", { playerId: ids.a1 }, 10, { rating: 20.4, award: "MVP" }),
+            row("A", { playerId: ids.a2 }, 2, { rating: 12.5 }),
+            row("B", { playerId: ids.b1 }, 4, { rating: 13.1, award: "SVP" }),
+            row("B", { playerId: ids.free }, 1, { rating: "" }),
+          ],
+        },
+        { scoreA: 14, scoreB: 8, players: [row("A", { playerId: ids.a1 }, 6, { rating: 18.4 })] },
       ],
     });
     assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.scoreA, 2, "series score counted from games");
+    assert.equal(res.body.scoreB, 0);
     assert.equal(res.body.winnerId, ids.Alpha);
     assert.equal(res.body.ratingDeltaA, 16);
     assert.equal(res.body.ratingDeltaB, -16);
-    assert.equal(res.body.playerStats.length, 4);
+    assert.deepEqual(res.body.games.map((g: any) => [g.number, g.scoreA, g.scoreB, g.playerStats.length]), [[1, 26, 13, 4], [2, 14, 8, 1]]);
+    const a1 = res.body.players.find((p: any) => p.player.id === ids.a1);
+    assert.deepEqual([a1.games, a1.pts, a1.mvp, a1.avgRating], [2, 16, 1, 19.4], "series totals per player");
+    assert.equal(res.body.games[0].playerStats.find((s: any) => s.playerId === ids.free).teamId, ids.Bravo, "a free agent plays for the side given");
     ids.m1 = res.body.id;
 
     const cup = await call("GET", `/api/v1/tournaments/${ids.cup}`);
@@ -199,12 +219,13 @@ describe("tournament flow", () => {
     assert.equal(cup.body.standings[0].points, 3);
   });
 
-  test("draw has no winner and equal teams keep their rating", async () => {
+  test("a series score given explicitly wins over counting games", async () => {
     const res = await call("POST", "/api/v1/matches", {
-      tournamentId: ids.cup, teamAId: ids.Charlie, teamBId: ids.Bravo, scoreA: 5, scoreB: 5, playedAt: "2026-05-01T09:00:00Z",
+      tournamentId: ids.cup, teamAId: ids.Charlie, teamBId: ids.Bravo, scoreA: 1, scoreB: 1, playedAt: "2026-05-01T09:00:00Z",
+      games: [{ scoreA: 21, scoreB: 3, players: [] }],
     });
     assert.equal(res.status, 201);
-    assert.equal(res.body.winnerId, null);
+    assert.equal(res.body.winnerId, null, "1-1 is a draw");
     ids.m2 = res.body.id;
   });
 
@@ -222,36 +243,75 @@ describe("tournament flow", () => {
 
   test("player stats and ranking", async () => {
     const a1 = await call("GET", `/api/v1/players/${ids.a1}`);
-    assert.equal(a1.body.stats.matches, 1);
-    assert.equal(a1.body.stats.wins, 1);
-    assert.equal(a1.body.stats.kda, 2.5);
-    const a2 = await call("GET", `/api/v1/players/${ids.a2}`);
-    assert.equal(a2.body.stats.kda, 12, "zero deaths counts as one");
+    assert.deepEqual(
+      [a1.body.stats.matches, a1.body.stats.games, a1.body.stats.wins, a1.body.stats.pts, a1.body.stats.ppg, a1.body.stats.avgRating, a1.body.stats.mvp],
+      [1, 2, 2, 16, 8, 19.4, 1],
+    );
+    assert.equal(a1.body.recentGames.length, 2);
+    assert.equal(a1.body.recentGames[0].game.number, 1);
     const free = await call("GET", `/api/v1/players/${ids.free}`);
     assert.equal(free.body.stats.losses, 1, "result follows the side played, not the current team");
+    assert.equal(free.body.stats.avgRating, 0, "no rating read means no average");
 
-    const byKda = await call("GET", "/api/v1/rankings/players?sort=kda");
-    assert.equal(byKda.body.data[0].name, "a2");
-    const byScore = await call("GET", "/api/v1/rankings/players?sort=score&minMatches=1");
-    assert.equal(byScore.body.data[0].name, "a1");
-    assert.equal(byScore.body.total, 4);
+    const byPts = await call("GET", "/api/v1/rankings/players?sort=pts");
+    assert.equal(byPts.body.data[0].name, "a1");
+    assert.equal(byPts.body.total, 5);
+    const byRating = await call("GET", "/api/v1/rankings/players?sort=avgRating&minGames=1");
+    assert.deepEqual(byRating.body.data.map((p: any) => p.name), ["a1", "b1", "a2", "free"]);
+    assert.equal((await call("GET", "/api/v1/rankings/players?minMatches=2")).body.total, 1, "old parameter name still works");
     assert.equal((await call("GET", "/api/v1/rankings/players?sort=bogus")).status, 400);
   });
 
-  test("edit a match flips the result and ratings", async () => {
+  test("edit a series flips the result and ratings", async () => {
     const res = await call("PUT", `/api/v1/matches/${ids.m1}`, {
-      tournamentId: ids.cup, teamAId: ids.Alpha, teamBId: ids.Bravo, scoreA: 7, scoreB: 13,
-      playerStats: [{ playerId: ids.a1, kills: 1, deaths: 1, assists: 1, score: 1 }],
+      tournamentId: ids.cup, teamAId: ids.Alpha, teamBId: ids.Bravo,
+      games: [{ scoreA: 7, scoreB: 13, players: [row("A", { playerId: ids.a1 }, 1)] }],
     });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.winnerId, ids.Bravo);
-    assert.equal(res.body.playerStats.length, 1);
+    assert.equal(res.body.games.length, 1);
     assert.equal(new Date(res.body.playedAt).toISOString(), "2026-05-01T10:00:00.000Z", "playedAt kept when omitted");
     const alpha = await call("GET", `/api/v1/teams/${ids.Alpha}`);
     assert.equal(alpha.body.rating, 984);
     assert.equal(alpha.body.stats.losses, 1);
     const a2 = await call("GET", `/api/v1/players/${ids.a2}`);
-    assert.equal(a2.body.stats.matches, 0, "old stat lines replaced");
+    assert.equal(a2.body.stats.games, 0, "old scoreboards replaced");
+  });
+
+  test("teams and players given by name are matched, or created", async () => {
+    const res = await call("POST", "/api/v1/matches", {
+      tournamentId: ids.cup,
+      teamAName: "alpha",
+      teamBName: "Pai Nai",
+      source: "discord",
+      sourceRef: "discord-msg-1",
+      playedAt: "2026-05-02T10:00:00Z",
+      games: [
+        { scoreA: 21, scoreB: 12, players: [row("A", { name: "A1" }), row("A", { name: "Rookie" }), row("B", { name: "EGOIST<1>" }), row("B", { name: "b1" })] },
+        { scoreA: 21, scoreB: 9, players: [row("A", { name: "rookie" }), row("B", { name: "egoist<1>" })] },
+      ],
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.teamAId, ids.Alpha, "existing team matched by name, ignoring case");
+    assert.equal(res.body.teamB.name, "Pai Nai", "unknown team created");
+    const g1 = res.body.games[0].playerStats;
+    const idOf = (name: string) => g1.find((s: any) => s.player.name === name)?.playerId;
+    assert.equal(idOf("a1"), ids.a1, "existing player matched by name");
+    assert.equal(idOf("b1"), ids.b1, "a player from another team can play as a substitute");
+    const rookie = await call("GET", `/api/v1/players/${idOf("Rookie")}`);
+    assert.equal(rookie.body.teamId, ids.Alpha, "new player joins the side's team");
+    assert.equal(rookie.body.stats.games, 2, "the same new name in two games is one player");
+    assert.equal((await call("GET", `/api/v1/players?teamId=${res.body.teamBId}`)).body.total, 1, "EGOIST<1> created once, b1 not moved");
+
+    const again = await call("POST", "/api/v1/matches", { tournamentId: ids.cup, teamAName: "x", teamBName: "y", scoreA: 1, scoreB: 0, sourceRef: "discord-msg-1" });
+    assert.equal(again.status, 409, "the same Discord post cannot be recorded twice");
+    assert.equal(again.body.details.matchId, res.body.id);
+    assert.equal((await call("GET", "/api/v1/teams?search=x")).body.total, 0, "nothing created by the rejected duplicate");
+    assert.equal((await call("GET", "/api/v1/matches/by-source?ref=discord-msg-1")).body.matchId, res.body.id);
+    assert.equal((await call("GET", "/api/v1/matches/by-source?ref=nope")).body.matchId, null);
+    assert.equal((await call("DELETE", `/api/v1/matches/${res.body.id}`)).status, 204);
+    assert.equal((await call("DELETE", `/api/v1/teams/${res.body.teamBId}`)).status, 204);
+    for (const name of ["Rookie", "EGOIST<1>"]) assert.equal((await call("DELETE", `/api/v1/players/${idOf(name)}`)).status, 204);
   });
 
   test("placements, titles and entry removal rules", async () => {
@@ -331,8 +391,9 @@ describe("images", () => {
     const form = new FormData();
     form.append("image", new Blob([png], { type: "image/png" }), "shot.png");
     const up = await call("POST", "/api/v1/uploads", form);
-    assert.equal((await call("POST", "/api/v1/extract/match", { imageUrl: up.body.url })).status, 503);
-    assert.equal((await call("POST", "/api/v1/extract/match", { imageUrl: "/uploads/../../etc/passwd" })).status, 404);
+    assert.equal((await call("POST", "/api/v1/extract/series", { imageUrls: [up.body.url] })).status, 503);
+    assert.equal((await call("POST", "/api/v1/extract/series", { imageUrls: ["/uploads/../../etc/passwd"] })).status, 404);
+    assert.equal((await call("POST", "/api/v1/extract/series", { imageUrls: [] })).status, 400);
   });
 });
 
@@ -344,57 +405,96 @@ describe("reading results from images", () => {
   const original = { ...imageReader };
   after(() => Object.assign(imageReader, original));
 
-  test("matches read names to teams and players, and saves nothing", async () => {
-    const red = (await call("POST", "/api/v1/teams", { name: "Red Fox", tag: "RFX" })).body;
-    const blue = (await call("POST", "/api/v1/teams", { name: "Blue Jay" })).body;
-    const neo = (await call("POST", "/api/v1/players", { name: "Neo Tan", nickname: "neo", teamId: red.id })).body;
-    const kai = (await call("POST", "/api/v1/players", { name: "Kai", teamId: blue.id })).body;
-    let seenRoster: string[] = [];
-    imageReader.enabled = () => true;
-    imageReader.read = async (_file, _type, ctx) => {
-      seenRoster = ctx.roster;
-      return {
-        teamA: { name: "rfx", score: 13 },
-        teamB: { name: "BLUE JAY", score: null },
-        players: [
-          { name: "NEO", side: "A", kills: 20, deaths: 5, assists: 3, score: 310 },
-          { name: "kai", side: "B", kills: 9, deaths: null, assists: 1, score: 150 },
-          { name: "Stranger", side: "B", kills: 1, deaths: 1, assists: 1, score: 1 },
-        ],
-        notes: "Team B score is blurry",
-      };
-    };
+  const upload = async () => {
     const form = new FormData();
     form.append("image", new Blob([png], { type: "image/png" }), "result.png");
-    const up = await call("POST", "/api/v1/uploads", form);
-    const matchesBefore = (await call("GET", "/api/v1/matches")).body.total;
+    return (await call("POST", "/api/v1/uploads", form)).body.url as string;
+  };
+  type Read = Awaited<ReturnType<typeof imageReader.read>>;
+  const p = (name: string, side: "ally" | "rival", pts: number | null, award: "MVP" | "SVP" | null = null) => ({
+    name, side, rating: 15.5, award, pts, reb: 1, blk: 0, stl: 0, ast: 2, lbr: 1,
+  });
+  /** One scoreboard as the game shows it: Ally first. */
+  const board = (ally: string[], rival: string[], allyScore: number | null, rivalScore: number | null, result: "WIN" | "LOSE" | "unknown" = "unknown") => ({
+    allyScore, rivalScore, result,
+    players: [...ally.map((n) => p(n, "ally", 5)), ...rival.map((n) => p(n, "rival", 3))],
+  });
+  const fakeRead = (out: Read) => {
+    imageReader.enabled = () => true;
+    imageReader.read = async () => out;
+  };
 
-    const res = await call("POST", "/api/v1/extract/match", { imageUrl: up.body.url });
+  test("a Discord-style post becomes a draft that saves nothing", async () => {
+    const red = (await call("POST", "/api/v1/teams", { name: "Red Fox", tag: "RFX" })).body;
+    const neo = (await call("POST", "/api/v1/players", { name: "Neo Tan", nickname: "neo", teamId: red.id })).body;
+    await call("POST", "/api/v1/players", { name: "Mo", teamId: red.id });
+    let seen: { images: number; text: string; teams: string[] } | undefined;
+    imageReader.enabled = () => true;
+    imageReader.read = async (images, text, ctx) => {
+      seen = { images: images.length, text, teams: ctx.teams.map((t) => t.name) };
+      return {
+        teamA: "ignored", teamB: "ignored", seriesScoreA: 2, seriesScoreB: 1,
+        games: [
+          // The poster played for Blue Jay, so Ally is team B in every game.
+          board(["Kai", "Lee", "Max"], ["NEO", "Mo", "Zed"], 21, 10, "WIN"),
+          board(["Kai", "Lee", "Max"], ["neo", "Mo", "Zed"], 8, 21, "LOSE"),
+          { ...board(["Kai", "Lee"], ["neo", "Mo", "Zed"], null, 21), players: [p("Kai", "ally", null), p("Lee", "ally", 4), p("neo", "rival", 9, "MVP")] },
+        ],
+        notes: "เกม 3 สกอร์ไม่ชัด",
+      } satisfies Read;
+    };
+    const urls = [await upload(), await upload(), await upload()];
+    const before = (await call("GET", "/api/v1/matches")).body.total;
+    const res = await call("POST", "/api/v1/extract/series", { imageUrls: urls, text: "RFX 2 - 1 Blue Jay\nGG" });
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    const s = res.body.suggestion;
-    assert.equal(s.teamAId, red.id, "tag matched case-insensitively");
-    assert.equal(s.teamBId, blue.id);
-    assert.equal(s.scoreA, 13);
-    assert.equal(s.scoreB, null, "unreadable numbers stay empty");
-    assert.deepEqual(
-      s.playerStats.map((p: any) => [p.readName, p.playerId, p.teamId]),
-      [["NEO", neo.id, red.id], ["kai", kai.id, blue.id], ["Stranger", null, blue.id]],
-    );
-    assert.equal(s.notes, "Team B score is blurry");
-    assert.ok(seenRoster.includes("Neo Tan") && seenRoster.includes("neo"), "roster hints passed to the reader");
-    assert.equal((await call("GET", "/api/v1/matches")).body.total, matchesBefore, "nothing saved");
-    assert.deepEqual((await call("GET", "/api/v1/extract/status")).body, { enabled: true });
+    const d = res.body.draft;
+    assert.deepEqual([d.teamAId, d.teamAName, d.teamBId, d.teamBName], [red.id, "Red Fox", null, "Blue Jay"], "team names come from the text");
+    assert.deepEqual([d.scoreA, d.scoreB], [2, 1]);
+    assert.deepEqual(d.games.map((g: any) => [g.scoreA, g.scoreB, g.imageUrl]), [[10, 21, urls[0]], [21, 8, urls[1]], [21, 0, urls[2]]], "Red Fox's registered players put it on the Rival side");
+    const neoRow = d.games[0].players.find((x: any) => x.side === "A" && x.playerId === neo.id);
+    assert.equal(neoRow.name, "Neo Tan", "nickname matched to the registered player");
+    assert.equal(d.games[2].players.find((x: any) => x.name === "Kai").pts, 0, "unreadable numbers become 0");
+    assert.equal(d.games[2].players.find((x: any) => x.award === "MVP").name, "Neo Tan");
+    const w = d.warnings.join("\n");
+    assert.match(w, /ทีม "Blue Jay" ยังไม่มีในเว็บ/);
+    assert.match(w, /อ่านไม่ออก/);
+    assert.match(w, /ผู้เล่นใหม่.*Kai/);
+    assert.match(w, /ผลในข้อความ 2-1 ไม่ตรงกับเกมในรูป \(2-1\)|เกม 3: อ่านผู้เล่นทีม B ได้ 2 คน/);
+    assert.equal(d.notes, "เกม 3 สกอร์ไม่ชัด");
+    assert.deepEqual(seen, { images: 3, text: "RFX 2 - 1 Blue Jay\nGG", teams: seen!.teams });
+    assert.ok(seen!.teams.includes("Red Fox"));
+    assert.equal((await call("GET", "/api/v1/matches")).body.total, before, "nothing saved");
+    assert.equal((await call("GET", "/api/v1/teams?search=Blue Jay")).body.total, 0, "no team created by reading");
+
+    // The draft is accepted by POST /matches as it is.
+    const saved = await call("POST", "/api/v1/matches", { ...d, tournamentId: (await call("GET", "/api/v1/tournaments")).body.data[0].id, sourceRef: "draft-test" });
+    assert.equal(saved.status, 201, JSON.stringify(saved.body));
+    assert.equal(saved.body.teamB.name, "Blue Jay");
+    assert.equal(saved.body.winnerId, red.id);
+    assert.equal((await call("DELETE", `/api/v1/matches/${saved.body.id}`)).status, 204);
   });
 
-  test("teams chosen in the form win over names read from the image", async () => {
-    const teams = (await call("GET", "/api/v1/teams?search=Red Fox")).body.data;
+  test("without registered players, the series score decides which side is Ally", async () => {
+    fakeRead({
+      teamA: "WD", teamB: "Late", seriesScoreA: 2, seriesScoreB: 0,
+      games: [board(["p1", "p2", "p3"], ["q1", "q2", "q3"], 26, 13, "WIN"), board(["q1", "q2", "q3"], ["p1", "p2", "p3"], 8, 14, "LOSE")],
+      notes: "",
+    });
+    const res = await call("POST", "/api/v1/extract/series", { imageUrls: [await upload(), await upload()], text: "WD 2-0 Late" });
+    const d = res.body.draft;
+    assert.deepEqual(d.games.map((g: any) => [g.scoreA, g.scoreB]), [[26, 13], [14, 8]], "same players across games keep the same side");
+    assert.ok(d.games[1].players.filter((x: any) => x.side === "A").every((x: any) => x.name.startsWith("p")));
+    assert.ok(!d.warnings.some((x: string) => x.includes("ไม่ตรง")), d.warnings.join());
+  });
+
+  test("teams chosen in the form win over names in the text", async () => {
     const other = (await call("POST", "/api/v1/teams", { name: "Other" })).body;
-    const form = new FormData();
-    form.append("image", new Blob([png], { type: "image/png" }), "result.png");
-    const up = await call("POST", "/api/v1/uploads", form);
-    const res = await call("POST", "/api/v1/extract/match", { imageUrl: up.body.url, teamAId: other.id, teamBId: teams[0].id });
-    assert.equal(res.body.suggestion.teamAId, other.id);
-    assert.equal(res.body.suggestion.teamBId, teams[0].id);
+    const red = (await call("GET", "/api/v1/teams?search=Red Fox")).body.data[0];
+    fakeRead({ teamA: "", teamB: "", seriesScoreA: null, seriesScoreB: null, games: [board(["a"], ["b"], 21, 3)], notes: "" });
+    const res = await call("POST", "/api/v1/extract/series", { imageUrls: [await upload()], teamAId: other.id, teamBId: red.id });
+    assert.equal(res.body.draft.teamAId, other.id);
+    assert.equal(res.body.draft.teamBId, red.id);
+    assert.deepEqual([res.body.draft.scoreA, res.body.draft.scoreB], [1, 0], "series score counted from games when the text has none");
   });
 
   test("reader errors are passed through", async () => {
@@ -402,10 +502,7 @@ describe("reading results from images", () => {
     imageReader.read = async () => {
       throw new HttpError(422, "The image could not be read. Please enter the result manually.");
     };
-    const form = new FormData();
-    form.append("image", new Blob([png], { type: "image/png" }), "result.png");
-    const up = await call("POST", "/api/v1/uploads", form);
-    assert.equal((await call("POST", "/api/v1/extract/match", { imageUrl: up.body.url })).status, 422);
+    assert.equal((await call("POST", "/api/v1/extract/series", { imageUrls: [await upload()] })).status, 422);
   });
 });
 

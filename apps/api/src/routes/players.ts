@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { notFound } from "../lib/errors.js";
-import { emptyPlayerStats, statsByPlayer } from "../lib/stats.js";
+import { emptyPlayerStats, statLineSelect, statsByPlayer } from "../lib/stats.js";
 import { playerInput, searchQuery } from "../lib/validate.js";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { matchInclude, teamSummary } from "../lib/selects.js";
@@ -32,19 +32,22 @@ players.get("/:id", async (req, res) => {
   if (!player) throw notFound("Player");
   const lines = await prisma.matchPlayerStat.findMany({
     where: { playerId: player.id },
-    include: { match: { include: matchInclude }, team: teamSummary },
-    orderBy: [{ match: { playedAt: "desc" } }, { match: { createdAt: "desc" } }],
+    select: {
+      ...statLineSelect,
+      game: { select: { number: true, scoreA: true, scoreB: true } },
+      match: { include: matchInclude },
+      team: teamSummary,
+    },
+    orderBy: [{ match: { playedAt: "desc" } }, { match: { createdAt: "desc" } }, { game: { number: "asc" } }],
   });
   res.json({
     ...player,
     stats: statsByPlayer(lines).get(player.id) ?? emptyPlayerStats(),
-    recentMatches: lines.slice(0, 20).map(({ match, team, kills, deaths, assists, score }) => ({
+    recentGames: lines.slice(0, 30).map(({ match, team, game, pts, reb, blk, stl, ast, lbr, rating, award }) => ({
       match,
+      game,
       team,
-      kills,
-      deaths,
-      assists,
-      score,
+      pts, reb, blk, stl, ast, lbr, rating, award,
     })),
   });
 });

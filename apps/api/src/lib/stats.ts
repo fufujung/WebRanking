@@ -69,49 +69,85 @@ export function standings(teamIds: string[], matches: MatchResult[]): Standing[]
 }
 
 export interface PlayerStats {
+  /** Series the player appeared in. */
   matches: number;
+  games: number;
   wins: number;
   losses: number;
-  draws: number;
   winRate: number;
-  kills: number;
-  deaths: number;
-  assists: number;
-  score: number;
-  kda: number;
-  avgScore: number;
+  pts: number;
+  reb: number;
+  blk: number;
+  stl: number;
+  ast: number;
+  lbr: number;
+  ppg: number;
+  rpg: number;
+  apg: number;
+  avgRating: number;
+  mvp: number;
+  svp: number;
 }
 
 export function emptyPlayerStats(): PlayerStats {
   return {
-    matches: 0, wins: 0, losses: 0, draws: 0, winRate: 0,
-    kills: 0, deaths: 0, assists: 0, score: 0, kda: 0, avgScore: 0,
+    matches: 0, games: 0, wins: 0, losses: 0, winRate: 0,
+    pts: 0, reb: 0, blk: 0, stl: 0, ast: 0, lbr: 0,
+    ppg: 0, rpg: 0, apg: 0, avgRating: 0, mvp: 0, svp: 0,
   };
 }
 
-/** Aggregates per-match stat lines into career stats. Win/loss is judged by the team the player played for in that match. */
-export function statsByPlayer(
-  lines: (Pick<MatchPlayerStat, "playerId" | "teamId" | "kills" | "deaths" | "assists" | "score"> & {
-    match: Pick<Match, "winnerId">;
-  })[],
-) {
-  const stats = new Map<string, PlayerStats>();
+export type StatLine = Pick<MatchPlayerStat, "playerId" | "teamId" | "matchId" | "pts" | "reb" | "blk" | "stl" | "ast" | "lbr" | "rating" | "award"> & {
+  game: { scoreA: number; scoreB: number };
+  match: { teamAId: string };
+};
+
+/** Per-game scoreboard rows → career stats. A game is won when the player's side scored more. */
+export function statsByPlayer(lines: StatLine[]) {
+  const stats = new Map<string, PlayerStats & { series: Set<string>; ratingSum: number; rated: number }>();
   for (const l of lines) {
     let s = stats.get(l.playerId);
-    if (!s) stats.set(l.playerId, (s = emptyPlayerStats()));
-    s.matches++;
-    s.kills += l.kills;
-    s.deaths += l.deaths;
-    s.assists += l.assists;
-    s.score += l.score;
-    if (l.match.winnerId === null) s.draws++;
-    else if (l.match.winnerId === l.teamId) s.wins++;
-    else s.losses++;
+    if (!s) stats.set(l.playerId, (s = { ...emptyPlayerStats(), series: new Set(), ratingSum: 0, rated: 0 }));
+    s.series.add(l.matchId);
+    s.games++;
+    s.pts += l.pts;
+    s.reb += l.reb;
+    s.blk += l.blk;
+    s.stl += l.stl;
+    s.ast += l.ast;
+    s.lbr += l.lbr;
+    if (l.rating !== null) {
+      s.ratingSum += l.rating;
+      s.rated++;
+    }
+    if (l.award === "MVP") s.mvp++;
+    if (l.award === "SVP") s.svp++;
+    const onA = l.teamId === l.match.teamAId;
+    const own = onA ? l.game.scoreA : l.game.scoreB;
+    const other = onA ? l.game.scoreB : l.game.scoreA;
+    if (own > other) s.wins++;
+    else if (own < other) s.losses++;
   }
-  for (const s of stats.values()) {
-    s.winRate = pct(s.wins, s.matches);
-    s.kda = Math.round(((s.kills + s.assists) / Math.max(1, s.deaths)) * 100) / 100;
-    s.avgScore = s.matches ? Math.round((s.score / s.matches) * 10) / 10 : 0;
+  const avg = (n: number, d: number) => (d ? Math.round((n / d) * 10) / 10 : 0);
+  const out = new Map<string, PlayerStats>();
+  for (const [id, { series, ratingSum, rated, ...s }] of stats) {
+    out.set(id, {
+      ...s,
+      matches: series.size,
+      winRate: pct(s.wins, s.games),
+      ppg: avg(s.pts, s.games),
+      rpg: avg(s.reb, s.games),
+      apg: avg(s.ast, s.games),
+      avgRating: avg(ratingSum, rated),
+    });
   }
-  return stats;
+  return out;
 }
+
+/** The select that feeds statsByPlayer. */
+export const statLineSelect = {
+  playerId: true, teamId: true, matchId: true,
+  pts: true, reb: true, blk: true, stl: true, ast: true, lbr: true, rating: true, award: true,
+  game: { select: { scoreA: true, scoreB: true } },
+  match: { select: { teamAId: true } },
+} as const;

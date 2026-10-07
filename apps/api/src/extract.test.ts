@@ -42,37 +42,48 @@ const message = (text: string, stop_reason = "end_turn") => ({
   usage: { input_tokens: 1, output_tokens: 1 },
 });
 
-test("sends the image with structured output and parses the result", async () => {
-  const result = { teamA: { name: "A", score: 13 }, teamB: { name: "B", score: 4 }, players: [], notes: "" };
+const read = (images = [{ file: image, mediaType: "image/png" }]) =>
+  extract.extractSeries(images, "WD 2-0 Late", { teams: [{ name: "WD", players: ["Dunken", "Chipi01"] }, { name: "Empty", players: [] }] });
+
+test("sends every screenshot and the post text with structured output, and parses the result", async () => {
+  const result = {
+    teamA: "WD", teamB: "Late", seriesScoreA: 2, seriesScoreB: 0,
+    games: [{ allyScore: 26, rivalScore: 13, result: "WIN", players: [{ name: "Dunken", side: "ally", rating: 16.9, award: "none", pts: 0, reb: 9, blk: 2, stl: 0, ast: 3, lbr: 1 }] }],
+    notes: "",
+  };
   reply = { status: 200, body: message(JSON.stringify(result)) };
-  const out = await extract.extractMatchResult(image, "image/png", { teamA: "Alpha", roster: ["Neo"] });
-  assert.deepEqual(out, result);
+  const out = await read([{ file: image, mediaType: "image/png" }, { file: image, mediaType: "image/png" }]);
+  assert.equal(out.games[0].players[0].award, null, "\"none\" becomes null");
+  assert.equal(out.games[0].players[0].rating, 16.9);
   const body = lastRequest!.body;
   assert.equal(body.model, "claude-opus-5-5");
   assert.equal(body.fallbacks, "default");
   assert.match(String(lastRequest!.headers["anthropic-beta"]), /server-side-fallback-2026-07-01/);
   assert.equal(body.output_config.format.type, "json_schema");
-  assert.equal(body.messages[0].content[0].type, "image");
-  assert.equal(body.messages[0].content[0].source.media_type, "image/png");
-  assert.match(body.messages[0].content[1].text, /Alpha/);
-  assert.match(body.messages[0].content[1].text, /Neo/);
+  const content = body.messages[0].content;
+  assert.deepEqual(content.map((c: any) => c.type), ["text", "image", "text", "image", "text"], "images labelled in order");
+  assert.equal(content[1].source.media_type, "image/png");
+  const prompt = content.at(-1).text;
+  assert.match(prompt, /WD 2-0 Late/);
+  assert.match(prompt, /- WD: Dunken, Chipi01/);
+  assert.doesNotMatch(prompt, /- Empty/, "teams without players are left out");
 });
 
 test("a refusal becomes a friendly 422", async () => {
   reply = { status: 200, body: message("", "refusal") };
-  await assert.rejects(extract.extractMatchResult(image, "image/png", { roster: [] }), (e: any) => e.status === 422);
+  await assert.rejects(read(), (e: any) => e.status === 422);
 });
 
 test("an unexpected shape becomes a 502", async () => {
   reply = { status: 200, body: message(JSON.stringify({ hello: "world" })) };
-  await assert.rejects(extract.extractMatchResult(image, "image/png", { roster: [] }), (e: any) => e.status === 502);
+  await assert.rejects(read(), (e: any) => e.status === 502);
 });
 
 test("invalid JSON and upstream errors become a 502", async () => {
   reply = { status: 200, body: message("not json") };
-  await assert.rejects(extract.extractMatchResult(image, "image/png", { roster: [] }), (e: any) => e.status === 502);
+  await assert.rejects(read(), (e: any) => e.status === 502);
   reply = { status: 400, body: { type: "error", error: { type: "invalid_request_error", message: "bad" } } };
-  await assert.rejects(extract.extractMatchResult(image, "image/png", { roster: [] }), (e: any) => e.status === 502);
+  await assert.rejects(read(), (e: any) => e.status === 502);
 });
 
 test("without an API key the feature reports itself disabled", () => {

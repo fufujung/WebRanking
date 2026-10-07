@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/db.js";
 import { notFound } from "../lib/errors.js";
 import { recomputeRatings } from "../lib/elo.js";
-import { emptyPlayerStats, emptyTeamStats, statsByPlayer, statsByTeam } from "../lib/stats.js";
+import { emptyPlayerStats, emptyTeamStats, statLineSelect, statsByPlayer, statsByTeam } from "../lib/stats.js";
 import { searchQuery, teamInput } from "../lib/validate.js";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { matchInclude, matchOrder } from "../lib/selects.js";
@@ -49,7 +49,7 @@ teams.get("/:id", async (req, res) => {
     }),
     prisma.matchPlayerStat.findMany({
       where: { playerId: { in: team.players.map((p) => p.id) } },
-      include: { match: { select: { winnerId: true } } },
+      select: statLineSelect,
     }),
     prisma.team.count({ where: { rating: { gt: team.rating } } }),
   ]);

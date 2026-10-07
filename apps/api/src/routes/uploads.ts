@@ -5,6 +5,7 @@ import { HttpError, notFound } from "../lib/errors.js";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { imageUpload, mediaTypeOf, uploadedFilePath } from "../lib/uploads.js";
 import { imageReader } from "../lib/extract.js";
+import { buildDraft } from "../lib/draft.js";
 
 export const uploads = Router();
 
@@ -18,64 +19,32 @@ uploads.get("/extract/status", (_req, res) => {
   res.json({ enabled: imageReader.enabled() });
 });
 
-const normalise = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-
 /**
- * Reads a previously uploaded result screenshot and returns a suggested match
- * result with names matched to existing teams and players. Nothing is saved.
+ * Reads a result post (its text plus one scoreboard screenshot per game, already
+ * uploaded) and returns a draft series with names matched to existing teams and
+ * players. Nothing is saved; send the reviewed draft to POST /matches.
  */
-uploads.post("/extract/match", requireAdmin, async (req, res) => {
+uploads.post("/extract/series", requireAdmin, async (req, res) => {
   const input = z
-    .object({ imageUrl: z.string(), teamAId: z.string().optional(), teamBId: z.string().optional() })
+    .object({
+      imageUrls: z.array(z.string()).min(1).max(6),
+      text: z.string().max(2000).default(""),
+      teamAId: z.string().optional(),
+      teamBId: z.string().optional(),
+    })
     .parse(req.body);
-  const file = uploadedFilePath(input.imageUrl);
-  const mediaType = file && mediaTypeOf(file);
-  if (!file || !mediaType) throw notFound("Uploaded image");
-
-  const teamIds = [input.teamAId, input.teamBId].filter((x): x is string => Boolean(x));
-  const [allTeams, players] = await Promise.all([
-    prisma.team.findMany({ select: { id: true, name: true, tag: true } }),
-    prisma.player.findMany({
-      where: teamIds.length ? { teamId: { in: teamIds } } : {},
-      select: { id: true, name: true, nickname: true, teamId: true },
-      take: 500,
-    }),
-  ]);
-  const teamName = (id?: string) => allTeams.find((t) => t.id === id)?.name;
-  const result = await imageReader.read(file, mediaType, {
-    teamA: teamName(input.teamAId),
-    teamB: teamName(input.teamBId),
-    roster: players.flatMap((p) => [p.name, p.nickname].filter((n): n is string => Boolean(n))),
+  const images = input.imageUrls.map((url) => {
+    const file = uploadedFilePath(url);
+    const mediaType = file && mediaTypeOf(file);
+    if (!file || !mediaType) throw notFound("Uploaded image");
+    return { file, mediaType };
   });
-
-  const findTeam = (name: string) =>
-    allTeams.find((t) => normalise(t.name) === normalise(name) || (t.tag && normalise(t.tag) === normalise(name)));
-  const findPlayer = (name: string) =>
-    players.find((p) => normalise(p.name) === normalise(name) || (p.nickname && normalise(p.nickname) === normalise(name)));
-
-  const teamAId = input.teamAId ?? findTeam(result.teamA.name)?.id ?? null;
-  const teamBId = input.teamBId ?? findTeam(result.teamB.name)?.id ?? null;
-  res.json({
-    raw: result,
-    suggestion: {
-      teamAId,
-      teamBId,
-      scoreA: result.teamA.score,
-      scoreB: result.teamB.score,
-      playerStats: result.players.map((p) => {
-        const match = findPlayer(p.name);
-        const sideTeam = p.side === "A" ? teamAId : p.side === "B" ? teamBId : null;
-        return {
-          readName: p.name,
-          playerId: match?.id ?? null,
-          teamId: sideTeam ?? match?.teamId ?? null,
-          kills: p.kills,
-          deaths: p.deaths,
-          assists: p.assists,
-          score: p.score,
-        };
-      }),
-      notes: result.notes,
-    },
+  const teams = await prisma.team.findMany({
+    select: { name: true, players: { select: { name: true } } },
+    orderBy: { rating: "desc" },
   });
+  const read = await imageReader.read(images, input.text, {
+    teams: teams.map((t) => ({ name: t.name, players: t.players.map((p) => p.name) })),
+  });
+  res.json({ raw: read, draft: await buildDraft(read, input.text, input.imageUrls, input) });
 });
