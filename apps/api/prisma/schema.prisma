@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// A competing team. Teams play matches and carry an Elo rating.
+model Team {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  tag       String?
+  logoUrl   String?
+  country   String?
+  rating    Int      @default(1000)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  players    Player[]
+  entries    TournamentEntry[]
+  matchesAsA Match[]           @relation("TeamA")
+  matchesAsB Match[]           @relation("TeamB")
+  matchesWon Match[]           @relation("Winner")
+  statLines  MatchPlayerStat[]
+}
+
+model Player {
+  id        String   @id @default(cuid())
+  name      String
+  nickname  String?
+  country   String?
+  role      String?
+  avatarUrl String?
+  teamId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team      Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  statLines MatchPlayerStat[]
+
+  @@index([teamId])
+}
+
+model Tournament {
+  id          String    @id @default(cuid())
+  name        String
+  game        String?
+  location    String?
+  description String?
+  status      String    @default("UPCOMING") // UPCOMING | ONGOING | COMPLETED
+  startDate   DateTime
+  endDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  entries TournamentEntry[]
+  matches Match[]
+}
+
+model TournamentEntry {
+  id           String     @id @default(cuid())
+  tournamentId String
+  teamId       String
+  placement    Int?
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  team         Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, teamId])
+}
+
+model Match {
+  id           String   @id @default(cuid())
+  tournamentId String
+  round        String?
+  teamAId      String
+  teamBId      String
+  scoreA       Int
+  scoreB       Int
+  winnerId     String? // null = draw
+  ratingDeltaA Int      @default(0)
+  ratingDeltaB Int      @default(0)
+  imageUrl     String? // screenshot of the result, kept as evidence
+  notes        String?
+  playedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  tournament Tournament        @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  teamA      Team              @relation("TeamA", fields: [teamAId], references: [id], onDelete: Cascade)
+  teamB      Team              @relation("TeamB", fields: [teamBId], references: [id], onDelete: Cascade)
+  winner     Team?             @relation("Winner", fields: [winnerId], references: [id], onDelete: Cascade)
+  playerStats MatchPlayerStat[]
+
+  @@index([playedAt])
+}
+
+/// One player's stat line in one match.
+model MatchPlayerStat {
+  id       String @id @default(cuid())
+  matchId  String
+  playerId String
+  teamId   String
+  kills    Int    @default(0)
+  deaths   Int    @default(0)
+  assists  Int    @default(0)
+  score    Int    @default(0)
+
+  match  Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, playerId])
+  @@index([playerId])
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  name       String
+  prefix     String
+  keyHash    String    @unique
+  scope      String    @default("read") // read | admin
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+}

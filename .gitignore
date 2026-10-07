@@ -1,0 +1,11 @@
+node_modules
+dist
+.next
+*.db
+*.db-journal
+.env
+.env.local
+next-env.d.ts
+e2e/screenshots
+apps/api/uploads
+*.tsbuildinfo

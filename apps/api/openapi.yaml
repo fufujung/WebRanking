@@ -1,0 +1,544 @@
+openapi: 3.0.3
+info:
+  title: Tournament Ranking API
+  version: 1.0.0
+  description: |
+    REST API for tournament stats and rankings. Use it to show your teams, players,
+    results and rankings on any other website.
+
+    **Authentication:** every `/api/v1` request needs an API key in the `X-API-Key`
+    header (or `Authorization: Bearer <key>`). Keys with scope `read` can only call
+    `GET` endpoints, so they are safe for a public website's server. Keys with scope
+    `admin` can also create, edit and delete. Create keys with `POST /api/v1/keys`
+    or `npm run key:create -- "Name" read`.
+
+    **Browser calls:** add your site's origin to `CORS_ORIGINS` on the API server.
+    Prefer calling the API from your server so the key is never exposed to visitors.
+
+    **Ratings:** each team has an Elo rating (start 1000, K = 32) recomputed from all
+    matches in date order whenever a result is added, edited or deleted.
+
+    **Errors** are JSON: `{ "error": "message", "details": ... }`.
+servers:
+  - url: http://localhost:4000
+security:
+  - ApiKey: []
+tags:
+  - name: Rankings
+  - name: Teams
+  - name: Players
+  - name: Tournaments
+  - name: Matches
+  - name: Stats
+  - name: Images
+  - name: API keys
+paths:
+  /api/v1/rankings/teams:
+    get:
+      tags: [Rankings]
+      summary: Team ranking by Elo rating
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+        - { name: minMatches, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        "200":
+          description: Ranked teams
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: "#/components/schemas/Team"
+                            - type: object
+                              properties:
+                                rank: { type: integer }
+                                stats: { $ref: "#/components/schemas/TeamStats" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/rankings/players:
+    get:
+      tags: [Rankings]
+      summary: Player ranking by a chosen stat
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+        - name: sort
+          in: query
+          schema: { type: string, enum: [score, kills, kda, wins, winRate, avgScore, assists], default: score }
+        - { name: minMatches, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: teamId, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Ranked players
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      sort: { type: string }
+                      data:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: "#/components/schemas/Player"
+                            - type: object
+                              properties:
+                                rank: { type: integer }
+                                stats: { $ref: "#/components/schemas/PlayerStats" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/teams:
+    get:
+      tags: [Teams]
+      summary: List or search teams (use for team dropdowns)
+      parameters:
+        - $ref: "#/components/parameters/search"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200":
+          description: Teams
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: "#/components/schemas/Team" } }
+    post:
+      tags: [Teams]
+      summary: Create a team (admin)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TeamInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Team" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: A team with this name already exists }
+  /api/v1/teams/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [Teams]
+      summary: Team profile with roster, stats, tournaments and recent matches
+      responses:
+        "200": { description: Team detail }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Teams]
+      summary: Update a team (admin)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TeamInput" } } }
+      responses:
+        "200": { description: Updated }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Teams]
+      summary: Delete a team and its matches (admin)
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/players:
+    get:
+      tags: [Players]
+      summary: List or search players
+      parameters:
+        - $ref: "#/components/parameters/search"
+        - { name: teamId, in: query, schema: { type: string } }
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200": { description: Players }
+    post:
+      tags: [Players]
+      summary: Create a player (admin)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PlayerInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Player" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/v1/players/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [Players]
+      summary: Player profile with career stats and recent stat lines
+      responses:
+        "200": { description: Player detail }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Players]
+      summary: Update a player, e.g. move to another team (admin)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PlayerInput" } } }
+      responses:
+        "200": { description: Updated }
+    delete:
+      tags: [Players]
+      summary: Delete a player (admin)
+      responses:
+        "204": { description: Deleted }
+  /api/v1/tournaments:
+    get:
+      tags: [Tournaments]
+      summary: List or search tournaments
+      parameters:
+        - $ref: "#/components/parameters/search"
+        - { name: status, in: query, schema: { type: string, enum: [UPCOMING, ONGOING, COMPLETED] } }
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200": { description: Tournaments }
+    post:
+      tags: [Tournaments]
+      summary: Create a tournament (admin)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TournamentInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Tournament" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/v1/tournaments/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [Tournaments]
+      summary: Tournament with teams, matches and standings table
+      responses:
+        "200": { description: Tournament detail }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Tournaments]
+      summary: Update a tournament (admin)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TournamentInput" } } }
+      responses:
+        "200": { description: Updated }
+    delete:
+      tags: [Tournaments]
+      summary: Delete a tournament and its matches (admin)
+      responses:
+        "204": { description: Deleted }
+  /api/v1/tournaments/{id}/entries:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Tournaments]
+      summary: Register a team or set its final placement (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [teamId]
+              properties:
+                teamId: { type: string }
+                placement: { type: integer, minimum: 1, nullable: true }
+      responses:
+        "201": { description: Entry saved }
+  /api/v1/tournaments/{id}/entries/{teamId}:
+    parameters:
+      - $ref: "#/components/parameters/id"
+      - { name: teamId, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [Tournaments]
+      summary: Remove a team that has no matches (admin)
+      responses:
+        "204": { description: Removed }
+        "409": { description: Team already has matches in this tournament }
+  /api/v1/matches:
+    get:
+      tags: [Matches]
+      summary: List matches, newest first
+      parameters:
+        - { name: tournamentId, in: query, schema: { type: string } }
+        - { name: teamId, in: query, schema: { type: string } }
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+      responses:
+        "200": { description: Matches }
+    post:
+      tags: [Matches]
+      summary: Record a match result with optional player stat lines (admin)
+      description: Both teams are registered in the tournament automatically. The winner is the team with the higher score; equal scores are a draw.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MatchInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Match" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/matches/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [Matches]
+      summary: Match with player stat lines
+      responses:
+        "200": { description: Match, content: { application/json: { schema: { $ref: "#/components/schemas/Match" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Matches]
+      summary: Replace a match result and its stat lines (admin)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MatchInput" } } }
+      responses:
+        "200": { description: Updated }
+    delete:
+      tags: [Matches]
+      summary: Delete a match (admin)
+      responses:
+        "204": { description: Deleted }
+  /api/v1/stats/overview:
+    get:
+      tags: [Stats]
+      summary: Totals, top teams, recent matches and upcoming tournaments
+      responses:
+        "200": { description: Overview }
+  /api/v1/stats/search:
+    get:
+      tags: [Stats]
+      summary: Search teams, players and tournaments at once
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Search results }
+  /api/v1/uploads:
+    post:
+      tags: [Images]
+      summary: Upload an image (admin)
+      description: PNG, JPEG, WebP or GIF up to 8 MB. Use the returned url as a team logo, player avatar or match screenshot.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image: { type: string, format: binary }
+      responses:
+        "201":
+          description: Uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, example: /uploads/1700000000000-abc123.png }
+  /api/v1/extract/status:
+    get:
+      tags: [Images]
+      summary: Whether reading results from images is configured
+      responses:
+        "200": { description: "{ enabled: boolean }" }
+  /api/v1/extract/match:
+    post:
+      tags: [Images]
+      summary: Read a match result from an uploaded screenshot (admin)
+      description: Returns a suggested result for review. Nothing is saved. Needs ANTHROPIC_API_KEY on the server; returns 503 otherwise.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageUrl]
+              properties:
+                imageUrl: { type: string }
+                teamAId: { type: string }
+                teamBId: { type: string }
+      responses:
+        "200": { description: Suggested result }
+        "503": { description: Image reading not configured }
+  /api/v1/keys:
+    get:
+      tags: [API keys]
+      summary: List API keys (admin)
+      responses:
+        "200": { description: Keys (secrets are never returned) }
+    post:
+      tags: [API keys]
+      summary: Create an API key (admin). The key is shown only once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, example: My main website }
+                scope: { type: string, enum: [read, admin], default: read }
+      responses:
+        "201": { description: Created }
+  /api/v1/keys/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    delete:
+      tags: [API keys]
+      summary: Revoke an API key (admin)
+      responses:
+        "204": { description: Revoked }
+components:
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  parameters:
+    id: { name: id, in: path, required: true, schema: { type: string } }
+    search: { name: search, in: query, schema: { type: string }, description: Case-insensitive name search }
+    limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+    offset: { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+  responses:
+    BadRequest: { description: Invalid input, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Unauthorized: { description: Missing or invalid API key, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Forbidden: { description: Read-only key used for a write, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        details: {}
+    Page:
+      type: object
+      properties:
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+    Team:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        tag: { type: string, nullable: true }
+        logoUrl: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        rating: { type: integer }
+    TeamInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 100 }
+        tag: { type: string, maxLength: 12, nullable: true }
+        logoUrl: { type: string, nullable: true, description: http(s) URL or /uploads/... path }
+        country: { type: string, nullable: true }
+    TeamStats:
+      type: object
+      properties:
+        matches: { type: integer }
+        wins: { type: integer }
+        losses: { type: integer }
+        draws: { type: integer }
+        winRate: { type: number, description: Percent }
+        pointsFor: { type: integer }
+        pointsAgainst: { type: integer }
+        titles: { type: integer }
+    Player:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        nickname: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        role: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        teamId: { type: string, nullable: true }
+        team: { $ref: "#/components/schemas/Team" }
+    PlayerInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        nickname: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        role: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        teamId: { type: string, nullable: true }
+    PlayerStats:
+      type: object
+      properties:
+        matches: { type: integer }
+        wins: { type: integer }
+        losses: { type: integer }
+        draws: { type: integer }
+        winRate: { type: number }
+        kills: { type: integer }
+        deaths: { type: integer }
+        assists: { type: integer }
+        score: { type: integer }
+        kda: { type: number, description: (kills + assists) / max(1, deaths) }
+        avgScore: { type: number }
+    Tournament:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        game: { type: string, nullable: true }
+        location: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        status: { type: string, enum: [UPCOMING, ONGOING, COMPLETED] }
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time, nullable: true }
+    TournamentInput:
+      type: object
+      required: [name, startDate]
+      properties:
+        name: { type: string }
+        game: { type: string, nullable: true }
+        location: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        status: { type: string, enum: [UPCOMING, ONGOING, COMPLETED] }
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time, nullable: true }
+    PlayerStatInput:
+      type: object
+      required: [playerId]
+      properties:
+        playerId: { type: string }
+        teamId: { type: string, description: Defaults to the player's current team; must be one of the two match teams }
+        kills: { type: integer, minimum: 0 }
+        deaths: { type: integer, minimum: 0 }
+        assists: { type: integer, minimum: 0 }
+        score: { type: integer, minimum: 0 }
+    MatchInput:
+      type: object
+      required: [tournamentId, teamAId, teamBId, scoreA, scoreB]
+      properties:
+        tournamentId: { type: string }
+        teamAId: { type: string }
+        teamBId: { type: string }
+        scoreA: { type: integer, minimum: 0 }
+        scoreB: { type: integer, minimum: 0 }
+        round: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+        imageUrl: { type: string, nullable: true, description: Screenshot of the result }
+        playedAt: { type: string, format: date-time }
+        playerStats: { type: array, items: { $ref: "#/components/schemas/PlayerStatInput" } }
+    Match:
+      type: object
+      properties:
+        id: { type: string }
+        tournamentId: { type: string }
+        round: { type: string, nullable: true }
+        teamAId: { type: string }
+        teamBId: { type: string }
+        scoreA: { type: integer }
+        scoreB: { type: integer }
+        winnerId: { type: string, nullable: true, description: null means draw }
+        ratingDeltaA: { type: integer }
+        ratingDeltaB: { type: integer }
+        imageUrl: { type: string, nullable: true }
+        playedAt: { type: string, format: date-time }
+        teamA: { $ref: "#/components/schemas/Team" }
+        teamB: { $ref: "#/components/schemas/Team" }

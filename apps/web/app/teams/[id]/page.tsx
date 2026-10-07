@@ -1,0 +1,108 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { apiOrNull } from "@/lib/api";
+import type { TeamDetail } from "@/lib/types";
+import { fmtDate } from "@/lib/format";
+import { Avatar, Delta, Empty, PlayerLink, Result, StatTile, StatusBadge, TeamLink } from "@/components/ui";
+
+export default async function TeamPage({ params }: { params: Promise<{ id: string }> }) {
+  const team = await apiOrNull<TeamDetail>(`/teams/${encodeURIComponent((await params).id)}`);
+  if (!team) notFound();
+  const s = team.stats;
+  return (
+    <>
+      <div className="page-head">
+        <div className="row">
+          <Avatar src={team.logoUrl} name={team.tag || team.name} size="lg" />
+          <div>
+            <h1>{team.name}</h1>
+            <span className="muted">{[team.tag, team.country].filter(Boolean).join(" · ") || " "}</span>
+          </div>
+        </div>
+        <div className="right">
+          <div className="stat-value">#{team.rank}</div>
+          <div className="muted small">Rating {team.rating}</div>
+        </div>
+      </div>
+
+      <div className="grid grid-4">
+        <StatTile label="แข่ง" value={s.matches} />
+        <StatTile label="ชนะ / แพ้ / เสมอ" value={`${s.wins} / ${s.losses} / ${s.draws}`} />
+        <StatTile label="อัตราชนะ" value={`${s.winRate}%`} />
+        <StatTile label="แชมป์ / ติดโพเดียม" value={`${s.titles ?? 0} / ${s.podiums ?? 0}`} />
+      </div>
+
+      <h2 className="mt">ผู้เล่นในทีม</h2>
+      {team.players.length === 0 ? (
+        <Empty>ยังไม่มีผู้เล่น</Empty>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr><th>ผู้เล่น</th><th>ตำแหน่ง</th><th className="num">แข่ง</th><th className="num">K / D / A</th><th className="num">KDA</th><th className="num">คะแนนเฉลี่ย</th></tr>
+            </thead>
+            <tbody>
+              {team.players.map((p) => (
+                <tr key={p.id}>
+                  <td><PlayerLink player={p} /></td>
+                  <td className="muted">{p.role ?? "-"}</td>
+                  <td className="num">{p.stats.matches}</td>
+                  <td className="num">{p.stats.kills} / {p.stats.deaths} / {p.stats.assists}</td>
+                  <td className="num"><strong>{p.stats.kda.toFixed(2)}</strong></td>
+                  <td className="num">{p.stats.avgScore}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="grid grid-2 mt">
+        <section>
+          <h2>แมตช์ล่าสุด</h2>
+          {team.recentMatches.length === 0 ? (
+            <Empty>ยังไม่มีแมตช์</Empty>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>ผล</th><th>คู่แข่ง</th><th className="num">สกอร์</th><th className="num">Rating</th></tr></thead>
+                <tbody>
+                  {team.recentMatches.map((m) => {
+                    const isA = m.teamAId === team.id;
+                    const opp = isA ? m.teamB : m.teamA;
+                    return (
+                      <tr key={m.id}>
+                        <td><Link href={`/matches/${m.id}`}><Result match={m} teamId={team.id} /></Link></td>
+                        <td><TeamLink team={opp} /><div className="muted small">{m.tournament.name}</div></td>
+                        <td className="num"><Link href={`/matches/${m.id}`}>{isA ? `${m.scoreA} : ${m.scoreB}` : `${m.scoreB} : ${m.scoreA}`}</Link></td>
+                        <td className="num"><Delta value={isA ? m.ratingDeltaA : m.ratingDeltaB} /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+        <section>
+          <h2>ทัวร์นาเมนต์</h2>
+          {team.tournaments.length === 0 ? (
+            <Empty>ยังไม่เคยลงแข่ง</Empty>
+          ) : (
+            <div className="stack">
+              {team.tournaments.map(({ tournament: t, placement }) => (
+                <Link key={t.id} href={`/tournaments/${t.id}`} className="card card-link row between">
+                  <span><strong>{t.name}</strong><br /><span className="muted small">{fmtDate(t.startDate)}</span></span>
+                  <span className="row">
+                    {placement && <span className={`badge ${placement === 1 ? "badge-accent" : ""}`}>อันดับ {placement}</span>}
+                    <StatusBadge status={t.status} />
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </>
+  );
+}
