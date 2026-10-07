@@ -22,7 +22,7 @@ function safeEqual(a: string, b: string) {
 
 export function passwordMatches(input: string) {
   const expected = process.env.ADMIN_PASSWORD;
-  return Boolean(expected) && safeEqual(sign(input), sign(expected!));
+  return Boolean(expected) && safeEqual(sign(input.trim()), sign(expected!.trim()));
 }
 
 export async function startSession() {
