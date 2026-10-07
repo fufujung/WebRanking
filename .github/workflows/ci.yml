@@ -33,3 +33,15 @@ jobs:
           name: e2e-screenshots
           path: e2e/screenshots
           if-no-files-found: ignore
+
+  # Same steps Bank uses on Windows: download, `npm run setup`, then start.
+  windows-setup:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm run setup
+      - run: npm test
+      - run: npm run build
