@@ -87,6 +87,17 @@ await page.screenshot({ path: OUT + "/mobile-rankings.png", fullPage: true });
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
 console.log("mobile horizontal overflow:", overflow);
 
+// Dark is the default; the toggle switches to light and the choice survives a reload.
+const bodyBg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+if ((await bodyBg()) !== "rgb(13, 13, 15)") throw new Error("dark theme is not the default");
+await page.click(".theme-toggle");
+await page.reload();
+if ((await bodyBg()) !== "rgb(255, 255, 255)") throw new Error("light theme not kept after reload");
+await page.click(".theme-toggle");
+await page.reload();
+if ((await bodyBg()) !== "rgb(13, 13, 15)") throw new Error("could not switch back to dark");
+step("theme toggle: dark by default, light kept after reload, back to dark");
+
 
 console.log("— Admin flows");
 await page.setViewportSize({ width: 1280, height: 900 });

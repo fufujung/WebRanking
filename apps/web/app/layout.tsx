@@ -5,7 +5,9 @@ import "@fontsource/ibm-plex-sans-thai-looped/700.css";
 import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { isAdmin } from "@/lib/auth";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export const metadata: Metadata = {
   title: { default: "Tournament Ranking", template: "%s · Tournament Ranking" },
@@ -14,8 +16,9 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const admin = await isAdmin();
+  const theme = (await cookies()).get("theme")?.value === "light" ? "light" : "dark";
   return (
-    <html lang="th">
+    <html lang="th" data-theme={theme === "light" ? "light" : undefined}>
       <body>
         <header className="header">
           <div className="container header-inner">
@@ -32,10 +35,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/matches">ผลการแข่ง</Link>
               <Link href="/admin">{admin ? "จัดการข้อมูล" : "เข้าสู่ระบบ"}</Link>
             </nav>
+            <div className="header-tools">
             <form action="/search" className="header-search" role="search">
-              <input name="q" placeholder="ค้นหาทีม ผู้เล่น ทัวร์นาเมนต์" aria-label="ค้นหา" />
+              <input name="q" placeholder="ค้นหาทีม ผู้เล่น…" aria-label="ค้นหาทีม ผู้เล่น ทัวร์นาเมนต์" />
               <button className="btn btn-primary" type="submit">ค้นหา</button>
             </form>
+            <ThemeToggle initial={theme} />
+            </div>
           </div>
         </header>
         <main className="container">{children}</main>
