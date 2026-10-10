@@ -12,6 +12,9 @@ export class ApiError extends Error {
 export interface Api {
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body: unknown): Promise<T>;
+  put<T>(path: string, body: unknown): Promise<T>;
+  patch<T>(path: string, body: unknown): Promise<T>;
+  delete(path: string): Promise<void>;
   upload(file: Uint8Array<ArrayBuffer>, filename: string, contentType: string): Promise<string>;
 }
 
@@ -39,6 +42,11 @@ export function createApi(baseUrl: string, key: string, fetchImpl: typeof fetch 
   return {
     get: (path) => call(path),
     post: (path, body) => call(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    put: (path, body) => call(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    patch: (path, body) => call(path, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    delete: async (path) => {
+      await call(path, { method: "DELETE" });
+    },
     async upload(file, filename, contentType) {
       const form = new FormData();
       form.append("image", new Blob([file], { type: contentType }), filename);
@@ -59,6 +67,8 @@ function safeJson(text: string): unknown {
 /** Thai wording for the API errors a Discord admin can run into. */
 export function thaiError(e: unknown): string {
   if (!(e instanceof ApiError)) return "เกิดข้อผิดพลาด ลองใหม่อีกครั้ง";
+  const th = (e.details as { th?: unknown } | undefined)?.th;
+  if (typeof th === "string") return th;
   const known: Record<string, string> = {
     "Image reading is not configured. Set ANTHROPIC_API_KEY on the API server, or type the result in manually.":
       "ยังไม่ได้ใส่คีย์ AI (ANTHROPIC_API_KEY ในไฟล์ apps/api/.env) บอทเลยอ่านรูปไม่ได้",

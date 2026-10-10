@@ -25,6 +25,8 @@ export interface Pending {
   status: "pending" | "saved" | "discarded";
   matchId: string | null;
   createdAt: number;
+  /** Set when the post was made in a bracket match room. */
+  bracket?: { tournamentId: string; slotId: string; posterTeamId: string | null };
 }
 
 export interface Attachment {
@@ -62,7 +64,12 @@ export const downloadWithFetch: Download = async (url) => {
  * Reads a result post: copies its screenshots to the website (so they are kept
  * as evidence) and asks the API to read them together with the post text.
  */
-export async function readPost(api: Api, post: { content: string; attachments: Attachment[] }, download: Download = downloadWithFetch): Promise<Draft | null> {
+export async function readPost(
+  api: Api,
+  post: { content: string; attachments: Attachment[] },
+  download: Download = downloadWithFetch,
+  teams?: { teamAId: string; teamBId: string },
+): Promise<Draft | null> {
   const images = imageAttachments(post.attachments);
   if (!images.length) return null;
   const urls: string[] = [];
@@ -71,7 +78,7 @@ export async function readPost(api: Api, post: { content: string; attachments: A
     const data = await download(img.url);
     urls.push(await api.upload(data, img.name, img.mediaType));
   }
-  const res = await api.post<{ draft: Draft }>("/extract/series", { imageUrls: urls, text: post.content.slice(0, 2000) });
+  const res = await api.post<{ draft: Draft }>("/extract/series", { imageUrls: urls, text: post.content.slice(0, 2000), ...teams });
   return res.draft;
 }
 
