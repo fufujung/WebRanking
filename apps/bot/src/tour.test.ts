@@ -77,6 +77,11 @@ class FakeMessage {
     if (payload.embeds) this.embeds = payload.embeds.map((e: any) => ({ toJSON: () => (typeof e.toJSON === "function" ? e.toJSON() : e) }));
     if (payload.components) this.components = payload.components.map((c: any) => (typeof c.toJSON === "function" ? c.toJSON() : c));
     if (payload.allowedMentions) this.allowedMentions = payload.allowedMentions;
+    if (payload.files) {
+      this.attachments = new Map(
+        payload.files.map((f: any, i: number) => [`f${i}`, { url: `https://cdn.discord.test/${this.id}/${f.name}`, name: f.name, contentType: "image/png", size: f.attachment.length }]),
+      );
+    }
   }
   get embed() {
     return this.embeds[0]?.toJSON();
@@ -290,6 +295,15 @@ function submitForm(customId: string, userId: string, channelId: string, values:
   return i;
 }
 
+/** The result form: the winner picked, the score typed and the screenshots uploaded. */
+function submitResult(customId: string, userId: string, channelId: string, winner: "A" | "B" | null, score: string, shots: { name: string; contentType: string; size?: number }[]) {
+  const i: any = submitForm(customId, userId, channelId, { score });
+  i.fields.getStringSelectValues = () => (winner ? [winner] : []);
+  i.fields.getUploadedFiles = () =>
+    shots.length ? new Map(shots.map((f, n) => [`u${n}`, { url: `https://cdn.discord.test/upload/${f.name}`, name: f.name, contentType: f.contentType, size: f.size ?? PNG.length }])) : null;
+  return i;
+}
+
 /** Every input of a modal, by custom id: its label and value (or default users). */
 function formFields(modal: any) {
   const out: Record<string, { label: string; value?: string; users?: string[]; type: number }> = {};
@@ -321,6 +335,15 @@ function readerReturns(games: { ally: string[]; rival: string[]; a: number; r: n
       ],
     })),
   });
+}
+
+/** The website has no AI key: reading screenshots fails as it does for real. */
+function readerOff() {
+  imageReader.enabled = () => false;
+  imageReader.read = async () => {
+    const { HttpError } = await import("../../api/src/lib/errors.js");
+    throw new HttpError(503, "Image reading is not configured. Set ANTHROPIC_API_KEY on the API server, or type the result in manually.");
+  };
 }
 
 /** A Bangkok-time string for a moment `minutes` from now, as an organizer would type it. */
@@ -626,7 +649,7 @@ describe("a whole tournament from Discord", () => {
     assert.ok(header.pinned);
     assert.match(header.embed.title, /M1 · สายบน รอบ 1 · Bo3/);
     assert.match(JSON.stringify(header.embed.fields), /Red One/);
-    assert.deepEqual(header.buttons.map((x: any) => x.custom_id.split(":")[1]), ["tci", "two", "tdp", "tad"]);
+    assert.deepEqual(header.buttons.map((x: any) => x.custom_id.split(":")[1]), ["tci", "tsr", "two", "tdp", "tad"]);
     assert.match(header.content, new RegExp(`<@${captain(0)}>`));
     assert.ok(announce().texts.some((t) => /เริ่มแข่งแล้ว/.test(t)));
 
@@ -923,5 +946,143 @@ describe("single elimination with byes and reminders", () => {
     const tac2 = command("tour", "winner", { focused: "team", value: "red", tournament: tid }, OWNER);
     await bot.onAutocomplete(tac2);
     assert.deepEqual(last<any>(tac2.replies).map((c: any) => c.name), ["Red B"]);
+  });
+});
+
+describe("the result form in a match room", () => {
+  let tid: string;
+  let b: any;
+  const roomOf = (slotId: string) => channels.get(bot.tour.tours.get(tid)!.rooms[slotId].channelId)!;
+  const png = (name: string) => ({ name, contentType: "image/png" });
+
+  test("a team picks the winner, types the score and attaches the screenshots; they are posted in the room", async () => {
+    const create = command("tour", "create", { name: "Form Cup", format: "SINGLE_ELIMINATION", start: bkk(60 * 24), roster_min: 1, roster_max: 3 });
+    await bot.onCommand(create);
+    tid = bot.tour.toursIn(GUILD)[0].tournamentId;
+    for (const t of [0, 1, 2, 3]) await bot.onCommand(command("register", null, { team: `${TEAMS[t]} F`, player1: roster(t)[0], player2: roster(t)[1], tournament: tid }, captain(t)));
+    await bot.onCommand(command("tour", "seed", { method: "rating", tournament: tid }, OWNER));
+    await bot.onCommand(command("tour", "start", { tournament: tid }, OWNER));
+    b = await api.get<any>(`/tournaments/${tid}/bracket`);
+    const m = b.matches.find((x: any) => x.code === "W1-0");
+    const room = roomOf(m.id);
+    const header = room.sent[0];
+    assert.equal(header.buttons[1].custom_id, `tr:tsr:${tid}:${m.id}`);
+    assert.match(header.buttons[1].label, /ส่งผลการแข่ง/);
+    assert.match(JSON.stringify(header.embed.fields), /ส่งผลการแข่ง/);
+    const [a, z] = [m.teamA, m.teamB];
+    const memberOf = (team: any) => roster(TEAMS.findIndex((n) => `${n} F` === team.name))[1];
+
+    const outsider = press(`tr:tsr:${tid}:${m.id}`, person(98), header);
+    await bot.onButton(outsider);
+    assert.match(text(last(outsider.replies)), /เฉพาะผู้เล่นของสองทีมนี้หรือผู้จัด/);
+    assert.equal(outsider.modal, null);
+
+    const open = press(`tr:tsr:${tid}:${m.id}`, memberOf(a), header);
+    await bot.onButton(open);
+    assert.equal(open.modal.custom_id, `tr:tsm:${tid}:${m.id}`);
+    const [win, score, shots] = open.modal.components.map((c: any) => c.component);
+    assert.deepEqual([win.custom_id, score.custom_id, shots.custom_id], ["winner", "score", "shots"]);
+    assert.deepEqual(win.options.map((o: any) => [o.value, o.label]), [["A", a.name], ["B", z.name]]);
+    assert.equal(shots.type, 19, "a file upload");
+
+    const id = open.modal.custom_id;
+    const tries: [string, "A" | "B" | null, string, any[], RegExp][] = [
+      [memberOf(a), "A", "3-0", [png("g1.png")], /Bo3/],
+      [memberOf(a), "A", "1-2", [png("g1.png")], /ชนะ/],
+      [memberOf(a), "A", "สองหนึ่ง", [png("g1.png")], /สกอร์/],
+      [memberOf(a), "A", "2-1", [], /แนบรูป/],
+      [memberOf(a), "A", "2-1", [{ name: "notes.txt", contentType: "text/plain" }], /แนบรูป/],
+      [memberOf(a), "A", "2-1", [{ ...png("big.png"), size: 9 * 1024 * 1024 }], /8 MB/],
+      [person(98), "A", "2-1", [png("g1.png")], /เฉพาะผู้เล่น/],
+    ];
+    for (const [user, w, sc, files, re] of tries) {
+      const bad = submitResult(id, user, room.id, w, sc, files);
+      await bot.onModal(bad);
+      assert.match(text(last(bad.replies)), re, `${sc} ${JSON.stringify(files)}`);
+    }
+    assert.equal(room.sent.length, 1, "nothing posted for a bad form");
+
+    // The screenshots can't be read (no image reader on the website): the typed score still counts.
+    readerOff();
+    const ok = submitResult(id, memberOf(a), room.id, "A", "2 - 1", [png("g1.png"), png("g2.png"), png("g3.png")]);
+    await bot.onModal(ok);
+    assert.equal(ok.deferred, true);
+    assert.match(text(last(ok.replies)), /ส่งผลแล้ว รออีกทีม/, JSON.stringify(ok.replies));
+    const post = last(room.sent);
+    assert.match(post.content!, new RegExp(`<@${memberOf(a)}> \\(ทีม ${a.name}\\) ส่งผล M1`));
+    assert.match(post.content!, new RegExp(`${a.name} 2-1 ${z.name}.*🏆 ${a.name} ชนะ`));
+    assert.deepEqual([...post.attachments.values()].map((x: any) => x.name), ["g1.png", "g2.png", "g3.png"], "the screenshots are in the room");
+    assert.deepEqual(post.allowedMentions, { parse: [] });
+    const preview = post.replies[0];
+    assert.equal(preview.embed.title, `📋 ${a.name} 2 - 1 ${z.name}`);
+    assert.match(JSON.stringify(preview.embed), /อ่านสถิติจากรูปไม่ได้/);
+
+    const own = press(`tr:save:${post.id}`, captain(TEAMS.findIndex((n) => `${n} F` === a.name)), preview);
+    await bot.onButton(own);
+    assert.match(text(last(own.replies)), /ยืนยันผลได้เฉพาะอีกทีม/, "the sender's team can't confirm, although the bot posted it");
+    const confirm = press(`tr:save:${post.id}`, memberOf(z), preview);
+    await bot.onButton(confirm);
+    assert.match(text(last(confirm.replies)), new RegExp(`บันทึกแล้ว: ${a.name} 2 - 1 ${z.name}`), JSON.stringify(confirm.replies));
+    b = await api.get<any>(`/tournaments/${tid}/bracket`);
+    const done = b.matches.find((x: any) => x.code === "W1-0");
+    assert.deepEqual([done.status, done.winnerId, done.scoreA, done.scoreB], ["DONE", a.id, 2, 1]);
+    const saved = await api.get<any>(`/matches/${done.matchId}`);
+    assert.ok(saved.imageUrl, "a screenshot is kept as evidence");
+
+    const late = press(`tr:tsr:${tid}:${m.id}`, memberOf(z), header);
+    await bot.onButton(late);
+    assert.match(text(last(late.replies)), /มีผลแล้ว|ส่งผลได้/);
+    assert.equal(late.modal, null);
+  });
+
+  test("the typed score wins over what is read from the screenshots, with a warning", async () => {
+    const m = b.matches.find((x: any) => x.code === "W1-1");
+    const room = roomOf(m.id);
+    const [a, z] = [m.teamA, m.teamB];
+    const players = (team: any) => { const t = TEAMS.findIndex((n) => `${n} F` === team.name); return [`${TEAMS[t]}1`, `${TEAMS[t]}2`]; };
+    // The reader sees one game each way; the team says B won 2-1.
+    readerReturns([
+      { ally: players(a), rival: players(z), a: 21, r: 10 },
+      { ally: players(a), rival: players(z), a: 10, r: 21 },
+    ]);
+    const zMember = roster(TEAMS.findIndex((n) => `${n} F` === z.name))[1];
+    const form = submitResult(`tr:tsm:${tid}:${m.id}`, zMember, room.id, "B", "1-2", [png("a.png"), png("b.png")]);
+    await bot.onModal(form);
+    const post = last(room.sent);
+    const preview = post.replies[0];
+    assert.equal(preview.embed.title, `📋 ${a.name} 1 - 2 ${z.name}`);
+    assert.match(JSON.stringify(preview.embed), /สกอร์ที่ทีมแจ้ง 1-2 ไม่ตรงกับที่อ่านจากรูป 1-1/);
+
+    // Reading again keeps the typed score and who sent it.
+    const reread = press(`tr:reread:${post.id}`, OWNER, preview);
+    await bot.onButton(reread);
+    assert.equal(preview.embed.title, `📋 ${a.name} 1 - 2 ${z.name}`);
+    const own = press(`tr:save:${post.id}`, zMember, preview);
+    await bot.onButton(own);
+    assert.match(text(last(own.replies)), /ยืนยันผลได้เฉพาะอีกทีม/);
+
+    const org = press(`tr:save:${post.id}`, OWNER, preview);
+    await bot.onButton(org);
+    assert.match(text(last(org.replies)), /บันทึกแล้ว/, JSON.stringify(org.replies));
+    const done = (await api.get<any>(`/tournaments/${tid}/bracket`)).matches.find((x: any) => x.code === "W1-1");
+    assert.deepEqual([done.winnerId, done.scoreA, done.scoreB], [z.id, 1, 2]);
+    const saved = await api.get<any>(`/matches/${done.matchId}`);
+    assert.ok(saved.players.length > 0, "the stats that were read are kept");
+  });
+
+  test("organizers can send the result for a team", async () => {
+    b = await api.get<any>(`/tournaments/${tid}/bracket`);
+    const m = b.matches.find((x: any) => x.code === "W2-0");
+    const room = roomOf(m.id);
+    readerOff();
+    const form = submitResult(`tr:tsm:${tid}:${m.id}`, OWNER, room.id, "B", "0-2", [png("final.png")]);
+    await bot.onModal(form);
+    assert.match(text(last(form.replies)), /ส่งผลแล้ว/, JSON.stringify(form.replies));
+    assert.match(last(room.sent).content!, /\(ผู้จัด\)/);
+    const preview = last(room.sent).replies[0];
+    const confirm = press(`tr:save:${last(room.sent).id}`, roster(TEAMS.findIndex((n) => `${n} F` === m.teamA.name))[0], preview);
+    await bot.onButton(confirm);
+    assert.match(text(last(confirm.replies)), /บันทึกแล้ว/, JSON.stringify(confirm.replies));
+    assert.equal((await api.get<any>(`/tournaments/${tid}/bracket`)).status, "DONE");
   });
 });

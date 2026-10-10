@@ -176,7 +176,7 @@ export function roomEmbed(b: Bracket, m: BracketMatch): APIEmbed {
   if (bb) fields.push({ name: `🔴 ${bb.name}`, value: `${rosterLines(bb)}\n${checkInLine(m.checkInB, m.deadline)}`, inline: true });
   fields.push({
     name: "📸 วิธีส่งผล",
-    value: `แข่งครบแล้ว ส่งรูปสกอร์บอร์ดทุกเกมในห้องนี้ พร้อมพิมพ์ เช่น \`${a?.name ?? "ทีม A"} 2-1 ${bb?.name ?? "ทีม B"}\`\nบอทจะอ่านสถิติให้ แล้วให้อีกทีม (หรือผู้จัด) กด ✅ ยืนยัน`,
+    value: `แข่งครบแล้วกด 📸 **ส่งผลการแข่ง** เลือกทีมที่ชนะ ใส่สกอร์ และแนบรูปสกอร์บอร์ดทุกเกม (หรือโพสต์รูปในห้องนี้ พร้อมพิมพ์ เช่น \`${a?.name ?? "ทีม A"} 2-1 ${bb?.name ?? "ทีม B"}\`)\nบอทจะอ่านสถิติให้ แล้วให้อีกทีม (หรือผู้จัด) กด ✅ ยืนยัน`,
   });
   if (m.disputed) fields.unshift({ name: "⚠️ มีการแจ้งปัญหา", value: m.disputeNote || "รอผู้จัดตัดสิน" });
   const done = m.status === "DONE";
