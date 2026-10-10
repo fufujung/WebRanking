@@ -107,6 +107,18 @@ tournaments.post("/:id/entries", requireAdmin, async (req, res) => {
   ]);
   if (!tournament) throw notFound("Tournament");
   if (!team) throw notFound("Team");
+  const exists = await prisma.tournamentEntry.findUnique({ where: { tournamentId_teamId: { tournamentId: tournament.id, teamId: team.id } } });
+  if (!exists && (tournament.bracketStatus === "LIVE" || tournament.bracketStatus === "DONE")) {
+    throw fail(409, "The bracket has started; new teams cannot join", "เริ่มแข่งแล้ว เพิ่มทีมใหม่ไม่ได้");
+  }
+  if (!exists && tournament.bracketStatus === "DRAFT") {
+    // The seeded draft no longer has every team: it must be seeded again.
+    await prisma.$transaction([
+      prisma.bracketMatch.deleteMany({ where: { tournamentId: tournament.id } }),
+      prisma.tournamentEntry.updateMany({ where: { tournamentId: tournament.id }, data: { seed: null } }),
+      prisma.tournament.update({ where: { id: tournament.id }, data: { bracketStatus: "NONE" } }),
+    ]);
+  }
   const entry = await prisma.tournamentEntry.upsert({
     where: { tournamentId_teamId: { tournamentId: tournament.id, teamId: team.id } },
     create: { tournamentId: tournament.id, teamId: team.id, placement: input.placement ?? null },

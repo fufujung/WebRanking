@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useMemo, useState, useTransition } from "react";
-import { saveMatch, type MatchPayload } from "@/app/admin/actions";
+import { saveBracketResult, saveMatch, type FormState, type MatchPayload } from "@/app/admin/actions";
 import { STAT_KEYS, type Award, type MatchDetail, type Player, type StatKey, type Tournament } from "@/lib/types";
 import { statLabels, statusLabel, toDateTimeInput } from "@/lib/format";
 import { ImageDrop } from "../ImageDrop";
@@ -50,6 +50,20 @@ interface Props {
   players: Pick<Player, "id" | "name" | "nickname" | "teamId">[];
   defaultTournamentId?: string;
   extractEnabled: boolean;
+  /** A bracket match to record: its tournament and teams are fixed. */
+  slot?: BracketTarget;
+  /** Registered players per team id, to fill fresh scoreboards. */
+  rosters?: Record<string, { id: string; name: string }[]>;
+}
+
+export interface BracketTarget {
+  tournamentId: string;
+  id: string;
+  title: string;
+  /** The match already has a result (a walkover) that this replaces. */
+  replace: boolean;
+  teamA: { id: string; name: string };
+  teamB: { id: string; name: string };
 }
 
 let nextKey = 1;
@@ -66,16 +80,18 @@ const decimal = (s: string) => s.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1
 
 const STATUS_ORDER = { ONGOING: 0, UPCOMING: 1, COMPLETED: 2 } as const;
 
-export function MatchForm({ match, tournaments: allTournaments, teams, players, defaultTournamentId, extractEnabled }: Props) {
+export function MatchForm({ match, tournaments: allTournaments, teams, players, defaultTournamentId, extractEnabled, slot, rosters }: Props) {
+  // Bracket series: the bracket decides the tournament and the teams.
+  const locked = Boolean(slot || match?.bracketSlot);
   // Running tournaments first: that is where results are usually entered.
   const tournaments = useMemo(
     () => [...allTournaments].sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]),
     [allTournaments],
   );
   const listId = useId();
-  const [tournamentId, setTournamentId] = useState(match?.tournamentId ?? defaultTournamentId ?? tournaments[0]?.id ?? "");
-  const [teamA, setTeamA] = useState<TeamChoice>({ id: match?.teamAId ?? null, newName: "" });
-  const [teamB, setTeamB] = useState<TeamChoice>({ id: match?.teamBId ?? null, newName: "" });
+  const [tournamentId, setTournamentId] = useState(slot?.tournamentId ?? match?.tournamentId ?? defaultTournamentId ?? tournaments[0]?.id ?? "");
+  const [teamA, setTeamA] = useState<TeamChoice>({ id: slot?.teamA.id ?? match?.teamAId ?? null, newName: "" });
+  const [teamB, setTeamB] = useState<TeamChoice>({ id: slot?.teamB.id ?? match?.teamBId ?? null, newName: "" });
   // Blank means "count from the games".
   const [seriesA, setSeriesA] = useState(match && !match.games.length ? String(match.scoreA) : "");
   const [seriesB, setSeriesB] = useState(match && !match.games.length ? String(match.scoreB) : "");
@@ -105,13 +121,17 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
   const [extractMsg, setExtractMsg] = useState<string[] | null>(null);
   const [reading, setReading] = useState(false);
   const [saving, startSave] = useTransition();
+  /** A save that would wipe later bracket results, waiting for a confirming click. */
+  const [forceSave, setForceSave] = useState<null | (() => Promise<FormState>)>(null);
 
-  const teamName = (c: TeamChoice, side: Side) => teams.find((t) => t.id === c.id)?.name ?? (c.newName || `ทีม ${side}`);
+  const fixedName = (id: string | null) => (slot ? [slot.teamA, slot.teamB].find((t) => t.id === id)?.name : match && id === match.teamAId ? match.teamA.name : match && id === match.teamBId ? match.teamB.name : undefined);
+  const teamName = (c: TeamChoice, side: Side) => teams.find((t) => t.id === c.id)?.name ?? fixedName(c.id) ?? (c.newName || `ทีม ${side}`);
   const known = useMemo(() => new Set(players.flatMap((p) => [p.name, p.nickname].filter((n): n is string => Boolean(n)).map(normalise))), [players]);
 
   /** The first three players of a team, for a fresh scoreboard. */
   const starters = (c: TeamChoice, side: Side) => {
-    const roster = c.id ? players.filter((p) => p.teamId === c.id).slice(0, 3) : [];
+    const registered = c.id ? rosters?.[c.id] : undefined;
+    const roster = registered?.length ? registered.slice(0, 3) : c.id ? players.filter((p) => p.teamId === c.id).slice(0, 3) : [];
     const rows = roster.map((p) => row(side, { id: p.id, name: p.name }));
     while (rows.length < 3) rows.push(row(side));
     return rows;
@@ -172,8 +192,14 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
   }
 
   function applyDraft(d: Draft) {
-    setTeamA({ id: d.teamAId, newName: d.teamAId ? "" : d.teamAName });
-    setTeamB({ id: d.teamBId, newName: d.teamBId ? "" : d.teamBName });
+    const warnings = [...d.warnings];
+    if (locked) {
+      // The bracket fixes the teams; the reader was told which ones and puts them in this order.
+      if (d.teamAId !== teamA.id || d.teamBId !== teamB.id) warnings.unshift(`ชื่อทีมในโพสต์ (${d.teamAName} / ${d.teamBName}) ไม่ตรงกับทีมในสาย ตรวจว่าสกอร์อยู่ถูกฝั่ง`);
+    } else {
+      setTeamA({ id: d.teamAId, newName: d.teamAId ? "" : d.teamAName });
+      setTeamB({ id: d.teamBId, newName: d.teamBId ? "" : d.teamBName });
+    }
     const counted = (side: Side) => d.games.filter((g) => (side === "A" ? g.scoreA > g.scoreB : g.scoreB > g.scoreA)).length;
     // Keep the series score from the post only when it differs from the games.
     setSeriesA(d.games.length && d.scoreA === counted("A") && d.scoreB === counted("B") ? "" : String(d.scoreA));
@@ -197,7 +223,7 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
     );
     if (d.notes && !notes.trim()) setNotes(d.notes);
     setShots([]);
-    setExtractMsg([`อ่านแล้ว ${d.games.length} เกม กรุณาตรวจตัวเลขก่อนบันทึก`, ...d.warnings]);
+    setExtractMsg([`อ่านแล้ว ${d.games.length} เกม กรุณาตรวจตัวเลขก่อนบันทึก`, ...warnings]);
   }
 
   const counted = {
@@ -260,8 +286,23 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
           })),
       })),
     };
+    const send = (force: boolean) =>
+      slot ? saveBracketResult(slot.tournamentId, slot.id, payload, slot.replace, force) : saveMatch(match?.id ?? null, payload, force);
+    setForceSave(null);
     startSave(async () => {
-      const res = await saveMatch(match?.id ?? null, payload);
+      const res = await send(false);
+      if (res?.error) setError(res.error);
+      if (res?.needsForce) setForceSave(() => () => send(true));
+    });
+  }
+
+  function confirmForce() {
+    const run = forceSave;
+    if (!run) return;
+    setForceSave(null);
+    setError(null);
+    startSave(async () => {
+      const res = await run();
       if (res?.error) setError(res.error);
     });
   }
@@ -269,7 +310,9 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
   const teamField = (side: Side, choice: TeamChoice, other: TeamChoice) => (
     <label>
       ทีม {side} *
-      {choice.newName && !choice.id ? (
+      {locked ? (
+        <input value={teamName(choice, side)} readOnly aria-label={`ทีม ${side}`} />
+      ) : choice.newName && !choice.id ? (
         <span className="new-team">
           <input
             value={choice.newName}
@@ -402,12 +445,16 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
         <div className="form-row">
           <label>
             ทัวร์นาเมนต์ *
-            <select value={tournamentId} onChange={(e) => setTournamentId(e.target.value)} required>
+            <select value={tournamentId} onChange={(e) => setTournamentId(e.target.value)} required disabled={locked}>
               {tournaments.length === 0 && <option value="">ยังไม่มีทัวร์นาเมนต์</option>}
               {tournaments.map((t) => <option key={t.id} value={t.id}>{t.name} ({statusLabel[t.status]})</option>)}
             </select>
           </label>
-          <label>รอบ<input value={round} onChange={(e) => setRound(e.target.value)} maxLength={60} placeholder="เช่น รอบแบ่งกลุ่ม, Final" /></label>
+          {locked ? (
+            <label>รอบ<input value={slot?.title ?? round} readOnly /></label>
+          ) : (
+            <label>รอบ<input value={round} onChange={(e) => setRound(e.target.value)} maxLength={60} placeholder="เช่น รอบแบ่งกลุ่ม, Final" /></label>
+          )}
           <label>วันเวลาแข่ง<input type="datetime-local" value={playedAt} onChange={(e) => setPlayedAt(e.target.value)} /></label>
         </div>
         <div className="form-row versus-row">
@@ -417,6 +464,7 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
           {teamField("B", teamB, teamA)}
         </div>
         <span className="muted small">ผลซีรีส์เว้นว่างได้ ระบบจะนับจากสกอร์แต่ละเกมให้ (ตอนนี้ {counted.A} - {counted.B})</span>
+        {locked && <span className="muted small">แมตช์นี้อยู่ในสายการแข่ง ทีมที่ชนะจะได้เข้ารอบถัดไปอัตโนมัติ</span>}
         <label>หมายเหตุ<textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} maxLength={1000} /></label>
       </section>
 
@@ -446,6 +494,12 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
       </div>
 
       {error && <div className="error" role="alert">{error}</div>}
+      {forceSave && (
+        <div className="row">
+          <button type="button" className="btn btn-danger" disabled={saving} onClick={confirmForce}>ยืนยันบันทึก และล้างผลแมตช์ถัดไป</button>
+          <button type="button" className="btn" onClick={() => setForceSave(null)}>ยกเลิก</button>
+        </div>
+      )}
       <div className="row">
         <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "กำลังบันทึก…" : match ? "บันทึกการแก้ไข" : "บันทึกผลการแข่ง"}</button>
       </div>

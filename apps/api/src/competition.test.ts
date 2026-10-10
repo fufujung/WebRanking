@@ -209,6 +209,22 @@ describe("seeding and starting", () => {
     const res = await call("POST", `/tournaments/${t.id}/bracket/start`);
     assert.equal(res.status, 409);
   });
+
+  test("teams an organizer adds from the website follow the same rules", async () => {
+    const t = await newTournament();
+    await registerTeam(t.id, "E1");
+    await registerTeam(t.id, "E2");
+    const extra = await ok("POST", "/teams", { name: "E3" });
+    await ok("POST", `/tournaments/${t.id}/bracket/seed`, { method: "rating" });
+    await ok("POST", `/tournaments/${t.id}/entries`, { teamId: extra.id });
+    assert.equal((await bracket(t.id)).status, "NONE", "an added team drops the draft");
+    await ok("POST", `/tournaments/${t.id}/bracket/seed`, { method: "rating" });
+    await ok("POST", `/tournaments/${t.id}/bracket/start`);
+    const late = await ok("POST", "/teams", { name: "E4" });
+    const res = await call("POST", `/tournaments/${t.id}/entries`, { teamId: late.id });
+    assert.equal(res.status, 409, "no new teams once the bracket runs");
+    assert.equal((await bracket(t.id)).teams.length, 3);
+  });
 });
 
 describe("live bracket", () => {
@@ -233,6 +249,7 @@ describe("live bracket", () => {
     const stats = await ok("GET", `/matches/${r1.matchId}`);
     assert.equal(stats.games.length, 3);
     assert.equal(stats.round, "M1 · รอบรองชนะเลิศ");
+    assert.deepEqual(stats.bracketSlot, { id: semi.id, code: semi.code, number: 1 }, "the series knows its bracket match");
     assert.equal(stats.players.find((p: any) => p.player.name === "Q1 P1").pts, 21, "stats go to the registered players");
     assert.equal(stats.teamA.rating, 1016, "Elo counts bracket results");
 

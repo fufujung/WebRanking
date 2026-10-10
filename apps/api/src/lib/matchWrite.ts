@@ -147,6 +147,8 @@ export const matchDetailInclude = {
   teamA: { select: { id: true, name: true, tag: true, logoUrl: true, rating: true } },
   teamB: { select: { id: true, name: true, tag: true, logoUrl: true, rating: true } },
   tournament: { select: { id: true, name: true } },
+  /** The bracket match this series decides, if any. */
+  bracketSlot: { select: { id: true, code: true, number: true } },
   games: {
     orderBy: { number: "asc" as const },
     include: {

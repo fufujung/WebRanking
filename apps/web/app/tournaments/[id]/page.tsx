@@ -1,12 +1,15 @@
 import { notFound } from "next/navigation";
 import { apiOrNull } from "@/lib/api";
-import type { TournamentDetail } from "@/lib/types";
-import { fmtDate } from "@/lib/format";
+import type { Bracket, TournamentDetail } from "@/lib/types";
+import { fmtDate, fmtThaiTime, formatLabel } from "@/lib/format";
+import { BracketView, Rosters } from "@/components/Bracket";
 import { Empty, MatchCard, StatusBadge, TeamLink } from "@/components/ui";
 
 export default async function TournamentPage({ params }: { params: Promise<{ id: string }> }) {
   const t = await apiOrNull<TournamentDetail>(`/tournaments/${encodeURIComponent((await params).id)}`);
   if (!t) notFound();
+  // Only a started bracket is public; a draft can still change.
+  const bracket = t.format && (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") ? await apiOrNull<Bracket>(`/tournaments/${t.id}/bracket`) : null;
   const podium = t.teams.filter((x) => x.placement && x.placement <= 3);
   return (
     <>
@@ -15,8 +18,16 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
           <div className="row" style={{ marginBottom: 8 }}><StatusBadge status={t.status} /></div>
           <h1>{t.name}</h1>
           <span className="muted">
-            {[t.game, t.location, `${fmtDate(t.startDate)}${t.endDate ? ` – ${fmtDate(t.endDate)}` : ""}`].filter(Boolean).join(" · ")}
+            {[t.game, t.location, `${t.format ? fmtThaiTime(t.startDate) : fmtDate(t.startDate)}${t.endDate ? ` – ${fmtDate(t.endDate)}` : ""}`].filter(Boolean).join(" · ")}
           </span>
+          {t.format && (
+            <div className="row small" style={{ marginTop: 8 }}>
+              <span className="badge">{formatLabel[t.format]}</span>
+              <span className="badge">BO{t.bestOf}</span>
+              <span className="badge">เลทได้ {t.lateMinutes} นาที</span>
+              {t.registrationOpen && <span className="badge badge-accent">เปิดรับสมัครทาง Discord</span>}
+            </div>
+          )}
         </div>
       </div>
       {t.description && <p className="card">{t.description}</p>}
@@ -32,6 +43,21 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
         </div>
       )}
 
+      {bracket && (
+        <>
+          <h2 className="mt">สายการแข่งขัน</h2>
+          <BracketView bracket={bracket} />
+        </>
+      )}
+
+      {t.format && t.teams.some((x) => x.roster.length > 0) && (
+        <>
+          <h2 className="mt">รายชื่อผู้เล่น</h2>
+          <Rosters teams={[...t.teams].sort((a, b) => (a.seed ?? Infinity) - (b.seed ?? Infinity) || a.name.localeCompare(b.name))} />
+        </>
+      )}
+
+      {!t.format && (<>
       <h2 className="mt">ตารางคะแนน</h2>
       <p className="muted small">ชนะ 3 แต้ม เสมอ 1 แต้ม เท่ากันดูผลต่างสกอร์</p>
       {t.standings.length === 0 ? (
@@ -61,6 +87,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
           </table>
         </div>
       )}
+
+      </>)}
 
       <h2 className="mt">แมตช์</h2>
       {t.matches.length === 0 ? <Empty>ยังไม่มีผลการแข่ง</Empty> : (
