@@ -15,6 +15,9 @@ export class HttpError extends Error {
 
 export const notFound = (what: string) => new HttpError(404, `${what} not found`);
 
+/** An error with a Thai explanation in details.th, for messages shown to Discord users and organizers. */
+export const fail = (status: number, message: string, th: string, extra: Record<string, unknown> = {}) => new HttpError(status, message, { th, ...extra });
+
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof HttpError) {
     res.status(err.status).json({ error: err.message, details: err.details });

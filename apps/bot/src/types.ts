@@ -93,3 +93,66 @@ export interface PlayerDetail {
   team: TeamSummary | null;
   stats: PlayerStats;
 }
+
+// ---------- Brackets ----------
+
+export type Format = "SINGLE_ELIMINATION" | "DOUBLE_ELIMINATION" | "ROUND_ROBIN";
+export interface RosterPlayer {
+  playerId: string;
+  name: string;
+  discordId: string | null;
+}
+export interface Entry extends TeamSummary {
+  seed: number | null;
+  placement: number | null;
+  captainDiscordId: string | null;
+  roster: RosterPlayer[];
+}
+export interface BracketMatch {
+  id: string;
+  code: string;
+  number: number;
+  stage: "W" | "L" | "GF" | "P3" | "RR";
+  round: number;
+  label: string;
+  teamA: Entry | null;
+  teamB: Entry | null;
+  byeA: boolean;
+  byeB: boolean;
+  sourceA: string | null;
+  sourceB: string | null;
+  status: "PENDING" | "READY" | "DONE" | "SKIPPED";
+  outcome: "PLAYED" | "WALKOVER" | "BYE" | null;
+  winnerId: string | null;
+  scoreA: number | null;
+  scoreB: number | null;
+  matchId: string | null;
+  scheduledAt: string | null;
+  deadline: string | null;
+  checkInA: string | null;
+  checkInB: string | null;
+  disputed: boolean;
+  disputeNote: string | null;
+  winnerTo: string | null;
+  loserTo: string | null;
+}
+export interface Bracket {
+  tournamentId: string;
+  name: string;
+  format: Format | null;
+  status: "NONE" | "DRAFT" | "LIVE" | "DONE";
+  bestOf: number;
+  lateMinutes: number;
+  rosterMin: number;
+  rosterMax: number;
+  maxTeams: number | null;
+  registrationOpen: boolean;
+  startDate: string;
+  rosterLocked: boolean;
+  rosterLockAt: string | null;
+  teams: Entry[];
+  positions: (string | null)[] | null;
+  matches: BracketMatch[];
+  standings: { position: number; teamId: string; played: number; wins: number; draws: number; losses: number; diff: number; points: number; team: Entry | null }[] | null;
+  placements: { placement: number; team: Entry }[];
+}

@@ -37,6 +37,11 @@ client.once(Events.ClientReady, async (c) => {
   const tick = () => bot.announceNew(c).catch((e) => console.error("[bot] ประกาศผลไม่สำเร็จ:", e.message));
   await tick();
   setInterval(tick, 60_000);
+  // Match rooms, reminders and bracket announcements follow the API every 30 seconds
+  // (changes made on the website show up here too).
+  const sync = () => bot.tour.sync(c).catch((e) => console.error("[bot] ซิงก์ทัวร์นาเมนต์ไม่สำเร็จ:", e.message));
+  await sync();
+  setInterval(sync, 30_000);
 });
 
 client.on(Events.GuildCreate, (guild) => {
@@ -61,6 +66,7 @@ client.on(Events.InteractionCreate, async (i) => {
     if (i.isChatInputCommand()) await bot.onCommand(i);
     else if (i.isAutocomplete()) await bot.onAutocomplete(i);
     else if (i.isButton()) await bot.onButton(i);
+    else if (i.isModalSubmit()) await bot.onModal(i);
     else if (i.isMessageContextMenuCommand() && i.commandName === READ_POST_COMMAND) await bot.onReadPostCommand(i);
   } catch (e) {
     console.error("[bot] interaction:", e);

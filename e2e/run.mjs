@@ -121,7 +121,7 @@ step("logged in");
 await page.goto(base + "/admin/tournaments/new");
 await page.fill('input[name="name"]', `E2E Cup ${uniq}`);
 await page.fill('input[name="game"]', "Valorant");
-await page.fill('input[name="startDate"]', "2026-10-01");
+await page.fill('input[name="startDate"]', "2026-10-01T19:00");
 await page.fill('input[name="endDate"]', "2026-09-01");
 await page.click("button:has-text('สร้างทัวร์นาเมนต์')");
 await page.waitForSelector(".error");
@@ -360,6 +360,96 @@ await page.waitForURL(/\/admin\?deleted=1/);
 const gone = await page.request.get(matchUrl);
 if (gone.status() !== 404) throw new Error("deleted match still visible: " + gone.status());
 step("match deleted, page now 404");
+
+// Bracket: a single elimination cup seeded by hand, started, played and corrected
+await page.goto(base + "/admin/tournaments/new");
+await page.fill('input[name="name"]', `Bracket Cup ${uniq}`);
+await page.fill('input[name="startDate"]', "2030-01-05T19:00");
+await page.selectOption('select[name="format"]', "SINGLE_ELIMINATION");
+await page.fill('input[name="lateMinutes"]', "10");
+await page.click("button:has-text('สร้างทัวร์นาเมนต์')");
+await page.waitForURL(/\/admin\/tournaments\/(?!new)/);
+const cupUrl = page.url();
+await page.locator("text=ต้องมีอย่างน้อย 2 ทีม").waitFor();
+const cupTeams = ["Thunder Hawks", "Siam Dragons", "Night Owls"];
+for (const [i, name] of cupTeams.entries()) {
+  const c = page.locator("input[role=combobox]");
+  await c.click();
+  await c.fill(name);
+  await page.locator(".combo-list [role=option]", { hasText: name }).first().click();
+  await page.click("button:has-text('เพิ่ม / อัปเดตทีม')");
+  await page.locator("h2", { hasText: `ทีมที่ลงแข่ง (${i + 1})` }).waitFor();
+}
+step("bracket cup created with 3 teams");
+
+await page.click("button:has-text('จัดเอง (แมนนวล)')");
+// Pair 1: Thunder Hawks vs Night Owls; pair 2: Siam Dragons gets the bye.
+const owls = await page.locator('select[aria-label="คู่ที่ 1 ฝั่ง B"] option', { hasText: "Night Owls" }).getAttribute("value");
+await page.selectOption('select[aria-label="คู่ที่ 1 ฝั่ง B"]', owls);
+await page.click("button:has-text('ใช้สายนี้')");
+await page.locator("text=ตัวอย่างสาย").waitFor();
+const draft = await page.locator(".bracket").first().textContent();
+if (!draft.includes("บาย") || !draft.includes("Night Owls")) throw new Error("draft bracket should show the manual pairs and a bye: " + draft);
+await page.screenshot({ path: OUT + "/bracket-draft.png", fullPage: true });
+step("manual draw previewed before confirming");
+
+await page.click("button:has-text('ยืนยันสายและเริ่มแข่ง')");
+await page.locator("button.bm.bm-READY").first().waitFor();
+if (!(await page.locator('select[name="format"]').isDisabled())) throw new Error("format should be locked once the bracket runs");
+step("bracket started; format locked");
+
+// Semi-final: set a time, then record the result with the match form
+const semi = page.locator("button.bm.bm-READY", { hasText: "Night Owls" });
+await semi.click();
+await page.fill('.card input[type="datetime-local"]', "2030-01-05T20:30");
+await page.click("button:has-text('บันทึกเวลา')");
+await page.locator(".success", { hasText: "ตั้งเวลาแล้ว" }).waitFor();
+step("match time set");
+await page.click("a:has-text('บันทึกผลและสถิติ')");
+await page.waitForURL(/\/admin\/matches\/new\?.*slot=/);
+if ((await page.inputValue('input[aria-label="ทีม A"]')) !== "Thunder Hawks") throw new Error("team A should be fixed by the bracket");
+await page.fill('input[aria-label="ผลซีรีส์ทีม A"]', "2");
+await page.fill('input[aria-label="ผลซีรีส์ทีม B"]', "1");
+await page.click("button:has-text('บันทึกผลการแข่ง')");
+await page.waitForURL(/\/matches\/(?!new)/);
+if (!(await page.locator(".hero").textContent()).includes("2 : 1")) throw new Error("bracket result not saved");
+step("semi-final recorded from the bracket (2 : 1)");
+
+// Final: organizer gives it to Siam Dragons (walkover); the cup finishes
+await page.goto(cupUrl);
+await page.locator("button.bm.bm-READY", { hasText: "Siam Dragons" }).click();
+await page.fill('input[placeholder^="เหตุผล"]', "Thunder Hawks มาไม่ทัน");
+await page.click("button:has-text('ให้ Siam Dragons ชนะ')");
+await page.locator(".success", { hasText: "ตัดสินแล้ว" }).waitFor();
+await page.goto(cupUrl.replace("/admin/tournaments/", "/tournaments/"));
+const publicCup = await page.locator("main").textContent();
+if (!publicCup.includes("สายการแข่งขัน") || !publicCup.includes("ชนะบาย")) throw new Error("public bracket missing: " + publicCup.slice(0, 300));
+if (!(await page.locator(".card", { hasText: "แชมป์" }).textContent()).includes("Siam Dragons")) throw new Error("champion not shown");
+await page.screenshot({ path: OUT + "/bracket-public.png", fullPage: true });
+step("final decided by the organizer; public page shows the bracket and the champion");
+
+// Clearing the semi-final also clears the final: asks first
+await page.goto(cupUrl);
+await page.locator("button.bm", { hasText: "Night Owls" }).click();
+await page.click("button:has-text('ยกเลิกผล (แข่งใหม่)')");
+await page.locator("button:has-text('ล้างผลแมตช์ถัดไป')").waitFor();
+step("reopening asks before wiping later results: " + (await page.locator(".error").first().textContent()));
+await page.click("button:has-text('ล้างผลแมตช์ถัดไป')");
+await page.locator(".success", { hasText: "ยกเลิกผลแล้ว" }).waitFor();
+if ((await page.locator("button.bm.bm-READY").count()) !== 1) throw new Error("only the semi-final should be waiting again");
+step("semi-final reopened, final cleared");
+
+// Roster: organizers can set a team's players
+await page.locator("tr", { hasText: "Night Owls" }).locator("button:has-text('แก้รายชื่อ')").click();
+const rosterInputs = page.locator('label:has-text("ชื่อในเกม") input');
+await rosterInputs.nth(0).fill("Kite");
+await page.click("button:has-text('+ เพิ่มผู้เล่น')");
+await rosterInputs.nth(1).fill("Lynx");
+await page.click("button:has-text('+ เพิ่มผู้เล่น')");
+await rosterInputs.nth(2).fill("Moss");
+await page.click("button:has-text('บันทึกรายชื่อ')");
+await page.locator("tr", { hasText: "Night Owls" }).locator("td", { hasText: "Kite, Lynx, Moss" }).waitFor();
+step("roster saved for Night Owls");
 
 // Logout
 await page.click("button:has-text('ออกจากระบบ')");

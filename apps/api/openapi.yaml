@@ -28,6 +28,7 @@ tags:
   - name: Teams
   - name: Players
   - name: Tournaments
+  - name: Brackets
   - name: Matches
   - name: Stats
   - name: Images
@@ -256,6 +257,163 @@ paths:
       responses:
         "204": { description: Removed }
         "409": { description: Team already has matches in this tournament }
+  /api/v1/tournaments/{id}/registrations:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Brackets]
+      summary: Register a team with its roster (admin). Needs registrationOpen unless override.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/RosterInput"
+                - type: object
+                  required: [teamName]
+                  properties:
+                    teamName: { type: string, description: An existing team with this name is reused }
+                    tag: { type: string, nullable: true }
+      responses:
+        "201": { description: The entry with its roster }
+        "409": { description: Registration closed, tournament full, team or player already registered }
+  /api/v1/tournaments/{id}/entries/{teamId}/roster:
+    parameters:
+      - $ref: "#/components/parameters/id"
+      - { name: teamId, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [Brackets]
+      summary: Replace a team's roster (admin). Locked once the first match starts, unless override.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RosterInput" } } } }
+      responses:
+        "200": { description: The entry with its roster }
+        "409": { description: Rosters are locked }
+  /api/v1/tournaments/{id}/bracket:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [Brackets]
+      summary: The bracket — every match slot with teams, sources (winner of M3), times, check-ins, results; round robin standings; placements
+      responses:
+        "200": { description: Bracket }
+    delete:
+      tags: [Brackets]
+      summary: Remove the bracket (admin). A started bracket needs ?force=true; recorded series stay.
+      parameters: [{ name: force, in: query, schema: { type: boolean } }]
+      responses:
+        "204": { description: Removed }
+  /api/v1/tournaments/{id}/bracket/seed:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Brackets]
+      summary: Seed the teams and build a bracket to review (admin)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                method: { type: string, enum: [rating, random, manual], default: rating }
+                order: { type: array, items: { type: string }, description: "manual: team ids, best seed first" }
+                positions: { type: array, items: { type: string, nullable: true }, description: "manual, elimination: first round slots in pairs, null = bye" }
+      responses:
+        "200": { description: Draft bracket }
+  /api/v1/tournaments/{id}/bracket/start:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Brackets]
+      summary: Confirm the draft bracket and start the tournament (admin). Registration closes.
+      responses:
+        "200": { description: Live bracket }
+  /api/v1/tournaments/{id}/bracket/schedule:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Brackets]
+      summary: Set the start time of one match or a whole round (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scheduledAt]
+              properties:
+                match: { type: string, description: Match id, code (W1-0) or number (12 / M12) }
+                stage: { type: string, enum: [W, L, GF, P3, RR] }
+                round: { type: integer }
+                scheduledAt: { type: string, format: date-time, nullable: true }
+      responses:
+        "200": { description: Match numbers updated }
+  /api/v1/tournaments/{id}/bracket/matches/{match}:
+    parameters:
+      - $ref: "#/components/parameters/id"
+      - { name: match, in: path, required: true, schema: { type: string }, description: "Match id, code (W1-0) or number (12 / M12)" }
+    get:
+      tags: [Brackets]
+      summary: One bracket match
+      responses:
+        "200": { description: Bracket match }
+  /api/v1/tournaments/{id}/bracket/matches/{match}/result:
+    parameters:
+      - $ref: "#/components/parameters/id"
+      - { name: match, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Brackets]
+      summary: Record (or with replace, correct) a played series; winners and losers move on (admin)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/BracketResultInput" } } } }
+      responses:
+        "200": { description: Bracket match }
+        "409": { description: Not ready, already has a result, or later matches would be wiped (details.affected) }
+  /api/v1/tournaments/{id}/bracket/matches/{match}/walkover:
+    parameters:
+      - $ref: "#/components/parameters/id"
+      - { name: match, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Brackets]
+      summary: "Give the match to a team without playing (admin). mode=claim: the team checked in and the other did not arrive within lateMinutes. mode=organizer: any decision."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [teamId, mode]
+              properties:
+                teamId: { type: string }
+                mode: { type: string, enum: [claim, organizer] }
+                force: { type: boolean }
+                note: { type: string }
+      responses:
+        "200": { description: Bracket match }
+  /api/v1/tournaments/{id}/bracket/matches/{match}/checkin:
+    parameters:
+      - $ref: "#/components/parameters/id"
+      - { name: match, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Brackets]
+      summary: A team checks in for its match (admin)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [teamId], properties: { teamId: { type: string } } } } } }
+      responses:
+        "200": { description: Bracket match }
+  /api/v1/tournaments/{id}/bracket/matches/{match}/reopen:
+    parameters:
+      - $ref: "#/components/parameters/id"
+      - { name: match, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Brackets]
+      summary: Clear a result so the match is played again; later results that depended on it need force (admin)
+      requestBody: { content: { application/json: { schema: { type: object, properties: { force: { type: boolean } } } } } }
+      responses:
+        "200": { description: Bracket match }
+  /api/v1/tournaments/{id}/bracket/matches/{match}/dispute:
+    parameters:
+      - $ref: "#/components/parameters/id"
+      - { name: match, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Brackets]
+      summary: Flag a disputed result, or clear the flag with resolved=true (admin)
+      requestBody: { content: { application/json: { schema: { type: object, properties: { note: { type: string }, resolved: { type: boolean } } } } } }
+      responses:
+        "200": { description: Bracket match }
   /api/v1/matches:
     get:
       tags: [Matches]
@@ -524,6 +682,41 @@ components:
         status: { type: string, enum: [UPCOMING, ONGOING, COMPLETED] }
         startDate: { type: string, format: date-time }
         endDate: { type: string, format: date-time, nullable: true }
+        format: { type: string, enum: [SINGLE_ELIMINATION, DOUBLE_ELIMINATION, ROUND_ROBIN], nullable: true, description: "null = no bracket, results are recorded freely" }
+        bestOf: { type: integer, enum: [1, 3, 5, 7, 9], default: 3 }
+        lateMinutes: { type: integer, default: 15, description: "How late a team may check in before the other team can claim a walkover" }
+        rosterMin: { type: integer, default: 3 }
+        rosterMax: { type: integer, default: 5 }
+        maxTeams: { type: integer, nullable: true }
+        registrationOpen: { type: boolean, default: false }
+        thirdPlaceMatch: { type: boolean, default: false, description: Single elimination only }
+        grandFinalReset: { type: boolean, default: true, description: "Double elimination: a second final if the losers-bracket team wins the first" }
+    RosterInput:
+      type: object
+      required: [players]
+      properties:
+        players:
+          type: array
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: { type: string, description: In-game name, used to match scoreboard rows }
+              discordId: { type: string, nullable: true }
+        captainDiscordId: { type: string, nullable: true }
+        override: { type: boolean, default: false, description: "Organizer: ignore closed registration / the roster lock" }
+    BracketResultInput:
+      type: object
+      description: Same games/scoreboards as MatchInput; teams come from the bracket match (side A/B as shown there).
+      properties:
+        scoreA: { type: integer }
+        scoreB: { type: integer }
+        games: { type: array, items: { $ref: "#/components/schemas/GameInput" } }
+        notes: { type: string, nullable: true }
+        source: { type: string, nullable: true }
+        sourceRef: { type: string, nullable: true, description: Recording the same sourceRef twice is a no-op }
+        replace: { type: boolean, default: false, description: Correct a match that already has a result }
+        force: { type: boolean, default: false, description: Allow a corrected winner to wipe later results }
     PlayerStatInput:
       type: object
       description: Give playerId or name. A name is matched to the side's team, then to any player, else created.

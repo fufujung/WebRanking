@@ -23,7 +23,11 @@ export default async function EditMatch({ params }: { params: Promise<{ id: stri
         <h1>แก้ไขผล: {match.teamA.name} vs {match.teamB.name}</h1>
         <div className="row">
           <Link className="btn btn-sm" href={`/matches/${match.id}`}>ดูหน้าแมตช์</Link>
-          <DeleteButton kind="matches" id={match.id} label={`แมตช์ ${match.teamA.name} vs ${match.teamB.name}`} />
+          {match.bracketSlot ? (
+            <Link className="btn btn-sm" href={`/admin/tournaments/${match.tournamentId}#bracket`}>ดูในสาย (M{match.bracketSlot.number})</Link>
+          ) : (
+            <DeleteButton kind="matches" id={match.id} label={`แมตช์ ${match.teamA.name} vs ${match.teamB.name}`} />
+          )}
         </div>
       </div>
       <MatchForm match={match} tournaments={tournaments} teams={teams} players={players} extractEnabled={extract.enabled} />

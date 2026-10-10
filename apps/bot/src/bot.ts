@@ -13,6 +13,7 @@ import {
   type Message,
   type MessageContextMenuCommandInteraction,
   type MessageReaction,
+  type ModalSubmitInteraction,
   type PartialMessageReaction,
   type PartialUser,
   type User,
@@ -49,9 +50,12 @@ import {
   type Settings,
 } from "./results.js";
 import { JsonStore } from "./store.js";
-import type { Match, MatchDetail, Page, PlayerDetail, RankedPlayer, RankedTeam, TeamDetail, Tournament } from "./types.js";
+import { TourManager } from "./tour.js";
+import type { BracketMatch, Match, MatchDetail, Page, PlayerDetail, RankedPlayer, RankedTeam, TeamDetail, Tournament } from "./types.js";
 
 const SAVE = "✅";
+/** Button actions handled by the tournament manager. */
+const TOUR_ACTIONS = new Set(["tci", "two", "tdp", "tad", "taw", "tro", "trs", "tsd", "tst", "tls"]);
 const WEEK = 7 * 24 * 3600_000;
 
 type MemberLike = Pick<GuildMember, "permissions" | "roles"> | { permissions: unknown; roles: string[] | unknown } | null;
@@ -68,14 +72,14 @@ export function memberInfo(member: MemberLike, permissions?: { has(flag: bigint)
   return { roleIds, manageGuild: Boolean(perms?.has(PermissionFlagsBits.ManageGuild)) };
 }
 
-export function previewButtons(sourceMessageId: string, disabled = false) {
-  return [
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId(`tr:save:${sourceMessageId}`).setLabel("บันทึก").setEmoji(SAVE).setStyle(ButtonStyle.Success).setDisabled(disabled),
-      new ButtonBuilder().setCustomId(`tr:reread:${sourceMessageId}`).setLabel("อ่านใหม่").setEmoji("🔄").setStyle(ButtonStyle.Secondary).setDisabled(disabled),
-      new ButtonBuilder().setCustomId(`tr:discard:${sourceMessageId}`).setLabel("ไม่บันทึก").setEmoji("❌").setStyle(ButtonStyle.Danger).setDisabled(disabled),
-    ),
-  ];
+export function previewButtons(sourceMessageId: string, disabled = false, bracket?: { tournamentId: string; slotId: string }) {
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(`tr:save:${sourceMessageId}`).setLabel(bracket ? "ยืนยันผล" : "บันทึก").setEmoji(SAVE).setStyle(ButtonStyle.Success).setDisabled(disabled),
+    new ButtonBuilder().setCustomId(`tr:reread:${sourceMessageId}`).setLabel("อ่านใหม่").setEmoji("🔄").setStyle(ButtonStyle.Secondary).setDisabled(disabled),
+    new ButtonBuilder().setCustomId(`tr:discard:${sourceMessageId}`).setLabel("ไม่บันทึก").setEmoji("❌").setStyle(ButtonStyle.Danger).setDisabled(disabled),
+  );
+  if (bracket) row.addComponents(new ButtonBuilder().setCustomId(`tr:tdp:${bracket.tournamentId}:${bracket.slotId}`).setLabel("แย้งผล").setEmoji("⚠️").setStyle(ButtonStyle.Secondary));
+  return [row];
 }
 
 function linkButton(url: string | undefined) {
@@ -89,12 +93,14 @@ export interface BotOptions {
   siteUrl?: string;
   download?: Download;
   log?: (...args: unknown[]) => void;
+  now?: () => Date;
 }
 
 /** Everything the bot does, independent of the Discord connection so it can be tested with stand-ins. */
 export class TournamentBot {
   readonly settings: JsonStore<Settings>;
   readonly pending: JsonStore<Pending>;
+  readonly tour: TourManager;
   private trackers = new Map<string, AnnounceTracker>();
   /** Result posts being saved right now, so two admins can't record one twice. */
   private busy = new Set<string>();
@@ -111,6 +117,7 @@ export class TournamentBot {
     this.settings = new JsonStore(path.join(opts.dataDir, "settings.json"));
     this.pending = new JsonStore(path.join(opts.dataDir, "pending.json"));
     this.pending.prune((p) => Date.now() - p.createdAt < 4 * WEEK);
+    this.tour = new TourManager({ api: this.api, dataDir: opts.dataDir, siteUrl: opts.siteUrl, log: this.log, now: opts.now });
   }
 
   settingsFor(guildId: string): Settings {
@@ -122,9 +129,15 @@ export class TournamentBot {
   /** A new message: if it is a result post in a results channel, read it and reply with a preview. */
   async onMessage(message: Message) {
     if (message.author.bot || !message.guildId) return;
+    if (!imageAttachments(this.attachmentsOf(message)).length) return;
+    if (this.tour.roomByChannel(message.channelId)) {
+      const problem = await this.readAndPreview(message);
+      // Read failures are already answered under the post; say why nothing else happened.
+      if (problem && !problem.startsWith("อ่านผลไม่สำเร็จ")) await message.reply({ content: problem, allowedMentions: { repliedUser: false } }).catch(() => null);
+      return;
+    }
     const settings = this.settingsFor(message.guildId);
     if (!settings.channelIds.includes(message.channelId)) return;
-    if (!imageAttachments(this.attachmentsOf(message)).length) return;
     await this.readAndPreview(message);
   }
 
@@ -137,12 +150,29 @@ export class TournamentBot {
     const guildId = message.guildId!;
     const recorded = await this.api.get<{ matchId: string | null }>(`/matches/by-source?ref=${encodeURIComponent(message.id)}`).catch(() => ({ matchId: null }));
     if (recorded.matchId) return "โพสต์นี้ถูกบันทึกไปแล้ว";
+    // A post in a match room belongs to that bracket match: its teams are known.
+    const inRoom = this.tour.roomByChannel(message.channelId);
+    let bracket: Pending["bracket"];
+    let slot: BracketMatch | undefined;
+    let label: string | null = null;
+    if (inRoom) {
+      const b = await this.tour.bracket(inRoom.tour.tournamentId).catch(() => null);
+      slot = b?.matches.find((m) => m.id === inRoom.slotId);
+      if (!b || !slot?.teamA || !slot.teamB) return "แมตช์นี้ไม่อยู่ในสายแล้ว";
+      if (slot.status === "DONE") return "แมตช์นี้มีผลแล้ว ถ้าผลผิดกด ⚠️ แจ้งผู้จัด";
+      const poster = TourManager.teamOf(b, message.author.id);
+      bracket = { tournamentId: b.tournamentId, slotId: slot.id, posterTeamId: poster && (poster.id === slot.teamA.id || poster.id === slot.teamB.id) ? poster.id : null };
+      label = `${b.name} · M${slot.number} ${slot.label}`;
+    }
     const reacting = message.react("👀").catch(() => null);
     try {
-      const draft = await readPost(this.api, { content: message.content, attachments: this.attachmentsOf(message) }, this.download);
+      const teams = slot ? { teamAId: slot.teamA!.id, teamBId: slot.teamB!.id } : undefined;
+      const draft = await readPost(this.api, { content: message.content, attachments: this.attachmentsOf(message) }, this.download, teams);
       if (!draft) return "โพสต์นี้ไม่มีรูปสกอร์บอร์ด";
-      const tournament = await pickTournament(this.api, this.settingsFor(guildId)).catch(() => null);
-      const payload = { embeds: [previewEmbed(draft, { tournament: tournament?.name ?? null })], components: previewButtons(message.id) };
+      const tournament = label ? { name: label } : await pickTournament(this.api, this.settingsFor(guildId)).catch(() => null);
+      const embed = previewEmbed(draft, { tournament: tournament?.name ?? null });
+      if (bracket) embed.description = `${embed.description?.split("\n")[0]}\nอีกทีม (หรือผู้จัด) ตรวจตัวเลขแล้วกด ✅ ยืนยันผล ถ้าไม่ถูกต้องกด ⚠️ แย้งผล`;
+      const payload = { embeds: [embed], components: previewButtons(message.id, false, bracket) };
       const preview = existingPreview ? await existingPreview.edit(payload) : await message.reply({ ...payload, allowedMentions: { repliedUser: false } });
       this.pending.set(message.id, {
         draft,
@@ -154,6 +184,7 @@ export class TournamentBot {
         status: "pending",
         matchId: null,
         createdAt: Date.now(),
+        ...(bracket ? { bracket } : {}),
       });
       return null;
     } catch (e) {
@@ -173,21 +204,43 @@ export class TournamentBot {
     const pending = this.pending.get(sourceMessageId);
     if (!pending) return { ok: false, text: "ไม่พบผลที่อ่านไว้ (อาจเก่าเกินไป) ให้คลิกขวาที่โพสต์ แล้วเลือก Apps → " + READ_POST_COMMAND };
     const settings = this.settingsFor(pending.guildId);
-    if (!canSave(by.info, settings)) return { ok: false, text: "เฉพาะแอดมินที่กดบันทึกได้" };
+    if (pending.bracket) {
+      if (!(await this.tour.canConfirm(pending.bracket, by.id, by.info))) return { ok: false, text: "ยืนยันผลได้เฉพาะอีกทีม (ไม่ใช่ทีมที่ส่งผล) หรือผู้จัด" };
+    } else if (!canSave(by.info, settings)) return { ok: false, text: "เฉพาะแอดมินที่กดบันทึกได้" };
     if (pending.status === "saved") return { ok: false, text: "ผลนี้บันทึกไปแล้ว" };
     const problem = blockingProblem(pending.draft);
     if (problem) return { ok: false, text: problem };
     if (this.busy.has(sourceMessageId)) return { ok: false, text: "กำลังบันทึกอยู่ รอสักครู่" };
     this.busy.add(sourceMessageId);
     try {
-      const tournament = await pickTournament(this.api, settings);
-      if (!tournament) return { ok: false, text: "ยังไม่มีทัวร์นาเมนต์ในเว็บ สร้างทัวร์นาเมนต์ก่อน แล้วกดบันทึกอีกครั้ง" };
-      const match = await savePending(this.api, pending, tournament.id);
+      let match: Match;
+      let tournamentName: string;
+      if (pending.bracket) {
+        const d = pending.draft;
+        const { tournamentId, slotId } = pending.bracket;
+        const slot = await this.api.post<BracketMatch>(`/tournaments/${tournamentId}/bracket/matches/${slotId}/result`, {
+          scoreA: d.scoreA,
+          scoreB: d.scoreB,
+          games: d.games,
+          notes: d.notes || null,
+          source: "discord",
+          sourceRef: pending.sourceMessageId,
+          playedAt: pending.postedAt,
+        });
+        match = await this.api.get<Match>(`/matches/${slot.matchId}`);
+        tournamentName = match.tournament.name;
+      } else {
+        const tournament = await pickTournament(this.api, settings);
+        if (!tournament) return { ok: false, text: "ยังไม่มีทัวร์นาเมนต์ในเว็บ สร้างทัวร์นาเมนต์ก่อน แล้วกดบันทึกอีกครั้ง" };
+        match = await savePending(this.api, pending, tournament.id);
+        tournamentName = tournament.name;
+      }
       this.pending.set(sourceMessageId, { ...pending, status: "saved", matchId: match.id });
       if (preview) {
-        const embed = preview.embeds[0]?.toJSON() ?? previewEmbed(pending.draft, { tournament: tournament.name });
+        const embed = preview.embeds[0]?.toJSON() ?? previewEmbed(pending.draft, { tournament: tournamentName });
         await preview.edit({ content: null, embeds: [savedEmbed(embed, `<@${by.id}>`, match, this.siteUrl)], components: linkButton(siteLink(this.siteUrl, `/matches/${match.id}`)) });
       }
+      if (pending.bracket && preview) await this.tour.sync(preview.client, pending.bracket.tournamentId);
       return { ok: true, text: `บันทึกแล้ว: ${match.teamA.name} ${match.scoreA} - ${match.scoreB} ${match.teamB.name}` };
     } catch (e) {
       this.log("save failed:", e instanceof Error ? e.message : e);
@@ -201,6 +254,7 @@ export class TournamentBot {
     const [prefix, action, sourceId] = i.customId.split(":");
     if (prefix !== "tr" || !sourceId) return;
     const info = memberInfo(i.member as MemberLike, i.memberPermissions);
+    if (TOUR_ACTIONS.has(action)) return this.tour.onButton(i, info);
     const pending = this.pending.get(sourceId);
     if (action === "save") {
       await i.deferReply({ ephemeral: true });
@@ -210,7 +264,8 @@ export class TournamentBot {
       return;
     }
     if (!pending) return void (await i.reply({ ephemeral: true, content: "ไม่พบผลที่อ่านไว้ (อาจเก่าเกินไป)" }));
-    if (!canSave(info, this.settingsFor(pending.guildId))) return void (await i.reply({ ephemeral: true, content: "เฉพาะแอดมินที่ทำได้" }));
+    const allowed = pending.bracket ? await this.canHandleBracketPost(pending, i.user.id, info) : canSave(info, this.settingsFor(pending.guildId));
+    if (!allowed) return void (await i.reply({ ephemeral: true, content: pending.bracket ? "เฉพาะผู้เล่นของสองทีมนี้หรือผู้จัด" : "เฉพาะแอดมินที่ทำได้" }));
     if (action === "discard") {
       this.pending.set(sourceId, { ...pending, status: "discarded" });
       const embed = i.message.embeds[0]?.toJSON() ?? {};
@@ -219,13 +274,28 @@ export class TournamentBot {
     }
     if (action === "reread") {
       if (pending.status === "saved") return void (await i.reply({ ephemeral: true, content: "ผลนี้บันทึกไปแล้ว แก้ไขได้ในเว็บ" }));
-      await i.update({ components: previewButtons(sourceId, true) });
+      await i.update({ components: previewButtons(sourceId, true, pending.bracket) });
       const channel = await i.client.channels.fetch(pending.channelId);
       const source = channel?.isTextBased() ? await channel.messages.fetch(sourceId).catch(() => null) : null;
       if (!source) return void (await i.followUp({ ephemeral: true, content: "หาโพสต์ต้นทางไม่เจอ อาจถูกลบไปแล้ว" }));
       const err = await this.readAndPreview(source, i.message);
       await i.followUp({ ephemeral: true, content: err ?? "อ่านใหม่แล้ว" });
     }
+  }
+
+  /** Reading again or dropping a match-room result: the poster, either team, or an organizer. */
+  private async canHandleBracketPost(pending: Pending, userId: string, info: { roleIds: string[]; manageGuild: boolean }) {
+    const p = pending.bracket!;
+    const tour = this.tour.tours.get(p.tournamentId);
+    if (tour && this.tour.isOrganizer(tour, userId, info)) return true;
+    const b = await this.tour.bracket(p.tournamentId).catch(() => null);
+    const slot = b?.matches.find((m) => m.id === p.slotId);
+    const team = b ? TourManager.teamOf(b, userId) : null;
+    return Boolean(team && slot && (team.id === slot.teamA?.id || team.id === slot.teamB?.id));
+  }
+
+  async onModal(i: ModalSubmitInteraction) {
+    await this.tour.onModal(i);
   }
 
   /** ✅ from an admin on the original post saves it, matching how results were approved before the bot. */
@@ -236,7 +306,8 @@ export class TournamentBot {
     const guild = reaction.message.guild ?? (await reaction.client.guilds.fetch(pending.guildId).catch(() => null));
     const member = guild ? await guild.members.fetch(user.id).catch(() => null) : null;
     const info = memberInfo(member);
-    if (!canSave(info, this.settingsFor(pending.guildId))) return;
+    const allowed = pending.bracket ? await this.tour.canConfirm(pending.bracket, user.id, info) : canSave(info, this.settingsFor(pending.guildId));
+    if (!allowed) return;
     const channel = await reaction.client.channels.fetch(pending.channelId).catch(() => null);
     const preview = channel?.isTextBased() && pending.previewMessageId ? await channel.messages.fetch(pending.previewMessageId).catch(() => null) : null;
     const res = await this.save(reaction.message.id, { id: user.id, info }, preview);
@@ -255,6 +326,7 @@ export class TournamentBot {
   // ---------- Commands ----------
 
   async onCommand(i: ChatInputCommandInteraction) {
+    if (["tour", "register", "roster"].includes(i.commandName)) return this.tour.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     try {
       switch (i.commandName) {
         case "setup":
@@ -314,6 +386,7 @@ export class TournamentBot {
   }
 
   async onAutocomplete(i: AutocompleteInteraction) {
+    if (["tour", "register", "roster"].includes(i.commandName)) return this.tour.onAutocomplete(i);
     const focused = i.options.getFocused(true);
     try {
       if (i.commandName === "setup" && focused.name === "tournament") {
@@ -403,7 +476,9 @@ export class TournamentBot {
       if (!s.announceChannelId) continue;
       let tracker = this.trackers.get(guildId);
       if (!tracker) this.trackers.set(guildId, (tracker = new AnnounceTracker()));
-      const fresh = tracker.fresh(data);
+      // Tournaments run by the bot in this server announce their own results.
+      const own = new Set(this.tour.toursIn(guildId).map((t) => t.tournamentId));
+      const fresh = tracker.fresh(data).filter((m) => !own.has(m.tournament.id));
       if (!fresh.length) continue;
       const channel = await client.channels.fetch(s.announceChannelId).catch(() => null);
       if (!channel?.isSendable()) continue;
