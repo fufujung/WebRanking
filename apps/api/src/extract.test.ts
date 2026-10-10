@@ -56,9 +56,9 @@ test("sends every screenshot and the post text with structured output, and parse
   assert.equal(out.games[0].players[0].award, null, "\"none\" becomes null");
   assert.equal(out.games[0].players[0].rating, 16.9);
   const body = lastRequest!.body;
-  assert.equal(body.model, "claude-opus-5-5");
-  assert.equal(body.fallbacks, "default");
-  assert.match(String(lastRequest!.headers["anthropic-beta"]), /server-side-fallback-2026-07-01/);
+  assert.equal(body.model, "claude-haiku-5-5", "the lowest-cost model unless .env says otherwise");
+  assert.equal(body.fallbacks, undefined, "Haiku has no server-side fallback");
+  assert.doesNotMatch(String(lastRequest!.headers["anthropic-beta"] ?? ""), /server-side-fallback/);
   assert.equal(body.output_config.format.type, "json_schema");
   const content = body.messages[0].content;
   assert.deepEqual(content.map((c: any) => c.type), ["text", "image", "text", "image", "text"], "images labelled in order");
@@ -67,6 +67,20 @@ test("sends every screenshot and the post text with structured output, and parse
   assert.match(prompt, /WD 2-0 Late/);
   assert.match(prompt, /- WD: Dunken, Chipi01/);
   assert.doesNotMatch(prompt, /- Empty/, "teams without players are left out");
+});
+
+test("ANTHROPIC_MODEL picks another model; Opus asks for the server-side fallback", async () => {
+  const result = { teamA: "WD", teamB: "Late", seriesScoreA: 2, seriesScoreB: 0, games: [], notes: "" };
+  reply = { status: 200, body: message(JSON.stringify(result)) };
+  process.env.ANTHROPIC_MODEL = "claude-opus-5-5";
+  try {
+    await read();
+  } finally {
+    delete process.env.ANTHROPIC_MODEL;
+  }
+  assert.equal(lastRequest!.body.model, "claude-opus-5-5");
+  assert.equal(lastRequest!.body.fallbacks, "default");
+  assert.match(String(lastRequest!.headers["anthropic-beta"]), /server-side-fallback-2026-07-01/);
 });
 
 test("a refusal becomes a friendly 422", async () => {

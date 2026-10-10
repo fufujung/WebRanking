@@ -25,9 +25,13 @@ const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePa
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 const page = await ctx.newPage();
 const problems = [];
+// The browser logs a failed request it was told to expect (the free reader refusing a non-scoreboard picture).
+let expectedRejection = null;
 page.on("pageerror", (e) => problems.push(`pageerror: ${e.message} @ ${page.url()}`));
 page.on("console", (m) => {
-  if (m.type() === "error" && !page.url().includes("does-not-exist")) problems.push(`console: ${m.text()} @ ${page.url()}`);
+  if (m.type() !== "error" || page.url().includes("does-not-exist")) return;
+  if (expectedRejection && m.text().includes(expectedRejection)) return;
+  problems.push(`console: ${m.text()} @ ${page.url()}`);
 });
 page.on("response", (r) => {
   if (r.status() >= 500) problems.push(`HTTP ${r.status()} ${r.url()}`);
@@ -217,8 +221,14 @@ step("teams chosen, same team excluded from the other side");
 // Screenshot via the AI section, then "fill in myself" makes game 1 with that image
 await dropFile(".drop >> nth=0", SHOT, "image/png");
 await page.waitForSelector(".shot-chip img");
-const aiBtn = page.locator("button:has-text('ให้ AI อ่าน')");
-step("AI read button present, disabled without key: " + (await aiBtn.isDisabled()));
+// Without an AI key the free reader is used; a picture that isn't a scoreboard gets a clear Thai error.
+const readBtn = page.locator("button:has-text('รูปแล้วกรอกให้')");
+if (await readBtn.isDisabled()) throw new Error("read button should work without an AI key");
+expectedRejection = "status of 422";
+await readBtn.click();
+await page.waitForSelector("[role=alert]:has-text('อ่านสกอร์บอร์ดจากรูปไม่ได้')", { timeout: 60000 });
+expectedRejection = null;
+step("free reader tried the picture and explained it is not a scoreboard");
 await page.click("button:has-text('ใช้รูปนี้แล้วกรอกเอง')");
 const game = (n) => page.locator(`section[aria-label="เกม ${n}"]`);
 await game(1).waitFor();

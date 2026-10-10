@@ -182,7 +182,7 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
         body: JSON.stringify({ imageUrls: shots, text: postText, teamAId: teamA.id ?? undefined, teamBId: teamB.id ?? undefined }),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "อ่านรูปไม่สำเร็จ");
+      if (!res.ok) throw new Error(body.details?.th ?? body.error ?? "อ่านรูปไม่สำเร็จ");
       applyDraft(body.draft as Draft);
     } catch (e) {
       setError(e instanceof Error ? e.message : "อ่านรูปไม่สำเร็จ");
@@ -406,7 +406,7 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
       </datalist>
 
       <section className="card stack">
-        <h2 style={{ margin: 0 }}>1. ให้ AI อ่านผลจากโพสต์ (ไม่บังคับ)</h2>
+        <h2 style={{ margin: 0 }}>1. ให้ระบบอ่านผลจากโพสต์ (ไม่บังคับ)</h2>
         <p className="muted small" style={{ margin: 0 }}>วางข้อความผล เช่น “WD 2-0 Pai Nai” แล้วลากรูปสกอร์บอร์ดทุกเกมมาวางพร้อมกัน (เรียงตามเกม) หรือข้ามไปกรอกเองด้านล่าง</p>
         <label>ข้อความผล<input value={postText} onChange={(e) => setPostText(e.target.value)} maxLength={500} placeholder="ทีม A 2-0 ทีม B" /></label>
         <ImageDrop value={null} onChange={() => {}} onMany={addShots} label="ลากรูปสกอร์บอร์ดมาวาง (ได้หลายรูป) วาง (Ctrl+V) หรือคลิกเพื่อเลือกไฟล์" />
@@ -424,7 +424,7 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
         {shots.length > 0 && (
           <div className="row">
             <button type="button" className="btn btn-primary" onClick={readPost} disabled={!extractEnabled || reading}>
-              {reading ? "กำลังอ่านรูป…" : `🪄 ให้ AI อ่าน ${shots.length} รูปแล้วกรอกให้`}
+              {reading ? "กำลังอ่านรูป…" : `🪄 อ่าน ${shots.length} รูปแล้วกรอกให้`}
             </button>
             <button type="button" className="btn" onClick={() => {
               setGames((prev) => [...prev, ...shots.map((url) => ({ key: nextKey++, scoreA: "", scoreB: "", imageUrl: url, rows: [...starters(teamA, "A"), ...starters(teamB, "B")] }))]);
