@@ -106,6 +106,9 @@ Rules:
 
 export const extractionEnabled = () => Boolean(process.env.ANTHROPIC_API_KEY);
 
+/** The model that reads screenshots: ANTHROPIC_MODEL in .env, else Claude Haiku 5.5, the lowest-cost one. */
+export const readerModel = () => process.env.ANTHROPIC_MODEL?.trim() || "claude-haiku-5-5";
+
 let client: Anthropic | undefined;
 
 export interface SeriesImage {
@@ -132,13 +135,14 @@ export async function extractSeries(
     .map((t) => `- ${t.name}: ${t.players.join(", ")}`)
     .join("\n");
 
+  const model = readerModel();
   let response: Anthropic.Beta.Messages.BetaMessage;
   try {
     response = await client.beta.messages.create({
-      model: "claude-opus-5-5",
+      model,
       max_tokens: 16000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
+      // Opus and Fable can retry a declined request on another model; Haiku and Sonnet have no such fallback.
+      ...(/^claude-(opus|fable)-/.test(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
       output_config: { effort: "medium", format: { type: "json_schema", schema: jsonSchema } },
       messages: [
         {

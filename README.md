@@ -108,6 +108,7 @@ endpoint หลัก: `/api/v1/rankings/teams`, `/api/v1/rankings/players`, `/a
 | `CORS_ORIGINS` | โดเมนที่เรียก API จากเบราว์เซอร์ได้ คั่นด้วย `,` |
 | `UPLOAD_DIR` | โฟลเดอร์เก็บรูปที่อัปโหลด (ค่าเริ่มต้น `uploads`) |
 | `ANTHROPIC_API_KEY` | ใส่เพื่อเปิดระบบ AI อ่านผลจากรูป |
+| `ANTHROPIC_MODEL` | โมเดลที่ใช้อ่านรูป (ไม่ใส่ = `claude-haiku-5-5` ถูกที่สุด) ถ้าอ่านพลาดบ่อย ลอง `claude-sonnet-5-5` หรือ `claude-opus-5-5` |
 
 `apps/web/.env.local` (สร้างให้อัตโนมัติโดย `npm run setup`)
 
@@ -123,7 +124,7 @@ endpoint หลัก: `/api/v1/rankings/teams`, `/api/v1/rankings/players`, `/a
 ## ทดสอบ
 
 ```bash
-npm test            # เทส API 84 เคส และบอท Discord 47 เคส (ใช้ Discord และ AI แบบจำลอง)
+npm test            # เทส API 85 เคส และบอท Discord 47 เคส (ใช้ Discord และ AI แบบจำลอง)
 npm run typecheck   # ตรวจ TypeScript ทั้ง API เว็บ และบอท
 npm run test:e2e    # เปิดเบราว์เซอร์จริงทดสอบทุกหน้าและทุกฟอร์ม (ต้องรัน npm run dev ไว้ก่อน)
 ```
