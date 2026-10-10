@@ -55,7 +55,7 @@ import type { BracketMatch, Draft, Match, MatchDetail, Page, PlayerDetail, Ranke
 
 const SAVE = "✅";
 /** Button actions handled by the tournament manager. */
-const TOUR_ACTIONS = new Set(["tci", "tsr", "two", "tdp", "tad", "taw", "tro", "trs", "tsd", "tst", "tls", "treg", "tmy", "ted", "tcp", "twd"]);
+const TOUR_ACTIONS = new Set(["tci", "tsr", "two", "tdp", "tad", "taw", "tro", "trs", "tsd", "tst", "tls", "treg", "tmy", "ted", "tcp", "twd", "tep", "ten"]);
 const WEEK = 7 * 24 * 3600_000;
 
 type MemberLike = Pick<GuildMember, "permissions" | "roles"> | { permissions: unknown; roles: string[] | unknown } | null;
@@ -166,6 +166,7 @@ export class TournamentBot {
       slot = b?.matches.find((m) => m.id === inRoom.slotId);
       if (!b || !slot?.teamA || !slot.teamB) return "แมตช์นี้ไม่อยู่ในสายแล้ว";
       if (slot.status === "DONE") return "แมตช์นี้มีผลแล้ว ถ้าผลผิดกด ⚠️ แจ้งผู้จัด";
+      if (b.status === "DONE") return "ทัวร์นาเมนต์จบแล้ว แมตช์นี้ไม่ได้แข่ง";
       const poster = TourManager.teamOf(b, posterId);
       bracket = { tournamentId: b.tournamentId, slotId: slot.id, posterTeamId: poster && (poster.id === slot.teamA.id || poster.id === slot.teamB.id) ? poster.id : null };
       label = `${b.name} · M${slot.number} ${slot.label}`;
@@ -346,6 +347,7 @@ export class TournamentBot {
       const m = b.matches.find((x) => x.id === slotId);
       if (!m?.teamA || !m.teamB) return void (await i.reply({ ephemeral: true, content: "แมตช์นี้ไม่อยู่ในสายแล้ว" }));
       if (m.status === "DONE") return void (await i.reply({ ephemeral: true, content: "แมตช์นี้มีผลแล้ว ถ้าผลผิดกด ⚠️ แจ้งผู้จัด" }));
+      if (b.status === "DONE") return void (await i.reply({ ephemeral: true, content: "ทัวร์นาเมนต์จบแล้ว แมตช์นี้ไม่ได้แข่ง" }));
       const team = TourManager.teamOf(b, i.user.id);
       const inMatch = team && (team.id === m.teamA.id || team.id === m.teamB.id) ? team : null;
       if (!inMatch && !this.tour.isOrganizer(tour, i.user.id, info)) return void (await i.reply({ ephemeral: true, content: "ส่งผลได้เฉพาะผู้เล่นของสองทีมนี้หรือผู้จัด" }));

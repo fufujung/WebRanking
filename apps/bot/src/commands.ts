@@ -104,6 +104,7 @@ const tourCommand: ApplicationCommandData = {
     },
     { type: O.Subcommand, name: "bracket", description: "ดูสายการแข่งและผล", options: [tournamentOption] },
     { type: O.Subcommand, name: "kick", description: "เอาทีมออก (ก่อนเริ่มแข่ง)", options: [teamOption("team", "ทีม", true), tournamentOption] },
+    { type: O.Subcommand, name: "end", description: "จบทัวร์นาเมนต์ตอนนี้ (แมตช์ที่เหลือไม่ต้องแข่ง) และลบห้องแข่งได้", options: [tournamentOption] },
     { type: O.Subcommand, name: "cleanup", description: "ลบห้องแข่งทั้งหมดของทัวร์นี้ (หลังจบ)", options: [tournamentOption] },
   ],
 };

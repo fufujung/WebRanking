@@ -237,11 +237,15 @@ export function championEmbed(b: Bracket, siteUrl?: string): APIEmbed {
   const link = siteLink(siteUrl, `/tournaments/${b.tournamentId}`);
   const champ = b.placements.find((p) => p.placement === 1)?.team;
   const medal = (n: number) => (n === 1 ? "🥇" : n === 2 ? "🥈" : n === 3 ? "🥉" : `${n}.`);
+  const ended = !champ || b.matches.some((m) => m.status === "READY" || m.status === "PENDING");
   return fitEmbed({
-    title: `🏆 แชมป์ ${b.name}: ${champ?.name ?? "-"}`,
+    title: ended ? `🏁 จบ ${b.name}${champ ? `: แชมป์ ${champ.name}` : ""}` : `🏆 แชมป์ ${b.name}: ${champ.name}`,
     url: isPublicUrl(link) ? link : undefined,
     color: 0xf5b400,
-    description: b.placements.slice(0, 8).map((p) => `${medal(p.placement)} **${p.team.name}**`).join("\n"),
+    description: [
+      ended ? "ผู้จัดจบทัวร์ก่อนแข่งครบ อันดับตามรอบที่แต่ละทีมไปถึง" : "",
+      ...b.placements.slice(0, 8).map((p) => `${medal(p.placement)} **${p.team.name}**`),
+    ].filter(Boolean).join("\n"),
     fields: champ ? [{ name: `ผู้เล่น ${champ.name}`, value: rosterLines(champ) }] : [],
   });
 }

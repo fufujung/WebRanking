@@ -172,7 +172,31 @@ function organizerButtons(tid: string, m: BracketMatch, force = false) {
       new ButtonBuilder().setCustomId(id("tro", f)).setLabel("ยกเลิกผล ให้แข่งใหม่").setEmoji("↩️").setStyle(ButtonStyle.Danger),
       new ButtonBuilder().setCustomId(id("trs")).setLabel("ปิดเรื่องแย้ง").setEmoji("✅").setStyle(ButtonStyle.Secondary),
     ),
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`tr:tep:${tid}`).setLabel("จบทัวร์นาเมนต์").setEmoji("🏁").setStyle(ButtonStyle.Danger),
+    ),
   ];
+}
+
+/** Confirms ending a tournament: keep the match rooms, or delete them too. */
+export function endButtons(tid: string) {
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`tr:ten:${tid}:clean`).setLabel("จบทัวร์ และลบห้องแข่ง").setEmoji("🏁").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`tr:ten:${tid}:keep`).setLabel("จบทัวร์ เก็บห้องไว้ก่อน").setEmoji("🏁").setStyle(ButtonStyle.Secondary),
+    ),
+  ];
+}
+
+/** What ending a tournament now means, before the organizer confirms. */
+function endQuestion(b: Bracket) {
+  const left = b.matches.filter((m) => m.status === "READY" || m.status === "PENDING").length;
+  if (b.status === "DONE") return `ทัวร์ **${b.name}** จบแล้ว กดปุ่มด้านล่างเพื่อลบห้องแข่งทั้งหมด`;
+  return [
+    `🏁 จบทัวร์ **${b.name}** ตอนนี้เลยไหม?`,
+    left ? `ยังมี ${left} แมตช์ที่ยังไม่ได้แข่ง จะไม่ได้แข่งและไม่มีผล ทีมที่ตกรอบไปแล้วได้อันดับตามรอบที่ไปถึง` : "ทุกแมตช์แข่งครบแล้ว",
+    "จบแล้วบันทึกผลแมตช์ที่ค้างไม่ได้อีก และบอทจะไม่สร้างห้องแข่งใหม่",
+  ].join("\n");
 }
 
 function draftButtons(tid: string, siteUrl?: string) {
@@ -437,7 +461,14 @@ export class TourManager {
         await this.refreshPanel(i.client, tour);
         return void (await i.editReply(`✅ เอาทีม ${team.name} ออกแล้ว${b.status === "DRAFT" ? " (ร่างสายถูกล้าง ต้องจัดสายใหม่)" : ""}`));
       }
+      case "end":
+        return void (await i.editReply({ content: endQuestion(await this.bracket(tid)), components: endButtons(tid) }));
       case "cleanup": {
+        const b = await this.bracket(tid);
+        // Rooms of a running tournament come back on the next sync: it has to end first.
+        if (b.status === "LIVE") {
+          return void (await i.editReply({ content: `⚠️ ทัวร์ยังไม่จบ ถ้าลบตอนนี้ บอทจะสร้างห้องให้คู่ที่ยังไม่ได้แข่งใหม่\n\n${endQuestion(b)}`, components: endButtons(tid) }));
+        }
         const n = await this.cleanup(i.client, tour);
         return void (await i.editReply(`🧹 ลบห้องแข่งแล้ว ${n} ห้อง`));
       }
@@ -667,6 +698,12 @@ export class TourManager {
         const text = b.teams.map((t) => `**${t.name}**\n${rosterLines(t)}`).join("\n\n") || "ยังไม่มีทีมสมัคร";
         return void (await i.reply({ ephemeral: true, content: text.slice(0, 1900), allowedMentions: { parse: [] } }));
       }
+      if (action === "tep" || action === "ten") {
+        if (!organizer) return void (await i.reply({ ephemeral: true, content: "ปุ่มนี้สำหรับผู้จัดและแอดมิน" }));
+        if (action === "tep") return void (await i.reply({ ephemeral: true, content: endQuestion(await this.bracket(tid)), components: endButtons(tid) }));
+        await i.deferReply({ ephemeral: true });
+        return void (await i.editReply(await this.endTour(i.client, tour, ref === "clean", i.user.id)));
+      }
       if (action === "tsd" || action === "tst") {
         if (!organizer) return void (await i.reply({ ephemeral: true, content: "เฉพาะผู้จัด" }));
         await i.deferReply({ ephemeral: true });
@@ -681,6 +718,9 @@ export class TourManager {
       if (!m) return void (await i.reply({ ephemeral: true, content: "ไม่พบแมตช์นี้ในสาย" }));
       const team = TourManager.teamOf(b, i.user.id);
       const inMatch = team && (team.id === m.teamA?.id || team.id === m.teamB?.id) ? team : null;
+      if (b.status === "DONE" && m.status !== "DONE" && (action === "tci" || action === "tsr" || action === "two")) {
+        return void (await i.reply({ ephemeral: true, content: "ทัวร์นาเมนต์จบแล้ว แมตช์นี้ไม่ได้แข่ง" }));
+      }
 
       switch (action) {
         case "tci": {
@@ -1003,6 +1043,16 @@ export class TourManager {
         await this.roomSay(client, tour, m.id, "↩️ ผลรอบก่อนถูกแก้ แมตช์นี้ถูกยกเลิก ทีมที่ได้แข่งจริงจะได้ห้องใหม่");
         await this.lockRoom(client, room);
         this.saveRoom(tid, m.id, null);
+      }
+      if (b.status === "DONE" && m.status !== "DONE") {
+        // The tournament was ended before this match was played: no new room, and an open one is closed.
+        if (room && !room.closed) {
+          await this.roomSay(client, tour, m.id, "🏁 ผู้จัดจบทัวร์นาเมนต์แล้ว แมตช์นี้ไม่ได้แข่ง");
+          await this.refreshHeader(client, tour, b, m, true);
+          this.saveRoom(tid, m.id, { closed: true });
+          await this.removeTeamVoices(client, tid, m.id);
+        }
+        continue;
       }
       if (!room || teamsNow !== `${room.teamAId}|${room.teamBId}`) {
         if (m.status === "READY" && m.teamA && m.teamB) await this.createRoom(client, this.tours.get(tid)!, b, m);
@@ -1369,6 +1419,27 @@ export class TourManager {
     if (!channel?.isSendable()) return;
     const msg = await channel.send(payload);
     this.save(tour.tournamentId, { panel: { channelId: channel.id, messageId: msg.id } });
+  }
+
+  /** Ends the tournament now (unplayed matches stay unplayed), closes the rooms, and deletes them when asked. */
+  private async endTour(client: Client, tour: TourConfig, clean: boolean, by: string) {
+    const tid = tour.tournamentId;
+    const before = await this.bracket(tid);
+    if (before.status !== "LIVE" && before.status !== "DONE") return "ยังไม่ได้เริ่มแข่ง จบทัวร์ไม่ได้ (ถ้าจะยกเลิก ให้ลบทัวร์บนเว็บ)";
+    let text = "ทัวร์นี้จบแล้ว";
+    if (before.status === "LIVE") {
+      await this.api.post(`/tournaments/${tid}/bracket/end`, {});
+      const left = before.matches.filter((m) => m.status === "READY" || m.status === "PENDING").length;
+      const channel = await client.channels.fetch(tour.announceChannelId).catch(() => null);
+      if (channel?.isSendable()) await channel.send({ content: `🏁 ผู้จัด <@${by}> จบทัวร์ **${before.name}** แล้ว${left ? ` (ไม่ได้แข่ง ${left} แมตช์)` : ""}`, allowedMentions: { parse: [] } }).catch(() => null);
+      text = `🏁 จบทัวร์ ${before.name} แล้ว`;
+    }
+    // Closes the open rooms and posts the final standings.
+    await this.sync(client, tid);
+    await this.refreshPanel(client, this.tours.get(tid)!);
+    if (!clean) return `${text} ห้องแข่งยังอยู่ ลบทีหลังได้ด้วย /tour cleanup`;
+    const n = await this.cleanup(client, this.tours.get(tid)!);
+    return `${text} ลบห้องแข่งแล้ว ${n} ห้อง`;
   }
 
   private async cleanup(client: Client, tour: TourConfig) {
