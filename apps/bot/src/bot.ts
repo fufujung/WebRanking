@@ -50,12 +50,12 @@ import {
   type Settings,
 } from "./results.js";
 import { JsonStore } from "./store.js";
-import { TourManager } from "./tour.js";
-import type { BracketMatch, Match, MatchDetail, Page, PlayerDetail, RankedPlayer, RankedTeam, TeamDetail, Tournament } from "./types.js";
+import { parseSeriesScore, TourManager } from "./tour.js";
+import type { BracketMatch, Draft, Match, MatchDetail, Page, PlayerDetail, RankedPlayer, RankedTeam, TeamDetail, Tournament } from "./types.js";
 
 const SAVE = "✅";
 /** Button actions handled by the tournament manager. */
-const TOUR_ACTIONS = new Set(["tci", "two", "tdp", "tad", "taw", "tro", "trs", "tsd", "tst", "tls", "treg", "tmy", "ted", "tcp", "twd"]);
+const TOUR_ACTIONS = new Set(["tci", "tsr", "two", "tdp", "tad", "taw", "tro", "trs", "tsd", "tst", "tls", "treg", "tmy", "ted", "tcp", "twd"]);
 const WEEK = 7 * 24 * 3600_000;
 
 type MemberLike = Pick<GuildMember, "permissions" | "roles"> | { permissions: unknown; roles: string[] | unknown } | null;
@@ -145,8 +145,14 @@ export class TournamentBot {
     return [...message.attachments.values()].map((a) => ({ url: a.url, name: a.name, contentType: a.contentType, size: a.size }));
   }
 
-  /** Reads a post and replies with (or updates) the preview. Returns a Thai message when nothing could be read. */
-  async readAndPreview(message: Message, existingPreview?: Message): Promise<string | null> {
+  /**
+   * Reads a post and replies with (or updates) the preview. Returns a Thai message when nothing could be read.
+   * `opts` is for a post the bot made for a player from the result form: who sent it and the score they typed.
+   */
+  async readAndPreview(message: Message, existingPreview?: Message, opts?: { posterId: string; declared: { scoreA: number; scoreB: number } }): Promise<string | null> {
+    const prior = this.pending.get(message.id);
+    const posterId = opts?.posterId ?? prior?.posterId ?? message.author.id;
+    const declared = opts?.declared ?? prior?.declared;
     const guildId = message.guildId!;
     const recorded = await this.api.get<{ matchId: string | null }>(`/matches/by-source?ref=${encodeURIComponent(message.id)}`).catch(() => ({ matchId: null }));
     if (recorded.matchId) return "โพสต์นี้ถูกบันทึกไปแล้ว";
@@ -160,15 +166,39 @@ export class TournamentBot {
       slot = b?.matches.find((m) => m.id === inRoom.slotId);
       if (!b || !slot?.teamA || !slot.teamB) return "แมตช์นี้ไม่อยู่ในสายแล้ว";
       if (slot.status === "DONE") return "แมตช์นี้มีผลแล้ว ถ้าผลผิดกด ⚠️ แจ้งผู้จัด";
-      const poster = TourManager.teamOf(b, message.author.id);
+      const poster = TourManager.teamOf(b, posterId);
       bracket = { tournamentId: b.tournamentId, slotId: slot.id, posterTeamId: poster && (poster.id === slot.teamA.id || poster.id === slot.teamB.id) ? poster.id : null };
       label = `${b.name} · M${slot.number} ${slot.label}`;
     }
     const reacting = message.react("👀").catch(() => null);
     try {
       const teams = slot ? { teamAId: slot.teamA!.id, teamBId: slot.teamB!.id } : undefined;
-      const draft = await readPost(this.api, { content: message.content, attachments: this.attachmentsOf(message) }, this.download, teams);
+      let draft: Draft | null;
+      let imageUrl: string | null = null;
+      try {
+        draft = await readPost(this.api, { content: message.content, attachments: this.attachmentsOf(message) }, this.download, teams);
+      } catch (e) {
+        // With a typed score the result still counts when the screenshots can't be read: the score is recorded, stats can be added on the website.
+        if (!declared || !slot) throw e;
+        this.log("read failed, keeping the typed score:", e instanceof Error ? e.message : e);
+        imageUrl = await this.keepFirstImage(message).catch(() => null);
+        draft = {
+          teamAId: slot.teamA!.id,
+          teamAName: slot.teamA!.name,
+          teamBId: slot.teamB!.id,
+          teamBName: slot.teamB!.name,
+          scoreA: declared.scoreA,
+          scoreB: declared.scoreB,
+          games: [],
+          warnings: [`อ่านสถิติจากรูปไม่ได้ (${thaiError(e)}) จะบันทึกแค่สกอร์ ส่วนสถิติผู้เล่นผู้จัดกรอกเพิ่มบนเว็บได้`],
+          notes: "",
+        };
+      }
       if (!draft) return "โพสต์นี้ไม่มีรูปสกอร์บอร์ด";
+      if (declared && (draft.scoreA !== declared.scoreA || draft.scoreB !== declared.scoreB)) {
+        if (draft.games.length) draft.warnings.unshift(`สกอร์ที่ทีมแจ้ง ${declared.scoreA}-${declared.scoreB} ไม่ตรงกับที่อ่านจากรูป ${draft.scoreA}-${draft.scoreB} จะใช้ตามที่แจ้ง ตรวจก่อนยืนยัน`);
+        draft = { ...draft, scoreA: declared.scoreA, scoreB: declared.scoreB };
+      }
       const tournament = label ? { name: label } : await pickTournament(this.api, this.settingsFor(guildId)).catch(() => null);
       const embed = previewEmbed(draft, { tournament: tournament?.name ?? null });
       if (bracket) embed.description = `${embed.description?.split("\n")[0]}\nอีกทีม (หรือผู้จัด) ตรวจตัวเลขแล้วกด ✅ ยืนยันผล ถ้าไม่ถูกต้องกด ⚠️ แย้งผล`;
@@ -185,6 +215,9 @@ export class TournamentBot {
         matchId: null,
         createdAt: Date.now(),
         ...(bracket ? { bracket } : {}),
+        ...(posterId !== message.author.id ? { posterId } : {}),
+        ...(declared ? { declared } : {}),
+        ...(imageUrl ? { imageUrl } : {}),
       });
       return null;
     } catch (e) {
@@ -208,7 +241,8 @@ export class TournamentBot {
       if (!(await this.tour.canConfirm(pending.bracket, by.id, by.info))) return { ok: false, text: "ยืนยันผลได้เฉพาะอีกทีม (ไม่ใช่ทีมที่ส่งผล) หรือผู้จัด" };
     } else if (!canSave(by.info, settings)) return { ok: false, text: "เฉพาะแอดมินที่กดบันทึกได้" };
     if (pending.status === "saved") return { ok: false, text: "ผลนี้บันทึกไปแล้ว" };
-    const problem = blockingProblem(pending.draft);
+    // A typed score from the result form is enough in a match room, even without stats.
+    const problem = pending.bracket && pending.declared ? null : blockingProblem(pending.draft);
     if (problem) return { ok: false, text: problem };
     if (this.busy.has(sourceMessageId)) return { ok: false, text: "กำลังบันทึกอยู่ รอสักครู่" };
     this.busy.add(sourceMessageId);
@@ -223,6 +257,7 @@ export class TournamentBot {
           scoreB: d.scoreB,
           games: d.games,
           notes: d.notes || null,
+          ...(pending.imageUrl ? { imageUrl: pending.imageUrl } : {}),
           source: "discord",
           sourceRef: pending.sourceMessageId,
           playedAt: pending.postedAt,
@@ -295,7 +330,60 @@ export class TournamentBot {
   }
 
   async onModal(i: ModalSubmitInteraction) {
+    if (i.customId.startsWith("tr:tsm:")) return this.submitRoomResult(i);
     await this.tour.onModal(i);
+  }
+
+  /** The result form: the bot posts the screenshots into the match room with the typed score, then reads them as usual. */
+  private async submitRoomResult(i: ModalSubmitInteraction) {
+    const [, , tid, slotId] = i.customId.split(":");
+    try {
+      const tour = this.tour.tours.get(tid);
+      const room = tour?.rooms[slotId];
+      if (!tour || !room) return void (await i.reply({ ephemeral: true, content: "ไม่พบห้องแข่งนี้" }));
+      const info = memberInfo(i.member as MemberLike, i.memberPermissions);
+      const b = await this.tour.bracket(tid);
+      const m = b.matches.find((x) => x.id === slotId);
+      if (!m?.teamA || !m.teamB) return void (await i.reply({ ephemeral: true, content: "แมตช์นี้ไม่อยู่ในสายแล้ว" }));
+      if (m.status === "DONE") return void (await i.reply({ ephemeral: true, content: "แมตช์นี้มีผลแล้ว ถ้าผลผิดกด ⚠️ แจ้งผู้จัด" }));
+      const team = TourManager.teamOf(b, i.user.id);
+      const inMatch = team && (team.id === m.teamA.id || team.id === m.teamB.id) ? team : null;
+      if (!inMatch && !this.tour.isOrganizer(tour, i.user.id, info)) return void (await i.reply({ ephemeral: true, content: "ส่งผลได้เฉพาะผู้เล่นของสองทีมนี้หรือผู้จัด" }));
+
+      const winner = i.fields.getStringSelectValues("winner")[0] === "B" ? "B" : "A";
+      const score = parseSeriesScore(i.fields.getTextInputValue("score"), winner, b.bestOf, { A: m.teamA.name, B: m.teamB.name });
+      if ("error" in score) return void (await i.reply({ ephemeral: true, content: `❌ ${score.error}\nกด 📸 ส่งผลการแข่ง ใหม่อีกครั้ง` }));
+      const shots = imageAttachments([...(i.fields.getUploadedFiles("shots") ?? new Map()).values()].map((a) => ({ url: a.url, name: a.name, contentType: a.contentType, size: a.size })));
+      if (!shots.length) return void (await i.reply({ ephemeral: true, content: "❌ แนบรูปสกอร์บอร์ดอย่างน้อย 1 รูป (png, jpg, webp)" }));
+      const tooBig = shots.find((s) => s.size > 8 * 1024 * 1024);
+      if (tooBig) return void (await i.reply({ ephemeral: true, content: `❌ รูป ${tooBig.name} ใหญ่เกิน 8 MB` }));
+      await i.deferReply({ ephemeral: true });
+
+      const files = [];
+      for (const s of shots) files.push({ attachment: Buffer.from(await this.download(s.url)), name: s.name });
+      const channel = await i.client.channels.fetch(room.channelId);
+      if (!channel?.isSendable()) return void (await i.editReply("ส่งข้อความในห้องแข่งไม่ได้"));
+      const winnerName = winner === "A" ? m.teamA.name : m.teamB.name;
+      const post = await channel.send({
+        content: `📸 <@${i.user.id}>${inMatch ? ` (ทีม ${inMatch.name})` : " (ผู้จัด)"} ส่งผล M${m.number}\n**${m.teamA.name} ${score.scoreA}-${score.scoreB} ${m.teamB.name}** · 🏆 ${winnerName} ชนะ`,
+        files,
+        allowedMentions: { parse: [] },
+      });
+      const problem = await this.readAndPreview(post, undefined, { posterId: i.user.id, declared: score });
+      await i.editReply(problem ?? `✅ ส่งผลแล้ว รอ${inMatch ? "อีกทีม" : "ทีมใดทีมหนึ่ง"}หรือผู้จัดกด ✅ ยืนยันผลในห้องแข่ง`);
+    } catch (e) {
+      this.log("result form failed:", e instanceof Error ? e.message : e);
+      const text = `❌ ${thaiError(e)}`;
+      if (i.deferred || i.replied) await i.editReply({ content: text }).catch(() => null);
+      else await i.reply({ ephemeral: true, content: text }).catch(() => null);
+    }
+  }
+
+  /** Copies a post's first screenshot to the website, as evidence for a score-only result. */
+  private async keepFirstImage(message: Message) {
+    const img = imageAttachments(this.attachmentsOf(message))[0];
+    if (!img) return null;
+    return this.api.upload(await this.download(img.url), img.name, img.mediaType);
   }
 
   /** ✅ from an admin on the original post saves it, matching how results were approved before the bot. */

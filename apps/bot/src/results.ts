@@ -27,6 +27,12 @@ export interface Pending {
   createdAt: number;
   /** Set when the post was made in a bracket match room. */
   bracket?: { tournamentId: string; slotId: string; posterTeamId: string | null };
+  /** Who sent the result, when the bot posted it for them (the result form). */
+  posterId?: string;
+  /** The series score the team typed in the result form (bracket order); it wins over what is read from the screenshots. */
+  declared?: { scoreA: number; scoreB: number };
+  /** A screenshot kept as evidence when only the score is recorded. */
+  imageUrl?: string | null;
 }
 
 export interface Attachment {

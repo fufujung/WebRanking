@@ -9,10 +9,12 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
+  FileUploadBuilder,
   LabelBuilder,
   ModalBuilder,
   PermissionFlagsBits,
   TextInputBuilder,
+  StringSelectMenuBuilder,
   TextInputStyle,
   UserSelectMenuBuilder,
   type AutocompleteInteraction,
@@ -109,11 +111,55 @@ export function roomButtons(tid: string, m: BracketMatch, disabled = false) {
   return [
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId(id("tci")).setLabel("เช็คอิน").setEmoji("✋").setStyle(ButtonStyle.Success).setDisabled(disabled),
+      new ButtonBuilder().setCustomId(id("tsr")).setLabel("ส่งผลการแข่ง").setEmoji("📸").setStyle(ButtonStyle.Primary).setDisabled(disabled),
       new ButtonBuilder().setCustomId(id("two")).setLabel("ขอชนะบาย").setEmoji("🏳️").setStyle(ButtonStyle.Secondary).setDisabled(disabled),
       new ButtonBuilder().setCustomId(id("tdp")).setLabel("แจ้งผู้จัด / แย้งผล").setEmoji("⚠️").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(id("tad")).setLabel("ผู้จัด").setEmoji("🛠️").setStyle(ButtonStyle.Primary),
     ),
   ];
+}
+
+/** The result form: the winner, the series score and the scoreboard screenshots, posted into the match room. */
+export function resultModal(tid: string, b: Bracket, m: BracketMatch) {
+  const a = m.teamA!.name;
+  const bb = m.teamB!.name;
+  const need = Math.ceil(b.bestOf / 2);
+  return new ModalBuilder()
+    .setCustomId(`tr:tsm:${tid}:${m.id}`)
+    .setTitle(`ส่งผล M${m.number}`.slice(0, 45))
+    .addLabelComponents(
+      new LabelBuilder()
+        .setLabel("ทีมที่ชนะ")
+        .setStringSelectMenuComponent(
+          new StringSelectMenuBuilder()
+            .setCustomId("winner")
+            .setRequired(true)
+            .setMinValues(1)
+            .setMaxValues(1)
+            .addOptions({ label: a.slice(0, 100), value: "A", emoji: "🔵" }, { label: bb.slice(0, 100), value: "B", emoji: "🔴" }),
+        ),
+      new LabelBuilder()
+        .setLabel(`สกอร์ ${a} - ${bb}`.slice(0, 45))
+        .setDescription(`Bo${b.bestOf}: ทีมที่ชนะต้องได้ ${need} เช่น ${need}-${Math.max(0, need - 1)} (ใส่สกอร์ ${a} ก่อน)`.slice(0, 100))
+        .setTextInputComponent(new TextInputBuilder().setCustomId("score").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(7).setPlaceholder(`${need}-${Math.max(0, need - 1)}`)),
+      new LabelBuilder()
+        .setLabel("รูปสกอร์บอร์ด (ทุกเกม)")
+        .setDescription("แนบได้สูงสุด 6 รูป บอทจะโพสต์ลงห้องแชทนี้และอ่านสถิติให้")
+        .setFileUploadComponent(new FileUploadBuilder().setCustomId("shots").setRequired(true).setMinValues(1).setMaxValues(6)),
+    );
+}
+
+/** Reads the result form's score ("2-1", "2 : 1") for a best-of series. Returns the problem in Thai when it doesn't add up. */
+export function parseSeriesScore(text: string, winner: "A" | "B", bestOf: number, names: { A: string; B: string }): { scoreA: number; scoreB: number } | { error: string } {
+  const m = /^\s*(\d{1,2})\s*[-–:]\s*(\d{1,2})\s*$/.exec(text);
+  if (!m) return { error: `อ่านสกอร์ "${text.slice(0, 20)}" ไม่ออก ใส่แบบ 2-1 (สกอร์ ${names.A} ก่อน)` };
+  const scoreA = Number(m[1]);
+  const scoreB = Number(m[2]);
+  const need = Math.ceil(bestOf / 2);
+  const [w, l] = winner === "A" ? [scoreA, scoreB] : [scoreB, scoreA];
+  if (w <= l) return { error: `เลือก ${names[winner]} ชนะ แต่สกอร์ ${scoreA}-${scoreB} ไม่ได้ให้ ${names[winner]} ชนะ (ใส่สกอร์ ${names.A} ก่อน)` };
+  if (w !== need || l >= need) return { error: `Bo${bestOf} ทีมที่ชนะต้องได้ ${need} เกม (ส่งมา ${scoreA}-${scoreB})` };
+  return { scoreA, scoreB };
 }
 
 function organizerButtons(tid: string, m: BracketMatch, force = false) {
@@ -645,6 +691,11 @@ export class TourManager {
           await i.reply({ content: `✋ ทีม **${inMatch.name}** เช็คอินแล้ว${late ? " (หลังเวลาที่กำหนด)" : ""} โดย <@${i.user.id}>`, allowedMentions: { parse: [] } });
           await this.refreshHeader(i.client, tour, b, slot);
           return;
+        }
+        case "tsr": {
+          if (!inMatch && !organizer) return void (await i.reply({ ephemeral: true, content: "ส่งผลได้เฉพาะผู้เล่นของสองทีมนี้หรือผู้จัด" }));
+          if (m.status !== "READY" || !m.teamA || !m.teamB) return void (await i.reply({ ephemeral: true, content: m.status === "DONE" ? "แมตช์นี้มีผลแล้ว ถ้าผลผิดกด ⚠️ แจ้งผู้จัด" : "แมตช์นี้ยังไม่พร้อม" }));
+          return void (await i.showModal(resultModal(tid, b, m)));
         }
         case "two": {
           if (!inMatch) return void (await i.reply({ ephemeral: true, content: "เฉพาะผู้เล่นของสองทีมนี้" }));
