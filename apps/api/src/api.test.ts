@@ -20,6 +20,7 @@ const { createApiKey } = await import("./lib/apiKeys.js");
 const { prisma } = await import("./lib/db.js");
 const { eloDelta } = await import("./lib/elo.js");
 const { imageReader } = await import("./lib/extract.js");
+const { closeReader } = await import("./lib/ocr.js");
 
 let server: Server;
 let base: string;
@@ -58,6 +59,7 @@ before(async () => {
 });
 
 after(async () => {
+  await closeReader();
   server.close();
   await prisma.$disconnect();
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -388,12 +390,24 @@ describe("images", () => {
     assert.equal((await call("POST", "/api/v1/uploads", form)).status, 413);
   });
 
-  test("image reading reports when it is not configured", async () => {
-    assert.deepEqual((await call("GET", "/api/v1/extract/status")).body, { enabled: false });
+  test("without an AI key, images are read by the free number reader", async () => {
+    assert.deepEqual((await call("GET", "/api/v1/extract/status")).body, { enabled: true, mode: "ocr" });
     const form = new FormData();
     form.append("image", new Blob([png], { type: "image/png" }), "shot.png");
     const up = await call("POST", "/api/v1/uploads", form);
-    assert.equal((await call("POST", "/api/v1/extract/series", { imageUrls: [up.body.url] })).status, 503);
+    const notScoreboard = await call("POST", "/api/v1/extract/series", { imageUrls: [up.body.url] });
+    assert.equal(notScoreboard.status, 422, JSON.stringify(notScoreboard.body));
+    assert.match(notScoreboard.body.details.th, /อ่านสกอร์บอร์ดจากรูปไม่ได้/);
+
+    // A real scoreboard picture comes back as a draft to review, with every stat filled.
+    const board = new FormData();
+    board.append("image", new Blob([fs.readFileSync(new URL("./fixtures/scoreboard.png", import.meta.url))], { type: "image/png" }), "board.png");
+    const boardUp = await call("POST", "/api/v1/uploads", board);
+    const read = await call("POST", "/api/v1/extract/series", { imageUrls: [boardUp.body.url], text: "Home 1-0 Away" });
+    assert.equal(read.status, 200, JSON.stringify(read.body));
+    const game = read.body.draft.games[0];
+    assert.deepEqual([read.body.draft.scoreA, read.body.draft.scoreB, game.scoreA, game.scoreB], [1, 0, 29, 18]);
+    assert.equal(game.players.find((p: { pts: number }) => p.pts === 14).award, "MVP");
     assert.equal((await call("POST", "/api/v1/extract/series", { imageUrls: ["/uploads/../../etc/passwd"] })).status, 404);
     assert.equal((await call("POST", "/api/v1/extract/series", { imageUrls: [] })).status, 400);
   });

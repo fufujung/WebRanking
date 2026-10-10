@@ -217,8 +217,12 @@ step("teams chosen, same team excluded from the other side");
 // Screenshot via the AI section, then "fill in myself" makes game 1 with that image
 await dropFile(".drop >> nth=0", SHOT, "image/png");
 await page.waitForSelector(".shot-chip img");
-const aiBtn = page.locator("button:has-text('ให้ AI อ่าน')");
-step("AI read button present, disabled without key: " + (await aiBtn.isDisabled()));
+// Without an AI key the free reader is used; a picture that isn't a scoreboard gets a clear Thai error.
+const readBtn = page.locator("button:has-text('รูปแล้วกรอกให้')");
+if (await readBtn.isDisabled()) throw new Error("read button should work without an AI key");
+await readBtn.click();
+await page.waitForSelector("[role=alert]:has-text('อ่านสกอร์บอร์ดจากรูปไม่ได้')", { timeout: 60000 });
+step("free reader tried the picture and explained it is not a scoreboard");
 await page.click("button:has-text('ใช้รูปนี้แล้วกรอกเอง')");
 const game = (n) => page.locator(`section[aria-label="เกม ${n}"]`);
 await game(1).waitFor();

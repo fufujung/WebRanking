@@ -16,7 +16,7 @@ uploads.post("/uploads", requireAdmin, imageUpload.single("image"), (req, res) =
 });
 
 uploads.get("/extract/status", (_req, res) => {
-  res.json({ enabled: imageReader.enabled() });
+  res.json({ enabled: imageReader.enabled(), mode: imageReader.mode() });
 });
 
 /**

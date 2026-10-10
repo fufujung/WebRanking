@@ -2,6 +2,7 @@ import fs from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { HttpError } from "./errors.js";
+import { ocrSeries } from "./ocr.js";
 
 /**
  * What Claude reads off a result post: the message text plus one scoreboard
@@ -192,5 +193,13 @@ export async function extractSeries(
   return parsed.data;
 }
 
-/** Indirection so tests can stand in for the real image reader. */
-export const imageReader = { enabled: extractionEnabled, read: extractSeries };
+/**
+ * The image reader in use: Claude when ANTHROPIC_API_KEY is set, otherwise the free
+ * number reader (ocr.ts), which needs no key. Indirection so tests can stand in for it.
+ */
+export const imageReader = {
+  enabled: () => true,
+  mode: (): "ai" | "ocr" => (extractionEnabled() ? "ai" : "ocr"),
+  read: (images: SeriesImage[], text: string, context: { teams: { name: string; players: string[] }[] }) =>
+    extractionEnabled() ? extractSeries(images, text, context) : ocrSeries(images, text, context),
+};
