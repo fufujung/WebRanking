@@ -161,6 +161,11 @@ tournaments.post("/:id/bracket/start", requireAdmin, async (req, res) => {
   res.json(await comp.start(String(req.params.id)));
 });
 
+/** Ends a running tournament now, even with matches left unplayed. */
+tournaments.post("/:id/bracket/end", requireAdmin, async (req, res) => {
+  res.json(await comp.endBracket(String(req.params.id)));
+});
+
 tournaments.delete("/:id/bracket", requireAdmin, async (req, res) => {
   await comp.resetBracket(String(req.params.id), req.query.force === "true");
   res.status(204).end();

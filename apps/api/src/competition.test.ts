@@ -500,6 +500,28 @@ describe("live bracket", () => {
     assert.equal((await call("GET", `/matches/${r.matchId}`)).status, 200);
   });
 
+  test("organizers end a tournament early; unplayed matches stay unplayed", async () => {
+    const t = await newTournament();
+    const notStarted = await call("POST", `/tournaments/${t.id}/bracket/end`);
+    assert.equal(notStarted.status, 409);
+    assert.match(notStarted.body.error.messageTh ?? JSON.stringify(notStarted.body), /ยังไม่ได้เริ่มแข่ง/);
+    const ids = [];
+    for (const name of ["E1", "E2", "E3", "E4"]) ids.push((await registerTeam(t.id, name)).id);
+    await ok("POST", `/tournaments/${t.id}/bracket/seed`, { method: "manual", order: ids });
+    await ok("POST", `/tournaments/${t.id}/bracket/start`);
+    await ok("POST", `/tournaments/${t.id}/bracket/matches/M1/result`, { scoreA: 2, scoreB: 0 });
+    const ended = await ok("POST", `/tournaments/${t.id}/bracket/end`);
+    assert.equal(ended.status, "DONE");
+    assert.equal((await ok("GET", `/tournaments/${t.id}`)).status, "COMPLETED");
+    assert.deepEqual(ended.matches.map((m: any) => m.status), ["DONE", "READY", "PENDING"], "nothing is made up");
+    const placed = ended.teams.filter((x: any) => x.placement !== null);
+    assert.equal(placed.length, 1, "only the team knocked out so far is placed");
+    assert.equal(placed[0].placement, 4, "below the three teams still in");
+    assert.equal((await ok("POST", `/tournaments/${t.id}/bracket/end`)).status, "DONE", "ending twice is fine");
+    const late = await call("POST", `/tournaments/${t.id}/bracket/matches/M2/result`, { scoreA: 2, scoreB: 1 });
+    assert.equal(late.status, 409, "no more results once it is over");
+  });
+
   test("a result read from a post written the other way round is turned around", async () => {
     const t = await newTournament();
     const a = await registerTeam(t.id, "Home Side");

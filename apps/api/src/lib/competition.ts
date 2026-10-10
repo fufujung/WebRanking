@@ -415,6 +415,31 @@ export function start(tournamentId: string) {
   });
 }
 
+/**
+ * Ends a running tournament now, as organizers do when the rest won't be played.
+ * Unplayed matches stay as they are; teams knocked out so far are placed. Recording or reopening a match later starts it again.
+ */
+export function endBracket(tournamentId: string) {
+  return serial(async () => {
+    const t = await tournamentOr404(tournamentId);
+    if (t.bracketStatus === "DONE") return bracketView(tournamentId);
+    if (t.bracketStatus !== "LIVE") throw fail(409, "The bracket is not running", "ยังไม่ได้เริ่มแข่ง จบทัวร์ไม่ได้ (ถ้าจะยกเลิก ให้ลบทัวร์บนเว็บ)");
+    const slots = (await loadRows(tournamentId)).map(toSlot);
+    await prisma.$transaction(async (tx) => {
+      const entries = await tx.tournamentEntry.findMany({ where: { tournamentId }, select: { teamId: true } });
+      const places = placements(t.format as Format, slots, entries.map((e) => e.teamId));
+      // Teams still in the running finish above those already out, so nobody is named champion.
+      const stillIn = entries.length - places.size;
+      for (const e of entries) {
+        const place = places.get(e.teamId);
+        await tx.tournamentEntry.update({ where: { tournamentId_teamId: { tournamentId, teamId: e.teamId } }, data: { placement: place === undefined ? null : place + stillIn } });
+      }
+      await tx.tournament.update({ where: { id: tournamentId }, data: { bracketStatus: "DONE", status: "COMPLETED", registrationOpen: false, endDate: t.endDate ?? new Date() } });
+    });
+    return bracketView(tournamentId);
+  });
+}
+
 /** Removes the bracket. A started bracket needs force; recorded series stay as plain results. */
 export function resetBracket(tournamentId: string, force: boolean) {
   return serial(async () => {
@@ -472,6 +497,7 @@ export function recordResult(tournamentId: string, ref: string, body: unknown) {
   const input = bracketResultInput.parse(body);
   return serial(async () => {
     const { t, rows, row, slots } = await liveContext(tournamentId, ref, true);
+    if (t.bracketStatus === "DONE" && row.status !== "DONE") throw fail(409, "The tournament has ended", "ทัวร์นาเมนต์จบแล้ว แมตช์ที่ยังไม่ได้แข่งบันทึกผลไม่ได้");
     if (row.status !== "READY" && !(row.status === "DONE" && row.outcome !== "BYE")) {
       throw fail(409, "This match is not ready to be played", "แมตช์นี้ยังไม่พร้อมแข่ง (รอทีมจากรอบก่อน)");
     }
@@ -531,6 +557,7 @@ export function walkover(tournamentId: string, ref: string, body: unknown) {
   const input = z.object({ teamId: z.string().min(1), mode: z.enum(["claim", "organizer"]), force: z.boolean().default(false), note: z.string().trim().max(500).optional() }).parse(body);
   return serial(async () => {
     const { t, rows, row, slots } = await liveContext(tournamentId, ref, input.mode === "organizer");
+    if (t.bracketStatus === "DONE" && row.status !== "DONE") throw fail(409, "The tournament has ended", "ทัวร์นาเมนต์จบแล้ว แมตช์ที่ยังไม่ได้แข่งบันทึกผลไม่ได้");
     if (input.teamId !== row.teamAId && input.teamId !== row.teamBId) throw fail(400, "That team is not in this match", "ทีมนี้ไม่ได้อยู่ในแมตช์นี้");
     const side: Side = input.teamId === row.teamAId ? "A" : "B";
     if (input.mode === "claim") {

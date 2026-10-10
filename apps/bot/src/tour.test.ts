@@ -817,7 +817,7 @@ describe("a whole tournament from Discord", () => {
     const panel = press(`tr:tad:${tid}:${m2.id}`, REF, header);
     await bot.onButton(panel);
     const buttons = last<any>(panel.replies).components.flatMap((r: any) => r.toJSON().components);
-    assert.deepEqual(buttons.map((x: any) => x.label), ["Blue ชนะ", "Green ชนะ", "ยกเลิกผล ให้แข่งใหม่", "ปิดเรื่องแย้ง"]);
+    assert.deepEqual(buttons.map((x: any) => x.label), ["Blue ชนะ", "Green ชนะ", "ยกเลิกผล ให้แข่งใหม่", "ปิดเรื่องแย้ง", "จบทัวร์นาเมนต์"]);
     const overturn = press(`tr:taw:${tid}:${m2.id}:B`, REF, header);
     await bot.onButton(overturn);
     assert.match(text(last(overturn.replies)), /ตัดสินให้ Green ชนะ M2/);
@@ -1084,5 +1084,82 @@ describe("the result form in a match room", () => {
     await bot.onButton(confirm);
     assert.match(text(last(confirm.replies)), /บันทึกแล้ว/, JSON.stringify(confirm.replies));
     assert.equal((await api.get<any>(`/tournaments/${tid}/bracket`)).status, "DONE");
+  });
+});
+
+describe("ending a tournament early", () => {
+  test("organizers end it from the room or with /tour end; rooms close and don't come back", async () => {
+    await bot.onCommand(command("tour", "create", { name: "Early Cup", format: "SINGLE_ELIMINATION", start: bkk(60 * 24), roster_min: 1, roster_max: 3 }));
+    const tid = bot.tour.toursIn(GUILD)[0].tournamentId;
+    for (const t of [0, 1, 2, 3]) await bot.onCommand(command("register", null, { team: `${TEAMS[t]} E`, player1: roster(t)[0], tournament: tid }, captain(t)));
+    await bot.onCommand(command("tour", "seed", { method: "rating", tournament: tid }, OWNER));
+    await bot.onCommand(command("tour", "start", { tournament: tid }, OWNER));
+    let b = await api.get<any>(`/tournaments/${tid}/bracket`);
+    const m1 = b.matches.find((x: any) => x.code === "W1-0");
+    const m2 = b.matches.find((x: any) => x.code === "W1-1");
+    await bot.onCommand(command("tour", "winner", { match: m1.number, team: m1.teamA.name, tournament: tid }, OWNER));
+    const rooms = () => bot.tour.tours.get(tid)!.rooms;
+    const openRoom = channels.get(rooms()[m2.id].channelId)!;
+    const roomIds = Object.values(rooms()).map((r) => r.channelId);
+
+    // Cleanup while it is running: explained, nothing deleted.
+    const early = command("tour", "cleanup", { tournament: tid }, OWNER);
+    await bot.onCommand(early);
+    assert.match(text(last(early.replies)), /ทัวร์ยังไม่จบ[\s\S]*ยังมี 2 แมตช์ที่ยังไม่ได้แข่ง/);
+    assert.deepEqual(last<any>(early.replies).components.flatMap((r: any) => r.toJSON().components.map((c: any) => c.custom_id)), [`tr:ten:${tid}:clean`, `tr:ten:${tid}:keep`]);
+    assert.ok(roomIds.every((id) => channels.has(id)));
+
+    // From the organizer panel in a room.
+    const header = openRoom.sent[0];
+    const panel = press(`tr:tad:${tid}:${m2.id}`, OWNER, header);
+    await bot.onButton(panel);
+    const endBtn = last<any>(panel.replies).components.flatMap((r: any) => r.toJSON().components).find((c: any) => c.custom_id === `tr:tep:${tid}`);
+    assert.equal(endBtn.label, "จบทัวร์นาเมนต์");
+    const player = press(`tr:tep:${tid}`, captain(1), header);
+    await bot.onButton(player);
+    assert.match(text(last(player.replies)), /สำหรับผู้จัดและแอดมิน/);
+    const sneaky = press(`tr:ten:${tid}:clean`, captain(1), header);
+    await bot.onButton(sneaky);
+    assert.match(text(last(sneaky.replies)), /สำหรับผู้จัดและแอดมิน/);
+    assert.equal((await api.get<any>(`/tournaments/${tid}/bracket`)).status, "LIVE");
+    const ask = press(`tr:tep:${tid}`, OWNER, header);
+    await bot.onButton(ask);
+    assert.match(text(last(ask.replies)), /จบทัวร์ \*\*Early Cup\*\* ตอนนี้เลยไหม/);
+
+    const keep = press(`tr:ten:${tid}:keep`, OWNER, header);
+    await bot.onButton(keep);
+    assert.match(text(last(keep.replies)), /จบทัวร์ Early Cup แล้ว ห้องแข่งยังอยู่/, JSON.stringify(keep.replies));
+    b = await api.get<any>(`/tournaments/${tid}/bracket`);
+    assert.equal(b.status, "DONE");
+    assert.ok(announce().texts.some((t) => t.includes(`🏁 ผู้จัด <@${OWNER}> จบทัวร์ **Early Cup** แล้ว (ไม่ได้แข่ง 2 แมตช์)`)));
+    const final = last(announce().sent.filter((m) => m.embed?.title));
+    assert.equal(final.embed.title, "🏁 จบ Early Cup");
+    assert.match(openRoom.texts.join("\n"), /แมตช์นี้ไม่ได้แข่ง/);
+    assert.ok(openRoom.sent[0].buttons[0].disabled, "check-in closed");
+    assert.deepEqual(rooms()[m2.id].teamVoice, { A: null, B: null });
+
+    // Nothing comes back, and late results are refused.
+    await bot.tour.sync(fakeClient, tid);
+    const late = submitResult(`tr:tsm:${tid}:${m2.id}`, captain(1), openRoom.id, "A", "2-0", [{ name: "x.png", contentType: "image/png" }]);
+    await bot.onModal(late);
+    assert.match(text(last(late.replies)), /ทัวร์นาเมนต์จบแล้ว/);
+    const lateButton = press(`tr:tsr:${tid}:${m2.id}`, captain(1), header);
+    await bot.onButton(lateButton);
+    assert.match(text(last(lateButton.replies)), /ทัวร์นาเมนต์จบแล้ว/);
+    assert.equal(lateButton.modal, null);
+    const latePost = new FakeMessage(openRoom.id, "Blue E 2-0 Green E", 1, undefined, captain(1));
+    await bot.onMessage(latePost as any);
+    assert.match(text(latePost.replies[0]), /ทัวร์นาเมนต์จบแล้ว/);
+    const again = command("tour", "end", { tournament: tid }, OWNER);
+    await bot.onCommand(again);
+    assert.match(text(last(again.replies)), /จบแล้ว กดปุ่มด้านล่างเพื่อลบห้องแข่ง/);
+    const clean = press(`tr:ten:${tid}:clean`, OWNER, header);
+    await bot.onButton(clean);
+    assert.match(text(last(clean.replies)), /ลบห้องแข่งแล้ว 2 ห้อง/, JSON.stringify(clean.replies));
+    assert.ok(roomIds.every((id) => !channels.has(id)));
+    await bot.tour.sync(fakeClient, tid);
+    assert.deepEqual(rooms(), {});
+    assert.ok(roomIds.every((id) => !channels.has(id)), "the rooms stay gone");
+    assert.equal(announce().sent.filter((m) => m.embed?.title === "🏁 จบ Early Cup").length, 1, "announced once");
   });
 });
