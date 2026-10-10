@@ -153,6 +153,14 @@ function captainButtons(tid: string, team: Entry, b: Bracket) {
 }
 
 /** The sign-up form, or (with a team) the roster form: one player per line, plus teammates on Discord for the match rooms. */
+/** Discord's reason a room could not be made, in Thai with what to do about it. */
+export function roomError(reason: string) {
+  if (/Missing Permissions/i.test(reason)) return "บอทไม่มีสิทธิ์พอ ไปที่ Server Settings → Roles แล้วให้ยศของบอทมี Manage Channels และ Manage Roles และลากยศบอทขึ้นไปไว้บนสุด ถ้าเลือกหมวด (category) เอง ให้เช็คว่าในหมวดนั้นบอทมองเห็นและจัดการห้องได้";
+  if (/Missing Access/i.test(reason)) return "บอทมองไม่เห็นหมวด (category) ที่ใช้สร้างห้อง เปิดสิทธิ์ View Channel และ Manage Channels ให้บอทในหมวดนั้น";
+  if (/Maximum number of (server|guild) channels/i.test(reason)) return "เซิร์ฟเวอร์มีห้องครบ 500 ห้องแล้ว ใช้ /tour cleanup ลบห้องแข่งของทัวร์ที่จบแล้ว";
+  return `ดิสคอร์ดแจ้งว่า "${reason.slice(0, 300)}" (แคปข้อความนี้ส่งให้ทีมพัฒนาได้)`;
+}
+
 /** A turned-down form: what was wrong, and a button that opens the form again with what was typed. */
 function retryReply(problem: string, button: string) {
   return {
@@ -223,6 +231,8 @@ export class TourManager {
   private now: () => Date;
   /** What a captain last typed into a form that was turned down, to fill the form again on retry. */
   private drafts = new Map<string, Draft>();
+  /** The last reason each match room could not be made, so the same problem is reported once. */
+  private roomFailures = new Map<string, string>();
   /** Tournaments being synced right now, so overlapping ticks don't create a room twice. */
   private syncing = new Map<string, Promise<void>>();
 
@@ -1059,16 +1069,20 @@ export class TourManager {
   private async createRoom(client: Client, tour: TourConfig, b: Bracket, m: BracketMatch) {
     const guild = await this.guild(client, tour);
     if (!guild) return;
+    // What was made before a failure is taken down again, so a retry doesn't leave half-made rooms behind.
+    let made: { delete(): Promise<unknown> }[] = [];
+    let parent: string | null = null;
     try {
-      const members = await this.roomMembers(guild, tour, m);
+      const members = (await this.roomMembers(guild, tour, m)).filter((id) => id !== client.user!.id && id !== guild.id);
       const overwrites: OverwriteResolvable[] = [
         { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-        { id: client.user!.id, allow: [...ROOM_ALLOW, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageRoles] },
+        // Discord refuses Manage Roles in an overwrite unless the bot is an administrator; its server role already lets it manage the room.
+        { id: client.user!.id, allow: ROOM_ALLOW },
         { id: tour.ownerId, allow: ROOM_ALLOW },
         ...(tour.organizerRoleId ? [{ id: tour.organizerRoleId, allow: ROOM_ALLOW }] : []),
         ...members.map((id) => ({ id, allow: ROOM_ALLOW })),
       ];
-      const parent = await this.categoryFor(guild, tour, b);
+      parent = await this.categoryFor(guild, tour, b);
       const channel = await guild.channels.create({
         name: `m${m.number}-${channelSlug(m.teamA!.name)}-vs-${channelSlug(m.teamB!.name)}`,
         type: ChannelType.GuildText,
@@ -1076,6 +1090,7 @@ export class TourManager {
         topic: `${b.name} · M${m.number} ${m.label} · ${m.teamA!.name} vs ${m.teamB!.name}`.slice(0, 1024),
         permissionOverwrites: overwrites,
       });
+      made.push(channel);
       // The voice room sits right under the text room; a failure here (no Connect/Speak permission) keeps the text room.
       const voice = await guild.channels
         .create({
@@ -1084,7 +1099,7 @@ export class TourManager {
           parent,
           permissionOverwrites: [
             { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-            { id: client.user!.id, allow: [...VOICE_ALLOW, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageRoles] },
+            { id: client.user!.id, allow: VOICE_ALLOW },
             { id: tour.ownerId, allow: VOICE_ALLOW },
             ...(tour.organizerRoleId ? [{ id: tour.organizerRoleId, allow: VOICE_ALLOW }] : []),
             ...members.map((id) => ({ id, allow: VOICE_ALLOW })),
@@ -1094,6 +1109,7 @@ export class TourManager {
           this.log("voice room create failed:", e instanceof Error ? e.message : e);
           return null;
         });
+      if (voice) made.push(voice);
       const header = await channel.send({
         content: `🏀 ${members.map((id) => `<@${id}>`).join(" ")} ห้องแข่ง M${m.number} พร้อมแล้ว${voice ? `\n🔊 ห้องเสียง: <#${voice.id}>` : "\n⚠️ สร้างห้องเสียงไม่ได้ บอทต้องมีสิทธิ์ Connect และ Speak (เชิญบอทใหม่ด้วยลิงก์ล่าสุด)"}`,
         embeds: [roomEmbed(b, m)],
@@ -1113,11 +1129,27 @@ export class TourManager {
         reminded: false,
         lateNotice: null,
       });
+      this.roomFailures.delete(`${tour.tournamentId}:${m.id}`);
+      made = [];
     } catch (e) {
-      this.log("room create failed:", e instanceof Error ? e.message : e);
+      const reason = e instanceof Error ? e.message : String(e);
+      this.log(`room create failed (M${m.number}):`, reason, (e as { rawError?: unknown })?.rawError ? JSON.stringify((e as { rawError?: unknown }).rawError) : "");
+      for (const c of made) await c.delete().catch(() => null);
+      if (parent) this.releaseCategory(tour.tournamentId, parent, 2);
+      // Tried again on every sync; the organizers hear about it once per distinct problem.
+      const key = `${tour.tournamentId}:${m.id}`;
+      if (this.roomFailures.get(key) === reason) return;
+      this.roomFailures.set(key, reason);
       const channel = await client.channels.fetch(tour.announceChannelId).catch(() => null);
-      if (channel?.isSendable()) await channel.send({ content: `⚠️ สร้างห้องแข่ง M${m.number} ไม่ได้ บอทต้องมีสิทธิ์ Manage Channels และ Manage Roles` }).catch(() => null);
+      if (channel?.isSendable()) await channel.send({ content: `⚠️ สร้างห้องแข่ง M${m.number} ไม่ได้: ${roomError(reason)}\nบอทจะลองใหม่เองทุก 30 วินาที`, allowedMentions: { parse: [] } }).catch(() => null);
     }
+  }
+
+  /** Gives back the channel slots a failed room had taken in its category. */
+  private releaseCategory(tid: string, categoryId: string, slots: number) {
+    const cur = this.tours.get(tid);
+    if (!cur) return;
+    this.save(tid, { categories: cur.categories.map((c) => (c.id === categoryId ? { ...c, count: Math.max(0, c.count - slots) } : c)) });
   }
 
   /** After a roster change: open rooms let in the new players and stop showing the removed ones. */

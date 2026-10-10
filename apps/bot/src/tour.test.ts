@@ -154,6 +154,9 @@ class FakeChannel {
 const members = new Map<string, { roles: string[]; manage: boolean; name: string }>();
 /** Voice rooms whose name matches fail to be made, as when the bot lacks Connect/Speak. */
 let voiceFails = /^$/;
+/** Text rooms whose name matches fail with `textFailure`. */
+let textFails = /^$/;
+let textFailure = "Missing Permissions";
 const fakeGuild: any = {
   id: GUILD,
   members: {
@@ -166,6 +169,9 @@ const fakeGuild: any = {
   channels: {
     create: async (opts: any) => {
       if (opts.type === ChannelType.GuildVoice && voiceFails.test(opts.name)) throw new Error("Missing Permissions");
+      if (textFails.test(opts.name)) throw new Error(textFailure);
+      // As Discord: only administrators may put Manage Roles in an overwrite.
+      if ((opts.permissionOverwrites ?? []).some((o: any) => (o.allow ?? []).includes(PermissionFlagsBits.ManageRoles))) throw new Error("Missing Permissions");
       const c = new FakeChannel(String(nextId++), opts.name, opts.type, opts.parent ?? null, opts.topic ?? null);
       for (const o of opts.permissionOverwrites ?? []) c.overwrites.set(o.id, { allow: o.allow ?? [], deny: o.deny ?? [] });
       return c;
@@ -580,11 +586,31 @@ describe("a whole tournament from Discord", () => {
     const draft = announce().sent.find((m) => m.embed?.title?.startsWith("🗂️"))!;
     const i = press(`tr:tst:${tid}`, REF, draft);
     voiceFails = /Blue vs Green/;
+    textFails = /blue-vs-green/;
     await bot.onButton(i);
-    voiceFails = /^$/;
     assert.match(text(last(i.replies)), /เริ่มแข่งแล้ว/);
     const b = await bracket();
     assert.equal(b.status, "LIVE");
+
+    // A room Discord refuses: said once with the reason and what to do, retried quietly, nothing half-made left behind.
+    assert.equal(Object.keys(bot.tour.tours.get(tid)!.rooms).length, 1);
+    const failed = () => announce().texts.filter((t) => /สร้างห้องแข่ง M2 ไม่ได้/.test(t));
+    assert.equal(failed().length, 1);
+    assert.match(failed()[0], /Manage Channels และ Manage Roles[\s\S]*ลองใหม่เอง/);
+    await bot.tour.sync(fakeClient, tid);
+    await bot.tour.sync(fakeClient, tid);
+    assert.equal(failed().length, 1, "not repeated every sync");
+    textFailure = "Invalid Form Body";
+    await bot.tour.sync(fakeClient, tid);
+    assert.equal(failed().length, 2, "a different problem is reported");
+    assert.match(last(failed()), /Invalid Form Body/);
+    assert.ok(![...channels.values()].some((c) => /blue vs green/i.test(c.name) && !c.deleted), "no leftover voice room");
+    const cats = bot.tour.tours.get(tid)!.categories;
+    assert.equal(cats.length, 1);
+    assert.equal(cats[0].count, 2, "failed tries give their category slots back");
+    textFails = /^$/;
+    await bot.tour.sync(fakeClient, tid);
+    voiceFails = /^$/;
     const rooms = bot.tour.tours.get(tid)!.rooms;
     assert.equal(Object.keys(rooms).length, 2, "W1-0 and W1-1 are ready");
     const m1 = b.matches.find((m: any) => m.code === "W1-0");
