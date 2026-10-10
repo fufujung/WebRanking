@@ -55,14 +55,55 @@ export const teamName = (t: Entry | null, source: string | null, bye: boolean) =
 /** Everyone on a team, captain first; Discord ids only. */
 export function teamMemberIds(t: Entry | null): string[] {
   if (!t) return [];
-  const ids = [t.captainDiscordId, ...t.roster.map((r) => r.discordId)].filter((x): x is string => Boolean(x));
+  const ids = [t.captainDiscordId, ...t.roster.map((r) => r.discordId), ...(t.memberDiscordIds ?? [])].filter((x): x is string => Boolean(x));
   return [...new Set(ids)];
 }
 
+/** "UID 812345678 · Asia", or "" when the player has neither. */
+const characterInfo = (r: { uid?: string | null; server?: string | null }) => [r.uid ? `UID ${r.uid}` : "", r.server ?? ""].filter(Boolean).join(" · ");
+
 export function rosterLines(t: Entry) {
-  const lines = t.roster.map((r) => `• ${r.name}${r.discordId ? ` — <@${r.discordId}>` : ""}${r.discordId && r.discordId === t.captainDiscordId ? " 👑" : ""}`);
+  const lines = t.roster.map((r) => {
+    const info = characterInfo(r);
+    return `• ${r.name}${info ? ` (${info})` : ""}${r.discordId ? ` — <@${r.discordId}>` : ""}${r.discordId && r.discordId === t.captainDiscordId ? " 👑" : ""}`;
+  });
   if (t.captainDiscordId && !t.roster.some((r) => r.discordId === t.captainDiscordId)) lines.unshift(`👑 หัวหน้าทีม <@${t.captainDiscordId}>`);
+  const members = (t.memberDiscordIds ?? []).filter((id) => id !== t.captainDiscordId && !t.roster.some((r) => r.discordId === id));
+  if (members.length) lines.push(`👥 ใน Discord: ${members.map((id) => `<@${id}>`).join(" ")}`);
   return lines.join("\n") || "-";
+}
+
+export const ROSTER_FORMAT = "ชื่อตัวละคร, UID, Server";
+
+/** A roster as the captain types it: one player per line, "name, UID, server". */
+export function rosterText(t: Entry) {
+  return t.roster.map((r) => [r.name, r.uid ?? "", r.server ?? ""].join(", ")).join("\n");
+}
+
+/**
+ * Reads the roster form: one player per line as "name, UID, server" (commas, | or tabs between).
+ * Leading list markers ("1.", "-", "•") are ignored. Returns the players, or the first problem in Thai.
+ */
+export function parseRosterText(text: string): { players: { name: string; uid: string; server: string }[] } | { error: string } {
+  const players: { name: string; uid: string; server: string }[] = [];
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return { error: `ใส่รายชื่อผู้เล่นอย่างน้อย 1 คน บรรทัดละคน: ${ROSTER_FORMAT}` };
+  for (const [i, line] of lines.entries()) {
+    const parts = line
+      .replace(/^(\d{1,2}[.)]|[-•*])\s*/, "")
+      .split(/\s*[,，|\t]\s*/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+    if (parts.length < 3) return { error: `บรรทัดที่ ${i + 1} "${line.slice(0, 60)}" ใส่ไม่ครบ ต้องเป็น ${ROSTER_FORMAT} (คั่นด้วยจุลภาค)` };
+    // A name may itself contain a comma: the last two parts are always UID and server.
+    const server = parts.pop()!;
+    const uid = parts.pop()!;
+    const name = parts.join(", ");
+    if (name.length > 100) return { error: `บรรทัดที่ ${i + 1}: ชื่อตัวละครยาวเกิน 100 ตัวอักษร` };
+    if (uid.length > 40 || server.length > 40) return { error: `บรรทัดที่ ${i + 1}: UID หรือ Server ยาวเกิน 40 ตัวอักษร` };
+    players.push({ name, uid, server });
+  }
+  return { players };
 }
 
 export function registrationPanel(b: Bracket, siteUrl?: string): APIEmbed {
@@ -77,10 +118,10 @@ export function registrationPanel(b: Bracket, siteUrl?: string): APIEmbed {
       `เริ่มแข่ง: ${when(b.startDate, "F")}`,
       `ผู้เล่นต่อทีม: ${b.rosterMin}-${b.rosterMax} คน${b.maxTeams ? ` · รับ ${b.maxTeams} ทีม` : ""} · มาสายได้ ${b.lateMinutes} นาที`,
       "",
-      "**วิธีสมัคร** (หัวหน้าทีมพิมพ์):",
-      "`/register team:ชื่อทีม player1:@ผู้เล่น ign1:ชื่อในเกม player2:… ign2:…`",
-      "ชื่อในเกม (ign) ต้องตรงกับในสกอร์บอร์ด เพื่อให้สถิติเข้าคนถูก",
-      "เปลี่ยนรายชื่อได้ด้วย `/roster set` จนถึงก่อนแมตช์แรกเริ่ม (เฉพาะหัวหน้าทีม)",
+      "**วิธีสมัคร** (หัวหน้าทีม): กดปุ่ม 📝 **สมัครทีม** ด้านล่าง แล้วกรอกรายชื่อบรรทัดละคน",
+      `\`${ROSTER_FORMAT}\` เช่น \`Bank, 812345678, Asia\``,
+      "ชื่อตัวละครต้องตรงกับในสกอร์บอร์ด เพื่อให้สถิติเข้าคนถูก",
+      "แก้รายชื่อ: หัวหน้าทีมกด ⚙️ **จัดการทีมของฉัน** ได้จนถึงก่อนแมตช์แรกเริ่ม",
     ].join("\n"),
     fields: [{ name: `ทีมที่สมัครแล้ว (${b.teams.length}${b.maxTeams ? `/${b.maxTeams}` : ""})`, value: teams.join("\n") || "ยังไม่มี" }],
   });

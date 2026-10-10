@@ -150,37 +150,60 @@ function checkRosterShape(t: Tournament, players: RosterIn["players"]) {
   if (new Set(names).size !== names.length) throw fail(400, "A player is listed twice", "มีชื่อผู้เล่นซ้ำในรายชื่อ");
   const ids = players.map((p) => p.discordId).filter(Boolean);
   if (new Set(ids).size !== ids.length) throw fail(400, "A Discord account is listed twice", "มีบัญชี Discord ซ้ำในรายชื่อ");
+  const uids = players.filter((p) => p.uid).map(uidKey);
+  if (new Set(uids).size !== uids.length) throw fail(400, "A UID is listed twice", "มี UID ซ้ำในรายชื่อ");
 }
 
-/** Discord accounts already playing for another team in this tournament. */
-async function discordClash(tx: Tx, tournamentId: string, entryId: string | null, discordIds: string[]) {
-  if (!discordIds.length) return;
-  const clash = await tx.rosterPlayer.findFirst({
-    where: { discordId: { in: discordIds }, entry: { tournamentId, ...(entryId ? { id: { not: entryId } } : {}) } },
-    include: { entry: { include: { team: { select: { name: true } } } } },
-  });
-  if (clash) {
-    throw fail(409, "A player is already on another team in this tournament", `<@${clash.discordId}> อยู่ในรายชื่อทีม ${clash.entry.team.name} แล้ว (หนึ่งคนลงได้ทีมเดียว)`, { discordId: clash.discordId });
+/** The same character: UID plus server (servers may reuse UIDs), compared without case. */
+const uidKey = (p: { uid: string | null; server: string | null }) => `${(p.uid ?? "").toLowerCase()}@${(p.server ?? "").toLowerCase()}`;
+
+export function parseMemberIds(raw: string | null | undefined): string[] {
+  try {
+    const v = JSON.parse(raw ?? "[]");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
   }
 }
 
-/** Finds or creates each roster player, preferring the same Discord account, then the same name on this team. */
+/** Discord accounts or characters already on another team in this tournament (one account, one character, one team). */
+async function rosterClash(tx: Tx, tournamentId: string, entryId: string | null, discordIds: string[], players: RosterIn["players"]) {
+  const others = await tx.tournamentEntry.findMany({
+    where: { tournamentId, ...(entryId ? { id: { not: entryId } } : {}) },
+    include: { team: { select: { name: true } }, roster: { select: { discordId: true, uid: true, server: true, player: { select: { name: true } } } } },
+  });
+  const wanted = new Set(discordIds);
+  for (const e of others) {
+    const theirs = [e.captainDiscordId, ...e.roster.map((r) => r.discordId), ...parseMemberIds(e.memberDiscordIds)];
+    const clash = theirs.find((id): id is string => Boolean(id && wanted.has(id)));
+    if (clash) throw fail(409, "A player is already on another team in this tournament", `<@${clash}> อยู่ในทีม ${e.team.name} แล้ว (หนึ่งคนลงได้ทีมเดียว)`, { discordId: clash });
+    for (const p of players) {
+      if (!p.uid) continue;
+      const same = e.roster.find((r) => r.uid && uidKey(r) === uidKey(p));
+      if (same) throw fail(409, "This character is already on another team in this tournament", `UID ${p.uid}${p.server ? ` (${p.server})` : ""} อยู่ในทีม ${e.team.name} แล้ว`, { uid: p.uid });
+    }
+  }
+}
+
+type RosterRow = { playerId: string; discordId: string | null; uid: string | null; server: string | null };
+
+/** Finds or creates each roster player, preferring the same character (UID), then the same Discord account, then the same name on this team. */
 async function resolveRoster(tx: Tx, teamId: string, players: RosterIn["players"]) {
-  const out: { playerId: string; discordId: string | null }[] = [];
+  const out: RosterRow[] = [];
   for (const p of players) {
     const key = normaliseName(p.name);
     let playerId: string | null = null;
-    if (p.discordId) {
-      const known = await tx.rosterPlayer.findFirst({ where: { discordId: p.discordId }, orderBy: { id: "desc" }, include: { player: true } });
-      if (known) {
-        playerId = known.playerId;
-        const pl = known.player;
-        const sameName = normaliseName(pl.name) === key || (pl.nickname !== null && normaliseName(pl.nickname) === key);
-        await tx.player.update({
-          where: { id: pl.id },
-          data: { teamId, ...(sameName ? {} : { name: p.name, nickname: pl.nickname ?? pl.name }) },
-        });
-      }
+    const known =
+      (p.uid ? await tx.rosterPlayer.findFirst({ where: { uid: p.uid, server: p.server }, orderBy: { id: "desc" }, include: { player: true } }) : null) ??
+      (p.discordId ? await tx.rosterPlayer.findFirst({ where: { discordId: p.discordId }, orderBy: { id: "desc" }, include: { player: true } }) : null);
+    if (known) {
+      playerId = known.playerId;
+      const pl = known.player;
+      const sameName = normaliseName(pl.name) === key || (pl.nickname !== null && normaliseName(pl.nickname) === key);
+      await tx.player.update({
+        where: { id: pl.id },
+        data: { teamId, ...(sameName ? {} : { name: p.name, nickname: pl.nickname ?? pl.name }) },
+      });
     }
     if (!playerId) {
       const candidates = await tx.player.findMany({ where: { OR: [{ teamId }, { teamId: null }] }, select: { id: true, name: true, nickname: true, teamId: true } });
@@ -194,15 +217,23 @@ async function resolveRoster(tx: Tx, teamId: string, players: RosterIn["players"
       }
     }
     if (out.some((o) => o.playerId === playerId)) throw fail(400, "A player is listed twice", "มีผู้เล่นซ้ำในรายชื่อ");
-    out.push({ playerId, discordId: p.discordId });
+    out.push({ playerId, discordId: p.discordId, uid: p.uid, server: p.server });
   }
   return out;
 }
 
-async function replaceRoster(tx: Tx, entryId: string, roster: { playerId: string; discordId: string | null }[]) {
+async function replaceRoster(tx: Tx, entryId: string, roster: RosterRow[]) {
   await tx.rosterPlayer.deleteMany({ where: { entryId } });
   for (const [order, r] of roster.entries()) await tx.rosterPlayer.create({ data: { entryId, ...r, order } });
 }
+
+/** Every Discord account a roster change brings onto the team. */
+const teamDiscordIds = (captain: string | null | undefined, input: RosterIn, members: string[]) =>
+  [...new Set([captain, ...input.players.map((p) => p.discordId), ...members].filter((x): x is string => Boolean(x)))];
+
+/** Extra Discord accounts, without the captain or anyone already on a roster line. */
+const extraMembers = (captain: string | null | undefined, input: RosterIn, members: string[]) =>
+  [...new Set(members)].filter((id) => id !== captain && !input.players.some((p) => p.discordId === id));
 
 /** A team signs up (from Discord, or added by an organizer with override). */
 export function register(tournamentId: string, body: unknown) {
@@ -224,12 +255,13 @@ export function register(tournamentId: string, body: unknown) {
       else if (input.tag && !team.tag) await tx.team.update({ where: { id: team.id }, data: { tag: input.tag } });
       const existing = await tx.tournamentEntry.findUnique({ where: { tournamentId_teamId: { tournamentId, teamId: team.id } } });
       if (existing) throw fail(409, "This team is already registered", `ทีม ${team.name} สมัครไว้แล้ว`);
-      await discordClash(tx, tournamentId, null, input.players.map((p) => p.discordId).filter((x): x is string => Boolean(x)));
+      const members = extraMembers(input.captainDiscordId, input, input.memberDiscordIds ?? []);
+      await rosterClash(tx, tournamentId, null, teamDiscordIds(input.captainDiscordId, input, members), input.players);
       if (input.captainDiscordId) {
         const captainElsewhere = await tx.tournamentEntry.findFirst({ where: { tournamentId, captainDiscordId: input.captainDiscordId }, include: { team: true } });
         if (captainElsewhere) throw fail(409, "This captain already leads another team", `คุณเป็นหัวหน้าทีม ${captainElsewhere.team.name} อยู่แล้ว`);
       }
-      const entry = await tx.tournamentEntry.create({ data: { tournamentId, teamId: team.id, captainDiscordId: input.captainDiscordId ?? null } });
+      const entry = await tx.tournamentEntry.create({ data: { tournamentId, teamId: team.id, captainDiscordId: input.captainDiscordId ?? null, memberDiscordIds: JSON.stringify(members) } });
       await replaceRoster(tx, entry.id, await resolveRoster(tx, team.id, input.players));
       // A new team invalidates a seeded-but-not-started bracket.
       if (t.bracketStatus === "DRAFT") await dropDraft(tx, tournamentId);
@@ -250,7 +282,10 @@ export function setRoster(tournamentId: string, teamId: string, body: unknown) {
     if (lock.locked && !input.override) throw fail(409, "Rosters are locked: the first match has started", "เปลี่ยนรายชื่อไม่ได้แล้ว เพราะแมตช์แรกเริ่มไปแล้ว (ติดต่อผู้จัด)");
     checkRosterShape(t, input.players);
     await prisma.$transaction(async (tx) => {
-      await discordClash(tx, tournamentId, entry.id, input.players.map((p) => p.discordId).filter((x): x is string => Boolean(x)));
+      const captain = input.captainDiscordId !== undefined ? input.captainDiscordId : entry.captainDiscordId;
+      const members = extraMembers(captain, input, input.memberDiscordIds ?? parseMemberIds(entry.memberDiscordIds));
+      await rosterClash(tx, tournamentId, entry.id, teamDiscordIds(captain, input, members), input.players);
+      await tx.tournamentEntry.update({ where: { id: entry.id }, data: { memberDiscordIds: JSON.stringify(members) } });
       if (input.captainDiscordId !== undefined) {
         if (input.captainDiscordId) {
           const other = await tx.tournamentEntry.findFirst({ where: { tournamentId, captainDiscordId: input.captainDiscordId, id: { not: entry.id } }, include: { team: true } });
@@ -292,8 +327,9 @@ const shapeEntry = (e: EntryRow) => ({
   seed: e.seed,
   placement: e.placement,
   captainDiscordId: e.captainDiscordId,
+  memberDiscordIds: parseMemberIds(e.memberDiscordIds),
   registeredAt: e.createdAt,
-  roster: e.roster.map((r) => ({ playerId: r.playerId, name: r.player.name, discordId: r.discordId })),
+  roster: e.roster.map((r) => ({ playerId: r.playerId, name: r.player.name, discordId: r.discordId, uid: r.uid, server: r.server })),
 });
 
 export async function entryView(tournamentId: string, teamId: string) {

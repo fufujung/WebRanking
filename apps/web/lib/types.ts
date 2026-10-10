@@ -102,8 +102,10 @@ export interface Entry extends TeamSummary {
   seed: number | null;
   placement: number | null;
   captainDiscordId: string | null;
+  /** Other Discord accounts of the team, let into match rooms. */
+  memberDiscordIds?: string[];
   registeredAt: string;
-  roster: { playerId: string; name: string; discordId: string | null }[];
+  roster: { playerId: string; name: string; discordId: string | null; uid?: string | null; server?: string | null }[];
 }
 
 export interface BracketSlot {

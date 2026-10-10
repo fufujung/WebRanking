@@ -152,6 +152,8 @@ class FakeChannel {
 }
 
 const members = new Map<string, { roles: string[]; manage: boolean; name: string }>();
+/** Voice rooms whose name matches fail to be made, as when the bot lacks Connect/Speak. */
+let voiceFails = /^$/;
 const fakeGuild: any = {
   id: GUILD,
   members: {
@@ -163,6 +165,7 @@ const fakeGuild: any = {
   },
   channels: {
     create: async (opts: any) => {
+      if (opts.type === ChannelType.GuildVoice && voiceFails.test(opts.name)) throw new Error("Missing Permissions");
       const c = new FakeChannel(String(nextId++), opts.name, opts.type, opts.parent ?? null, opts.topic ?? null);
       for (const o of opts.permissionOverwrites ?? []) c.overwrites.set(o.id, { allow: o.allow ?? [], deny: o.deny ?? [] });
       return c;
@@ -255,6 +258,40 @@ function press(customId: string, userId: string, message: FakeMessage) {
     },
   };
   return i;
+}
+
+/** A filled-in form: text fields by id, and picked users (ids) by id. */
+function submitForm(customId: string, userId: string, channelId: string, values: Record<string, string>, picked: Record<string, string[]> = {}) {
+  const i: any = {
+    ...baseInteraction(userId, channelId),
+    customId,
+    fields: {
+      getTextInputValue: (id: string) => {
+        if (!(id in values)) throw new Error(`no field ${id}`);
+        return values[id];
+      },
+      getSelectedUsers: (id: string, required?: boolean) => {
+        const ids = picked[id] ?? [];
+        if (!ids.length && required) throw new Error(`no users for ${id}`);
+        return ids.length ? new Map(ids.map((u) => [u, { id: u, username: members.get(u)?.name ?? "u", bot: u === "bot-user" }])) : null;
+      },
+    },
+  };
+  i.fields.getSelectedUsers = ((orig) => (id: string, required?: boolean) => {
+    const r = orig(id, required);
+    return r && Object.assign(r, { first: () => [...r.values()][0] });
+  })(i.fields.getSelectedUsers);
+  return i;
+}
+
+/** Every input of a modal, by custom id: its label and value (or default users). */
+function formFields(modal: any) {
+  const out: Record<string, { label: string; value?: string; users?: string[]; type: number }> = {};
+  for (const c of modal.components) {
+    const inner = c.component;
+    out[inner.custom_id] = { label: c.label, value: inner.value, users: inner.default_values?.map((v: any) => v.id), type: inner.type };
+  }
+  return out;
 }
 
 function submitModal(customId: string, userId: string, channelId: string, note: string) {
@@ -354,7 +391,8 @@ describe("a whole tournament from Discord", () => {
     assert.deepEqual([t.format, t.bestOf, t.lateMinutes, t.rosterMin, t.rosterMax, t.registrationOpen], ["DOUBLE_ELIMINATION", 3, 15, 3, 4, true]);
     const panel = announce().sent[0];
     assert.match(panel.embed.title, /เปิดรับสมัคร: Kuroko Cup/);
-    assert.match(panel.embed.description, /\/register/);
+    assert.match(panel.embed.description, /สมัครทีม/);
+    assert.deepEqual(panel.buttons.map((b: any) => [b.custom_id, Boolean(b.disabled)]), [[`tr:treg:${tid}`, false], [`tr:tmy:${tid}`, false], [`tr:tls:${tid}`, false]]);
   });
 
   test("captains register their teams with Discord members and in-game names", async () => {
@@ -374,7 +412,7 @@ describe("a whole tournament from Discord", () => {
 
     const dup = command("register", null, { team: "Pink", player1: roster(1)[2], player2: person(98), player3: OWNER }, person(98));
     await bot.onCommand(dup);
-    assert.match(text(last(dup.replies)), /อยู่ในรายชื่อทีม Blue แล้ว/);
+    assert.match(text(last(dup.replies)), /อยู่ในทีม Blue แล้ว/);
     const short = command("register", null, { team: "Pink", player1: person(98) }, person(98));
     await bot.onCommand(short);
     assert.match(text(last(short.replies)), /3-4 คน/);
@@ -396,12 +434,121 @@ describe("a whole tournament from Discord", () => {
     assert.equal((await bracket()).teams.find((t: any) => t.name === "Red").roster.length, 4);
   });
 
+  test("a team signs up with the button and form; only its captain sees the buttons to change it", async () => {
+    const PINK = person(97);
+    const MATE = person(96);
+    members.set(PINK, { roles: [], manage: false, name: "Pinky" });
+    members.set(MATE, { roles: [], manage: false, name: "Mate" });
+    const panel = announce().sent[0];
+
+    const already = press(`tr:treg:${tid}`, captain(0), panel);
+    await bot.onButton(already);
+    assert.match(text(last(already.replies)), /คุณอยู่ในทีม \*\*Red\*\* แล้ว \(หัวหน้าทีม\)/);
+    assert.equal(already.modal, null);
+
+    const open = press(`tr:treg:${tid}`, PINK, panel);
+    await bot.onButton(open);
+    const form = formFields(open.modal);
+    assert.deepEqual(Object.keys(form), ["team", "tag", "players", "members"]);
+    assert.match(form.players.label, /3-4 คน/);
+    assert.equal(form.members.type, 5, "a user picker for teammates on Discord");
+
+    // A wrong line: told which, and the retry opens the form with what was typed.
+    const typed = { team: "Pink", tag: "PNK", players: "Pinky, 812345678, Asia\nMage 2" };
+    const bad = submitForm(`tr:trm:${tid}`, PINK, ANNOUNCE, typed);
+    await bot.onModal(bad);
+    assert.match(text(last(bad.replies)), /บรรทัดที่ 2 "Mage 2" ใส่ไม่ครบ/);
+    assert.equal(last<any>(bad.replies).components[0].components[0].data.custom_id, `tr:treg:${tid}`);
+    const again = press(`tr:treg:${tid}`, PINK, panel);
+    await bot.onButton(again);
+    assert.deepEqual([formFields(again.modal).team.value, formFields(again.modal).tag.value, formFields(again.modal).players.value], ["Pink", "PNK", typed.players]);
+
+    const short = submitForm(`tr:trm:${tid}`, PINK, ANNOUNCE, { ...typed, players: "Pinky, 812345678, Asia" });
+    await bot.onModal(short);
+    assert.match(text(last(short.replies)), /3-4 คน/, "the API's rules come back the same way");
+
+    const good = submitForm(`tr:trm:${tid}`, PINK, ANNOUNCE, { ...typed, players: "1. Pinky, 812345678, Asia\n- Mage, Two, 812345679, Asia\nTank | 812345680 | EU" }, { members: [MATE, PINK] });
+    await bot.onModal(good);
+    const done = last<any>(good.replies);
+    assert.match(done.content, /สมัครทีม \*\*Pink\*\* แล้ว คุณเป็นหัวหน้าทีม/);
+    assert.match(done.content, /Mage, Two \(UID 812345679 · Asia\)/);
+    assert.deepEqual(done.components[0].components.map((b: any) => b.data.custom_id.split(":")[1]), ["ted", "tcp", "twd"]);
+    let pink = (await bracket()).teams.find((t: any) => t.name === "Pink");
+    assert.equal(pink.captainDiscordId, PINK);
+    assert.equal(pink.tag, "PNK");
+    assert.deepEqual(pink.memberDiscordIds, [MATE], "the captain is not listed twice");
+    assert.deepEqual(pink.roster.map((r: any) => [r.name, r.uid, r.server]), [["Pinky", "812345678", "Asia"], ["Mage, Two", "812345679", "Asia"], ["Tank", "812345680", "EU"]]);
+    assert.ok(announce().texts.some((t) => /ทีม \*\*Pink\*\* สมัครแล้ว/.test(t)));
+
+    // A teammate sees the team but no buttons; the captain's buttons refuse them.
+    const mate = press(`tr:tmy:${tid}`, MATE, panel);
+    await bot.onButton(mate);
+    assert.match(text(last(mate.replies)), /\*\*Pink\*\*[\s\S]*เปลี่ยนรายชื่อได้เฉพาะหัวหน้าทีม/);
+    assert.deepEqual(last<any>(mate.replies).components, []);
+    const sneaky = press(`tr:ted:${tid}:${pink.id}`, MATE, panel);
+    await bot.onButton(sneaky);
+    assert.match(text(last(sneaky.replies)), /สำหรับหัวหน้าทีมเท่านั้น/);
+    assert.equal(sneaky.modal, null);
+    const stranger = press(`tr:tmy:${tid}`, person(95), panel);
+    await bot.onButton(stranger);
+    assert.match(text(last(stranger.replies)), /ยังไม่ได้อยู่ในทีมไหน/);
+
+    // The captain changes the roster from the filled-in form.
+    const mine = press(`tr:tmy:${tid}`, PINK, panel);
+    await bot.onButton(mine);
+    assert.match(text(last(mine.replies)), /คุณเป็นหัวหน้าทีม/);
+    const edit = press(`tr:ted:${tid}:${pink.id}`, PINK, panel);
+    await bot.onButton(edit);
+    const ef = formFields(edit.modal);
+    assert.deepEqual(Object.keys(ef), ["players", "members"]);
+    assert.equal(ef.players.value, "Pinky, 812345678, Asia\nMage, Two, 812345679, Asia\nTank, 812345680, EU");
+    assert.deepEqual(ef.members.users, [MATE]);
+    const taken = submitForm(`tr:tem:${tid}:${pink.id}`, PINK, ANNOUNCE, { players: `${ef.players.value}\nThief, 812345678, EU` }, { members: [roster(1)[1]] });
+    await bot.onModal(taken);
+    assert.match(text(last(taken.replies)), /อยู่ในทีม Blue แล้ว/, "a Blue player cannot join Pink");
+    const edited = submitForm(`tr:tem:${tid}:${pink.id}`, PINK, ANNOUNCE, { players: `${ef.players.value}\nHealer, 812345681, Asia` }, {});
+    await bot.onModal(edited);
+    assert.match(text(last(edited.replies)), /อัปเดตทีม \*\*Pink\*\*[\s\S]*Healer/);
+    pink = (await bracket()).teams.find((t: any) => t.name === "Pink");
+    assert.equal(pink.roster.length, 4);
+    assert.deepEqual(pink.memberDiscordIds, [], "teammates unpicked are taken off");
+
+    // Handing over: the new captain gets the buttons, the old one stays on the team.
+    const hand = press(`tr:tcp:${tid}:${pink.id}`, PINK, panel);
+    await bot.onButton(hand);
+    assert.equal(formFields(hand.modal).captain.type, 5);
+    const handed = submitForm(`tr:tcm:${tid}:${pink.id}`, PINK, ANNOUNCE, {}, { captain: [MATE] });
+    await bot.onModal(handed);
+    assert.match(text(last(handed.replies)), /โอนหัวหน้าทีม \*\*Pink\*\*/);
+    pink = (await bracket()).teams.find((t: any) => t.name === "Pink");
+    assert.equal(pink.captainDiscordId, MATE);
+    assert.deepEqual(pink.memberDiscordIds, [PINK]);
+    assert.equal(pink.roster.length, 4, "the roster is unchanged");
+    const oldCaptain = press(`tr:twd:${tid}:${pink.id}`, PINK, panel);
+    await bot.onButton(oldCaptain);
+    assert.match(text(last(oldCaptain.replies)), /สำหรับหัวหน้าทีมเท่านั้น/);
+
+    // Withdrawing asks first.
+    const ask = press(`tr:twd:${tid}:${pink.id}`, MATE, panel);
+    await bot.onButton(ask);
+    assert.match(text(last(ask.replies)), /แน่ใจไหม/);
+    assert.equal((await bracket()).teams.length, 5);
+    const sure = press(`tr:twd:${tid}:${pink.id}:y`, MATE, panel);
+    await bot.onButton(sure);
+    assert.match(text(last(sure.replies)), /ถอนทีม \*\*Pink\*\* แล้ว/);
+    assert.equal((await bracket()).teams.length, 4);
+  });
+
   test("closing registration; seeding; swapping two teams", async () => {
     const notOrg = command("tour", "registration", { open: false }, captain(1));
     await bot.onCommand(notOrg);
     assert.match(text(last(notOrg.replies)), /สำหรับผู้จัด/);
     await bot.onCommand(command("tour", "registration", { open: false }, REF));
     assert.match(announce().sent[0].embed.title, /ปิดรับสมัคร/);
+    assert.equal(announce().sent[0].buttons[0].disabled, true, "the sign-up button is greyed out");
+    const closed = press(`tr:treg:${tid}`, person(98), announce().sent[0]);
+    await bot.onButton(closed);
+    assert.match(text(last(closed.replies)), /ปิดรับสมัครแล้ว/);
     const late = command("register", null, { team: "Pink", player1: person(98) }, person(98));
     await bot.onCommand(late);
     assert.match(text(last(late.replies)), /ปิดรับสมัคร/);
@@ -432,7 +579,9 @@ describe("a whole tournament from Discord", () => {
   test("starting creates private rooms for the first matches", async () => {
     const draft = announce().sent.find((m) => m.embed?.title?.startsWith("🗂️"))!;
     const i = press(`tr:tst:${tid}`, REF, draft);
+    voiceFails = /Blue vs Green/;
     await bot.onButton(i);
+    voiceFails = /^$/;
     assert.match(text(last(i.replies)), /เริ่มแข่งแล้ว/);
     const b = await bracket();
     assert.equal(b.status, "LIVE");
@@ -454,6 +603,21 @@ describe("a whole tournament from Discord", () => {
     assert.deepEqual(header.buttons.map((x: any) => x.custom_id.split(":")[1]), ["tci", "two", "tdp", "tad"]);
     assert.match(header.content, new RegExp(`<@${captain(0)}>`));
     assert.ok(announce().texts.some((t) => /เริ่มแข่งแล้ว/.test(t)));
+
+    // Each match also gets a private voice room in the same category.
+    const voice = channels.get(rooms[m1.id].voiceChannelId!)!;
+    assert.equal(voice.type, ChannelType.GuildVoice);
+    assert.equal(voice.name, "🔊 M1 Red vs Gold");
+    assert.equal(voice.parentId, room.parentId);
+    assert.deepEqual(voice.overwrites.get(GUILD)!.deny, [PermissionFlagsBits.ViewChannel]);
+    for (const id of [...roster(0), person(98), ...roster(3)]) assert.ok(voice.canSee(id), `${id} can join the voice room`);
+    for (const id of roster(1)) assert.ok(!voice.canSee(id));
+    assert.ok(voice.overwrites.get(captain(0))!.allow.includes(PermissionFlagsBits.Speak));
+    assert.match(header.content, new RegExp(`ห้องเสียง: <#${voice.id}>`));
+    // No voice room (missing permission): the text room still works and says why.
+    const m2 = b.matches.find((m: any) => m.code === "W1-1");
+    assert.equal(rooms[m2.id].voiceChannelId, null);
+    assert.match(roomOf(m2.id).sent[0].content, /สร้างห้องเสียงไม่ได้/);
   });
 
   test("rosters still change until the first match starts, and rooms follow", async () => {
@@ -461,8 +625,10 @@ describe("a whole tournament from Discord", () => {
     await bot.onCommand(set);
     assert.match(text(last(set.replies)), /อัปเดตทีม/);
     const b = await bracket();
-    const room = roomOf(b.matches.find((m: any) => m.code === "W1-0").id);
+    const slot = b.matches.find((m: any) => m.code === "W1-0").id;
+    const room = roomOf(slot);
     assert.ok(!room.canSee(person(98)), "the removed sub loses access");
+    assert.ok(!channels.get(bot.tour.tours.get(tid)!.rooms[slot].voiceChannelId!)!.canSee(person(98)), "and the voice room too");
   });
 
   test("a result posted in the room is read with the room's teams and confirmed by the other team", async () => {
@@ -628,11 +794,14 @@ describe("a whole tournament from Discord", () => {
 
   test("/tour cleanup removes the match rooms", async () => {
     const roomIds = Object.values(bot.tour.tours.get(tid)!.rooms).map((r) => r.channelId);
+    const voiceIds = Object.values(bot.tour.tours.get(tid)!.rooms).map((r) => r.voiceChannelId).filter((x): x is string => Boolean(x));
     assert.ok(roomIds.length >= 4);
+    assert.ok(voiceIds.length >= 3);
     const i = command("tour", "cleanup", {}, OWNER);
     await bot.onCommand(i);
     assert.match(text(last(i.replies)), new RegExp(`ลบห้องแข่งแล้ว ${roomIds.length} ห้อง`));
     assert.ok(roomIds.every((id) => !channels.has(id)));
+    assert.ok(voiceIds.every((id) => !channels.has(id)), "voice rooms go too");
   });
 
   test("results of bot-run tournaments are not announced twice by the general announcer", async () => {

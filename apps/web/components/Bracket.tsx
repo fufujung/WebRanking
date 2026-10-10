@@ -152,7 +152,10 @@ export function Rosters({ teams }: { teams: Entry[] }) {
             {t.seed !== null && <span className="badge">ซีด {t.seed}</span>}
           </div>
           {t.roster.length ? (
-            <ol className="roster-list">{t.roster.map((p) => <li key={p.playerId}><Link href={`/players/${p.playerId}`}>{p.name}</Link></li>)}</ol>
+            <ol className="roster-list">{t.roster.map((p) => <li key={p.playerId}>
+                <Link href={`/players/${p.playerId}`}>{p.name}</Link>
+                {(p.uid || p.server) && <span className="muted small"> · {[p.uid && `UID ${p.uid}`, p.server].filter(Boolean).join(" · ")}</span>}
+              </li>)}</ol>
           ) : (
             <p className="muted small" style={{ margin: "8px 0 0" }}>ยังไม่ได้ส่งรายชื่อ</p>
           )}

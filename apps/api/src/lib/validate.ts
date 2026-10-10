@@ -160,15 +160,19 @@ export const entryInput = z.object({
 
 const discordId = z.string().trim().regex(/^\d{5,25}$/, "Must be a Discord user id").nullish().transform((v) => v ?? null);
 
-/** One player on a team's roster: their in-game name, and their Discord account if they have one. */
+/** One player on a team's roster: their in-game name, UID and server, and their Discord account if they have one. */
 export const rosterPlayerInput = z.object({
   name: z.string().trim().min(1).max(100),
   discordId,
+  uid: optionalText(40),
+  server: optionalText(40),
 });
 
 export const rosterInput = z.object({
   players: z.array(rosterPlayerInput).min(1).max(10),
   captainDiscordId: discordId.optional(),
+  /** Other Discord accounts of the team (not tied to a roster line), let into match rooms. Omit to keep the current ones. */
+  memberDiscordIds: z.array(z.string().trim().regex(/^\d{5,25}$/, "Must be a Discord user id")).max(15).optional(),
   /** Organizer override: allows changes after the roster lock. */
   override: z.boolean().default(false),
 });

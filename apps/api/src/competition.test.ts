@@ -117,7 +117,7 @@ describe("registration", () => {
 
     res = await call("POST", `/tournaments/${t.id}/registrations`, { teamName: "Beta", players: [{ name: "x", discordId: cap }, { name: "y" }, { name: "z" }] });
     assert.equal(res.status, 409, "a Discord account can only play for one team");
-    assert.match(res.body.details.th, /อยู่ในรายชื่อทีม Alpha แล้ว/);
+    assert.match(res.body.details.th, /อยู่ในทีม Alpha แล้ว/);
 
     res = await call("POST", `/tournaments/${t.id}/registrations`, { teamName: "Beta", captainDiscordId: cap, players: [{ name: "x" }, { name: "y" }, { name: "z" }] });
     assert.equal(res.status, 409, "one captain, one team");
@@ -147,6 +147,50 @@ describe("registration", () => {
     assert.equal(player.name, "Renamed");
     assert.equal(player.nickname, "Old Team P1", "old in-game name kept as nickname so old screenshots still match");
     assert.equal(player.team.name, "New Team");
+  });
+
+  test("characters (UID + server) and extra Discord members: one character, one account, one team", async () => {
+    const t = await newTournament();
+    const cap = discord();
+    const friend = discord();
+    const team = await ok("POST", `/tournaments/${t.id}/registrations`, {
+      teamName: "Uid Team",
+      captainDiscordId: cap,
+      memberDiscordIds: [friend, cap, friend],
+      players: [
+        { name: "Hero", uid: "800111", server: "Asia" },
+        { name: "Mage", uid: "800222", server: "Asia" },
+        { name: "Tank", uid: "800111", server: "EU" },
+      ],
+    });
+    assert.deepEqual(team.memberDiscordIds, [friend], "captain and repeats dropped");
+    assert.deepEqual(team.roster.map((r: any) => [r.name, r.uid, r.server]), [["Hero", "800111", "Asia"], ["Mage", "800222", "Asia"], ["Tank", "800111", "EU"]]);
+
+    let res = await call("POST", `/tournaments/${t.id}/registrations`, {
+      teamName: "Dup Uid",
+      players: [{ name: "a", uid: "1", server: "S" }, { name: "b", uid: "1", server: "s" }, { name: "c" }],
+    });
+    assert.equal(res.status, 400, "same character twice in a roster");
+    assert.match(res.body.details.th, /UID ซ้ำ/);
+
+    res = await call("POST", `/tournaments/${t.id}/registrations`, { teamName: "Thief", players: [{ name: "Copy", uid: "800222", server: "asia" }, { name: "b" }, { name: "c" }] });
+    assert.equal(res.status, 409, "a character can only play for one team");
+    assert.match(res.body.details.th, /UID 800222.*Uid Team/);
+
+    res = await call("POST", `/tournaments/${t.id}/registrations`, { teamName: "Friend Team", captainDiscordId: friend, players: [{ name: "a" }, { name: "b" }, { name: "c" }] });
+    assert.equal(res.status, 409, "a team member cannot lead another team");
+    assert.match(res.body.details.th, /อยู่ในทีม Uid Team แล้ว/);
+
+    // A roster change without memberDiscordIds keeps the members; the character keeps its player (and stats) when renamed.
+    const changed = await ok("PUT", `/tournaments/${t.id}/entries/${team.id}/roster`, {
+      players: [{ name: "Hero Renamed", uid: "800111", server: "Asia" }, { name: "Mage", uid: "800222", server: "Asia" }, { name: "Support", uid: "800333", server: "Asia" }],
+    });
+    assert.deepEqual(changed.memberDiscordIds, [friend]);
+    assert.equal(changed.roster[0].playerId, team.roster[0].playerId);
+    assert.equal(changed.roster[0].name, "Hero Renamed");
+    const cleared = await ok("PUT", `/tournaments/${t.id}/entries/${team.id}/roster`, { players: changed.roster.map((r: any) => ({ name: r.name, uid: r.uid, server: r.server })), memberDiscordIds: [] });
+    assert.deepEqual(cleared.memberDiscordIds, []);
+    await ok("POST", `/tournaments/${t.id}/registrations`, { teamName: "Friend Team", captainDiscordId: friend, players: [{ name: "a" }, { name: "b" }, { name: "c" }] });
   });
 });
 
