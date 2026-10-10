@@ -110,6 +110,15 @@ export async function buildDraft(read: ExtractedSeries, text: string, imageUrls:
     return key ? (teams.find((t) => normaliseName(t.name) === key) ?? teams.find((t) => t.tag && normaliseName(t.tag) === key)) : undefined;
   };
 
+  // In a bracket match the teams are known; a post written "B 2-1 A" is turned around to match.
+  if (parsed && hint.teamAId && hint.teamBId) {
+    const a = teams.find((t) => t.id === hint.teamAId);
+    const b = teams.find((t) => t.id === hint.teamBId);
+    const is = (name: string, t?: { name: string; tag: string | null }) => Boolean(t) && (normaliseName(name) === normaliseName(t!.name) || (t!.tag !== null && normaliseName(name) === normaliseName(t!.tag)));
+    if (is(parsed.teamA, b) && is(parsed.teamB, a) && !is(parsed.teamA, a)) {
+      [parsed.teamA, parsed.teamB, parsed.scoreA, parsed.scoreB] = [parsed.teamB, parsed.teamA, parsed.scoreB, parsed.scoreA];
+    }
+  }
   const teamAName = parsed?.teamA ?? read.teamA.trim();
   const teamBName = parsed?.teamB ?? read.teamB.trim();
   const teamA = hint.teamAId ? teams.find((t) => t.id === hint.teamAId) : findTeam(teamAName);

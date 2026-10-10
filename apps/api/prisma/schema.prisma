@@ -39,6 +39,7 @@ model Player {
 
   team      Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
   statLines MatchPlayerStat[]
+  rosters   RosterPlayer[]
 
   @@index([teamId])
 }
@@ -55,19 +56,93 @@ model Tournament {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  entries TournamentEntry[]
-  matches Match[]
+  /// Bracket settings. format null = a free-form event where results are recorded without a bracket.
+  format           String? // SINGLE_ELIMINATION | DOUBLE_ELIMINATION | ROUND_ROBIN
+  bestOf           Int     @default(3)
+  lateMinutes      Int     @default(15) // how late a team may check in before the other team can claim a walkover
+  rosterMin        Int     @default(3)
+  rosterMax        Int     @default(5)
+  maxTeams         Int?
+  registrationOpen Boolean @default(false)
+  thirdPlaceMatch  Boolean @default(false) // single elimination only
+  grandFinalReset  Boolean @default(true) // double elimination: a second final if the losers-bracket team wins the first
+  bracketStatus    String  @default("NONE") // NONE | DRAFT (seeded, not started) | LIVE | DONE
+
+  entries        TournamentEntry[]
+  matches        Match[]
+  bracketMatches BracketMatch[]
 }
 
 model TournamentEntry {
-  id           String     @id @default(cuid())
-  tournamentId String
-  teamId       String
-  placement    Int?
-  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  team         Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  id               String         @id @default(cuid())
+  tournamentId     String
+  teamId           String
+  placement        Int?
+  seed             Int? // bracket order chosen when seeding (1 = top seed)
+  captainDiscordId String? // only this Discord user may change the roster from Discord
+  createdAt        DateTime       @default(now())
+  tournament       Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  team             Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  roster           RosterPlayer[]
 
   @@unique([tournamentId, teamId])
+}
+
+/// A player registered to play for a team in one tournament.
+model RosterPlayer {
+  id        String  @id @default(cuid())
+  entryId   String
+  playerId  String
+  discordId String?
+  order     Int     @default(0)
+
+  entry  TournamentEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  player Player          @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, playerId])
+}
+
+/**
+ * One match slot in a tournament bracket. Slots exist before their teams are known;
+ * winners and losers move along winnerTo / loserTo. A played slot links to the Match
+ * that holds its games and player stats.
+ */
+model BracketMatch {
+  id           String    @id @default(cuid())
+  tournamentId String
+  code         String // stable key within the tournament, e.g. W1-0, L2-1, GF1, P3, R3-2
+  stage        String // W (winners / single elimination) | L (losers) | GF (grand final) | P3 (third place) | RR (round robin)
+  round        Int
+  position     Int
+  number       Int // match number shown to people (M1, M2, ...)
+  teamAId      String?
+  teamBId      String?
+  byeA         Boolean   @default(false)
+  byeB         Boolean   @default(false)
+  winnerTo     String? // code of the slot the winner moves to
+  winnerSide   String? // A | B
+  loserTo      String?
+  loserSide    String?
+  status       String    @default("PENDING") // PENDING (waiting for teams) | READY | DONE | SKIPPED
+  outcome      String? // PLAYED | WALKOVER | BYE
+  winnerId     String?
+  loserId      String?
+  scoreA       Int?
+  scoreB       Int?
+  matchId      String?   @unique
+  scheduledAt  DateTime?
+  checkInA     DateTime?
+  checkInB     DateTime?
+  disputed     Boolean   @default(false)
+  disputeNote  String?
+  completedAt  DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  match      Match?     @relation(fields: [matchId], references: [id], onDelete: SetNull)
+
+  @@unique([tournamentId, code])
+  @@index([tournamentId])
 }
 
 /// A series between two teams (e.g. best of 3). scoreA/scoreB are games won.
@@ -95,6 +170,7 @@ model Match {
   winner      Team?             @relation("Winner", fields: [winnerId], references: [id], onDelete: Cascade)
   games       MatchGame[]
   playerStats MatchPlayerStat[]
+  bracketSlot BracketMatch?
 
   @@index([playedAt])
 }

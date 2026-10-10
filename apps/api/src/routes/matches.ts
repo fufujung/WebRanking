@@ -6,6 +6,8 @@ import { matchInput, pagination } from "../lib/validate.js";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { matchInclude, matchOrder } from "../lib/selects.js";
 import { getMatch, saveMatch } from "../lib/matchWrite.js";
+import { recordResult, slotOfMatch } from "../lib/competition.js";
+import { fail } from "../lib/errors.js";
 
 export const matches = Router();
 
@@ -46,10 +48,23 @@ matches.post("/", requireAdmin, async (req, res) => {
 
 /** Replaces a series (its games and scoreboards) in full. */
 matches.put("/:id", requireAdmin, async (req, res) => {
-  res.json(await saveMatch(matchInput.parse(req.body), String(req.params.id)));
+  const id = String(req.params.id);
+  const input = matchInput.parse(req.body);
+  const slot = await slotOfMatch(id);
+  if (!slot) return void res.json(await saveMatch(input, id));
+  // A bracket series: the teams are fixed by the bracket, and a new winner moves the bracket.
+  if (input.teamAId !== slot.teamAId || input.teamBId !== slot.teamBId || input.tournamentId !== slot.tournamentId) {
+    throw fail(409, "This series is part of a bracket; its teams and tournament cannot change", "แมตช์นี้อยู่ในสายการแข่ง เปลี่ยนทีมหรือรายการไม่ได้");
+  }
+  const { scoreA, scoreB, notes, imageUrl, playedAt, source, sourceRef, games } = input;
+  await recordResult(slot.tournamentId, slot.id, { scoreA, scoreB, notes, imageUrl, playedAt, source, sourceRef, games, replace: true, force: req.query.force === "true" });
+  res.json(await getMatch(id));
 });
 
 matches.delete("/:id", requireAdmin, async (req, res) => {
+  if (await slotOfMatch(String(req.params.id))) {
+    throw fail(409, "This series is part of a bracket; reopen the bracket match instead", "แมตช์นี้อยู่ในสายการแข่ง ให้กด “ยกเลิกผล” ที่แมตช์ในสายแทน");
+  }
   await prisma.match.delete({ where: { id: String(req.params.id) } });
   await recomputeRatings();
   res.status(204).end();

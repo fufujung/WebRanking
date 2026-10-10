@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FORMATS } from "./bracket.js";
 
 export const pagination = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -59,7 +60,19 @@ export const tournamentInput = z.object({
   status: tournamentStatus.default("UPCOMING"),
   startDate: z.coerce.date(),
   endDate: z.coerce.date().nullish(),
+  /** null = no bracket: results are recorded freely. */
+  format: z.enum(FORMATS).nullish().transform((v) => v ?? null),
+  bestOf: z.coerce.number().int().min(1).max(9).refine((n) => n % 2 === 1, { message: "Best of must be an odd number" }).default(3),
+  lateMinutes: z.coerce.number().int().min(0).max(240).default(15),
+  rosterMin: z.coerce.number().int().min(1).max(10).default(3),
+  rosterMax: z.coerce.number().int().min(1).max(10).default(5),
+  maxTeams: z.coerce.number().int().min(2).max(256).nullish().transform((v) => v ?? null),
+  registrationOpen: z.boolean().default(false),
+  thirdPlaceMatch: z.boolean().default(false),
+  grandFinalReset: z.boolean().default(true),
 });
+
+export const rosterSizeOk = (t: { rosterMin?: number; rosterMax?: number }) => t.rosterMin === undefined || t.rosterMax === undefined || t.rosterMin <= t.rosterMax;
 
 export const datesInOrder = (t: { startDate?: Date; endDate?: Date | null }) =>
   !t.startDate || !t.endDate || t.endDate >= t.startDate;
@@ -144,3 +157,56 @@ export const entryInput = z.object({
   teamId: z.string().min(1),
   placement: z.coerce.number().int().min(1).nullish(),
 });
+
+const discordId = z.string().trim().regex(/^\d{5,25}$/, "Must be a Discord user id").nullish().transform((v) => v ?? null);
+
+/** One player on a team's roster: their in-game name, and their Discord account if they have one. */
+export const rosterPlayerInput = z.object({
+  name: z.string().trim().min(1).max(100),
+  discordId,
+});
+
+export const rosterInput = z.object({
+  players: z.array(rosterPlayerInput).min(1).max(10),
+  captainDiscordId: discordId.optional(),
+  /** Organizer override: allows changes after the roster lock. */
+  override: z.boolean().default(false),
+});
+
+export const registrationInput = rosterInput.extend({
+  teamName: z.string().trim().min(1).max(100),
+  tag: optionalText(12),
+});
+
+export const seedingInput = z.object({
+  method: z.enum(["rating", "random", "manual"]).default("rating"),
+  /** manual: every registered team id, best seed first. */
+  order: z.array(z.string()).optional(),
+  /** manual, elimination only: the first round as pairs of slots (null = bye). Overrides order. */
+  positions: z.array(z.string().nullable()).optional(),
+});
+
+/** A bracket match result: the teams come from the bracket slot, side A/B as the slot shows them. */
+export const bracketResultInput = z
+  .object({
+    scoreA: optionalCount,
+    scoreB: optionalCount,
+    notes: optionalText(1000),
+    imageUrl,
+    playedAt: z.coerce.date().optional(),
+    source: optionalText(40),
+    sourceRef: optionalText(200),
+    games: z.array(gameInput).max(9).default([]),
+    /** Replaces the result of a match that already has one (a correction). */
+    replace: z.boolean().default(false),
+    /** Allows wiping later results when a corrected result changes the winner. */
+    force: z.boolean().default(false),
+  })
+  .refine((m) => m.games.length > 0 || (m.scoreA !== undefined && m.scoreB !== undefined), {
+    message: "Enter the series score or at least one game",
+    path: ["scoreA"],
+  })
+  .refine((m) => m.games.every((g) => new Set(g.players.map(playerKey)).size === g.players.length), {
+    message: "Each player can only appear once per game",
+    path: ["games"],
+  });
