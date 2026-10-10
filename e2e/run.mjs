@@ -436,20 +436,25 @@ await page.locator("button:has-text('ล้างผลแมตช์ถัด�
 step("reopening asks before wiping later results: " + (await page.locator(".error").first().textContent()));
 await page.click("button:has-text('ล้างผลแมตช์ถัดไป')");
 await page.locator(".success", { hasText: "ยกเลิกผลแล้ว" }).waitFor();
-if ((await page.locator("button.bm.bm-READY").count()) !== 1) throw new Error("only the semi-final should be waiting again");
+// The bracket redraws just after the success message; wait for it rather than counting at once.
+await page.waitForFunction(() => document.querySelectorAll("button.bm.bm-READY").length === 1, null, { timeout: 10_000 }).catch(() => {
+  throw new Error("only the semi-final should be waiting again");
+});
 step("semi-final reopened, final cleared");
 
 // Roster: organizers can set a team's players
 await page.locator("tr", { hasText: "Night Owls" }).locator("button:has-text('แก้รายชื่อ')").click();
-const rosterInputs = page.locator('label:has-text("ชื่อในเกม") input');
+const rosterInputs = page.locator('label:has-text("ชื่อตัวละคร") input');
 await rosterInputs.nth(0).fill("Kite");
+await page.locator('label:has-text("UID") input').nth(0).fill("812345678");
+await page.locator('label:has-text("Server") input').nth(0).fill("Asia");
 await page.click("button:has-text('+ เพิ่มผู้เล่น')");
 await rosterInputs.nth(1).fill("Lynx");
 await page.click("button:has-text('+ เพิ่มผู้เล่น')");
 await rosterInputs.nth(2).fill("Moss");
 await page.click("button:has-text('บันทึกรายชื่อ')");
-await page.locator("tr", { hasText: "Night Owls" }).locator("td", { hasText: "Kite, Lynx, Moss" }).waitFor();
-step("roster saved for Night Owls");
+await page.locator("tr", { hasText: "Night Owls" }).locator("td", { hasText: "Kite (UID 812345678 · Asia), Lynx, Moss" }).waitFor();
+step("roster saved for Night Owls, with UID and server");
 
 // Logout
 await page.click("button:has-text('ออกจากระบบ')");

@@ -8,8 +8,12 @@ import { fmtThaiTime } from "@/lib/format";
 interface Row {
   key: number;
   name: string;
+  uid: string;
+  server: string;
   discordId: string;
 }
+const emptyRow = (): Row => ({ key: nextKey++, name: "", uid: "", server: "", discordId: "" });
+const character = (p: Entry["roster"][number]) => [p.uid && `UID ${p.uid}`, p.server].filter(Boolean).join(" · ");
 let nextKey = 1;
 
 /** The registered players of every team. Organizers can change a roster even after it locks. */
@@ -18,7 +22,7 @@ export function RosterManager({ tournamentId, entries, rosterMin, rosterMax, loc
   return (
     <div className="stack">
       <p className="muted small" style={{ margin: 0 }}>
-        ทีมละ {rosterMin}–{rosterMax} คน · หัวหน้าทีมเปลี่ยนรายชื่อเองผ่าน Discord ได้ด้วย /roster set{" "}
+        ทีมละ {rosterMin}–{rosterMax} คน · หัวหน้าทีมเปลี่ยนรายชื่อเองใน Discord ได้ด้วยปุ่ม ⚙️ จัดการทีมของฉัน{" "}
         {locked ? "· ตอนนี้ล็อกรายชื่อแล้ว (ผู้จัดยังแก้ได้ที่นี่)" : lockAt ? `· ล็อกเมื่อแมตช์แรกเริ่ม ${fmtThaiTime(lockAt)}` : "· ล็อกเมื่อแมตช์แรกเริ่ม"}
       </p>
       <div className="table-wrap">
@@ -28,7 +32,19 @@ export function RosterManager({ tournamentId, entries, rosterMin, rosterMax, loc
             {entries.map((e) => (
               <tr key={e.id}>
                 <td>{e.name}</td>
-                <td className="small">{e.roster.length ? e.roster.map((p) => p.name).join(", ") : <span className="muted">ยังไม่ได้ส่งรายชื่อ</span>}</td>
+                <td className="small">
+                  {e.roster.length ? (
+                    e.roster.map((p, i) => (
+                      <span key={p.playerId}>
+                        {i > 0 && ", "}
+                        {p.name}
+                        {character(p) && <span className="muted"> ({character(p)})</span>}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="muted">ยังไม่ได้ส่งรายชื่อ</span>
+                  )}
+                </td>
                 <td className="right">
                   <button type="button" className="btn btn-sm" onClick={() => setOpen(open === e.id ? null : e.id)}>{open === e.id ? "ปิด" : "แก้รายชื่อ"}</button>
                 </td>
@@ -46,8 +62,8 @@ export function RosterManager({ tournamentId, entries, rosterMin, rosterMax, loc
 
 function RosterEditor({ tournamentId, entry, rosterMax, onDone }: { tournamentId: string; entry: Entry; rosterMax: number; onDone: () => void }) {
   const [rows, setRows] = useState<Row[]>(() => {
-    const r = entry.roster.map((p) => ({ key: nextKey++, name: p.name, discordId: p.discordId ?? "" }));
-    return r.length ? r : [{ key: nextKey++, name: "", discordId: "" }];
+    const r = entry.roster.map((p) => ({ key: nextKey++, name: p.name, uid: p.uid ?? "", server: p.server ?? "", discordId: p.discordId ?? "" }));
+    return r.length ? r : [emptyRow()];
   });
   const [captain, setCaptain] = useState(entry.captainDiscordId ?? "");
   const [state, setState] = useState<FormState>(undefined);
@@ -55,7 +71,7 @@ function RosterEditor({ tournamentId, entry, rosterMax, onDone }: { tournamentId
   const update = (key: number, patch: Partial<Row>) => setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 
   function save() {
-    const players = rows.filter((r) => r.name.trim()).map((r) => ({ name: r.name.trim(), discordId: r.discordId.trim() || null }));
+    const players = rows.filter((r) => r.name.trim()).map((r) => ({ name: r.name.trim(), uid: r.uid.trim() || null, server: r.server.trim() || null, discordId: r.discordId.trim() || null }));
     if (!players.length) return setState({ error: "ใส่ชื่อผู้เล่นอย่างน้อย 1 คน" });
     const bad = players.find((p) => p.discordId && !/^\d{5,25}$/.test(p.discordId));
     if (bad) return setState({ error: `Discord ID ของ ${bad.name} ต้องเป็นตัวเลข (คลิกขวาที่ชื่อใน Discord แล้วเลือก Copy User ID)` });
@@ -71,13 +87,15 @@ function RosterEditor({ tournamentId, entry, rosterMax, onDone }: { tournamentId
       <strong>รายชื่อ {entry.name}</strong>
       {rows.map((r, i) => (
         <div key={r.key} className="form-row" style={{ alignItems: "end" }}>
-          <label>ผู้เล่น {i + 1} (ชื่อในเกม)<input value={r.name} onChange={(e) => update(r.key, { name: e.target.value })} maxLength={100} /></label>
+          <label>ผู้เล่น {i + 1} (ชื่อตัวละคร)<input value={r.name} onChange={(e) => update(r.key, { name: e.target.value })} maxLength={100} /></label>
+          <label>UID<input value={r.uid} onChange={(e) => update(r.key, { uid: e.target.value })} maxLength={40} /></label>
+          <label>Server<input value={r.server} onChange={(e) => update(r.key, { server: e.target.value })} maxLength={40} /></label>
           <label>Discord ID (ไม่บังคับ)<input value={r.discordId} onChange={(e) => update(r.key, { discordId: e.target.value })} inputMode="numeric" placeholder="เช่น 123456789012345678" /></label>
           <button type="button" className="btn btn-sm" onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))} disabled={rows.length === 1}>เอาออก</button>
         </div>
       ))}
       <div className="row">
-        <button type="button" className="btn btn-sm" disabled={rows.length >= rosterMax} onClick={() => setRows((prev) => [...prev, { key: nextKey++, name: "", discordId: "" }])}>+ เพิ่มผู้เล่น</button>
+        <button type="button" className="btn btn-sm" disabled={rows.length >= rosterMax} onClick={() => setRows((prev) => [...prev, emptyRow()])}>+ เพิ่มผู้เล่น</button>
       </div>
       <label>
         Discord ID หัวหน้าทีม (คนที่ใช้ /roster ได้)

@@ -80,6 +80,7 @@ model TournamentEntry {
   placement        Int?
   seed             Int? // bracket order chosen when seeding (1 = top seed)
   captainDiscordId String? // only this Discord user may change the roster from Discord
+  memberDiscordIds String         @default("[]") // JSON array: other Discord accounts of the team, let into match rooms
   createdAt        DateTime       @default(now())
   tournament       Tournament     @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   team             Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -94,6 +95,8 @@ model RosterPlayer {
   entryId   String
   playerId  String
   discordId String?
+  uid       String? // in-game UID
+  server    String? // in-game server
   order     Int     @default(0)
 
   entry  TournamentEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)

@@ -252,7 +252,7 @@ export async function resolveDispute(tournamentId: string, slotId: string) {
 }
 
 /** Replaces a team's registered players. Organizers may change a locked roster. */
-export async function saveRoster(tournamentId: string, teamId: string, players: { name: string; discordId: string | null }[], captainDiscordId: string | null) {
+export async function saveRoster(tournamentId: string, teamId: string, players: { name: string; discordId: string | null; uid: string | null; server: string | null }[], captainDiscordId: string | null) {
   return bracketRun(
     tournamentId,
     () => api(`/tournaments/${encodeURIComponent(tournamentId)}/entries/${encodeURIComponent(teamId)}/roster`, { method: "PUT", json: { players, captainDiscordId, override: true } }),

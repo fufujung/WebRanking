@@ -9,10 +9,12 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
+  LabelBuilder,
   ModalBuilder,
   PermissionFlagsBits,
   TextInputBuilder,
   TextInputStyle,
+  UserSelectMenuBuilder,
   type AutocompleteInteraction,
   type ButtonInteraction,
   type ChatInputCommandInteraction,
@@ -29,11 +31,14 @@ import {
   championEmbed,
   draftEmbed,
   overviewEmbed,
+  parseRosterText,
   parseThaiTime,
   registrationPanel,
+  ROSTER_FORMAT,
   resultLine,
   roomEmbed,
   rosterLines,
+  rosterText,
   teamMemberIds,
   when,
 } from "./tourFormat.js";
@@ -59,6 +64,8 @@ export interface TourConfig {
 
 export interface Room {
   channelId: string;
+  /** The match's voice channel, next to the text room (absent for rooms made before voice rooms existed). */
+  voiceChannelId?: string | null;
   headerId: string;
   teamAId: string;
   teamBId: string;
@@ -77,6 +84,8 @@ export interface MemberInfo {
 }
 
 const ROOM_ALLOW = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles, PermissionFlagsBits.EmbedLinks];
+const VOICE_ALLOW = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak, PermissionFlagsBits.Stream, PermissionFlagsBits.UseVAD];
+const VOICE_EDIT = { ViewChannel: true, Connect: true, Speak: true, Stream: true, UseVAD: true };
 const CATEGORY_LIMIT = 48;
 const REMIND_BEFORE = 10 * 60_000;
 
@@ -121,8 +130,81 @@ function draftButtons(tid: string, siteUrl?: string) {
   return [row];
 }
 
-function panelButtons(tid: string) {
-  return [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`tr:tls:${tid}`).setLabel("ดูทีมและรายชื่อ").setEmoji("👥").setStyle(ButtonStyle.Secondary))];
+export function panelButtons(tid: string, open = true) {
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`tr:treg:${tid}`).setLabel("สมัครทีม").setEmoji("📝").setStyle(ButtonStyle.Success).setDisabled(!open),
+      new ButtonBuilder().setCustomId(`tr:tmy:${tid}`).setLabel("จัดการทีมของฉัน").setEmoji("⚙️").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`tr:tls:${tid}`).setLabel("ดูทีมและรายชื่อ").setEmoji("👥").setStyle(ButtonStyle.Secondary),
+    ),
+  ];
+}
+
+/** What only the captain sees (ephemeral): change the roster, hand over the captaincy, withdraw before the start. */
+function captainButtons(tid: string, team: Entry, b: Bracket) {
+  const started = b.status === "LIVE" || b.status === "DONE";
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`tr:ted:${tid}:${team.id}`).setLabel("แก้รายชื่อ").setEmoji("✏️").setStyle(ButtonStyle.Primary).setDisabled(b.rosterLocked),
+      new ButtonBuilder().setCustomId(`tr:tcp:${tid}:${team.id}`).setLabel("โอนหัวหน้าทีม").setEmoji("👑").setStyle(ButtonStyle.Secondary).setDisabled(b.rosterLocked),
+      new ButtonBuilder().setCustomId(`tr:twd:${tid}:${team.id}`).setLabel("ถอนทีม").setEmoji("🚪").setStyle(ButtonStyle.Danger).setDisabled(started),
+    ),
+  ];
+}
+
+/** The sign-up form, or (with a team) the roster form: one player per line, plus teammates on Discord for the match rooms. */
+/** A turned-down form: what was wrong, and a button that opens the form again with what was typed. */
+function retryReply(problem: string, button: string) {
+  return {
+    ephemeral: true,
+    content: `❌ ${problem}\nกดปุ่มด้านล่างเพื่อแก้ (ข้อมูลที่กรอกไว้ยังอยู่)`,
+    components: [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(button).setLabel("แก้แล้วส่งใหม่").setEmoji("✏️").setStyle(ButtonStyle.Primary))],
+    allowedMentions: { parse: [] as [] },
+  };
+}
+
+const withValue = (input: TextInputBuilder, value?: string) => (value ? input.setValue(value) : input);
+
+interface Draft {
+  team?: string;
+  tag?: string;
+  players: string;
+}
+
+function rosterModal(tid: string, b: Bracket, team: Entry | null, draft?: Draft) {
+  const players = new TextInputBuilder()
+    .setCustomId("players")
+    .setStyle(TextInputStyle.Paragraph)
+    .setRequired(true)
+    .setMaxLength(2000)
+    .setPlaceholder(`Bank, 812345678, Asia\nFuFu, 812345679, Asia`);
+  const text = draft?.players ?? (team ? rosterText(team) : "");
+  if (text) players.setValue(text.slice(0, 2000));
+  const mates = new UserSelectMenuBuilder().setCustomId("members").setRequired(false).setMinValues(0).setMaxValues(10);
+  const current = team ? teamMemberIds(team).filter((id) => id !== team.captainDiscordId) : [];
+  if (current.length) mates.setDefaultUsers(current.slice(0, 10));
+  const modal = new ModalBuilder()
+    .setCustomId(team ? `tr:tem:${tid}:${team.id}` : `tr:trm:${tid}`)
+    .setTitle((team ? `แก้รายชื่อ ${team.name}` : `สมัครทีม ${b.name}`).slice(0, 45));
+  if (!team) {
+    modal.addLabelComponents(
+      new LabelBuilder().setLabel("ชื่อทีม").setTextInputComponent(withValue(new TextInputBuilder().setCustomId("team").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100), draft?.team)),
+      new LabelBuilder()
+        .setLabel("ชื่อย่อทีม (ไม่บังคับ)")
+        .setTextInputComponent(withValue(new TextInputBuilder().setCustomId("tag").setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(12).setPlaceholder("เช่น THK"), draft?.tag)),
+    );
+  }
+  modal.addLabelComponents(
+    new LabelBuilder()
+      .setLabel(`รายชื่อผู้เล่น ${b.rosterMin}-${b.rosterMax} คน (บรรทัดละคน)`)
+      .setDescription(`พิมพ์ ${ROSTER_FORMAT} คั่นด้วยจุลภาค`)
+      .setTextInputComponent(players),
+    new LabelBuilder()
+      .setLabel("เพื่อนร่วมทีมใน Discord (ไม่บังคับ)")
+      .setDescription("คนที่เลือกจะเข้าห้องแข่งของทีมได้ ส่วนหัวหน้าทีมเข้าได้อยู่แล้ว")
+      .setUserSelectMenuComponent(mates),
+  );
+  return modal;
 }
 
 export interface TourOptions {
@@ -139,6 +221,8 @@ export class TourManager {
   private siteUrl?: string;
   private log: (...args: unknown[]) => void;
   private now: () => Date;
+  /** What a captain last typed into a form that was turned down, to fill the form again on retry. */
+  private drafts = new Map<string, Draft>();
   /** Tournaments being synced right now, so overlapping ticks don't create a room twice. */
   private syncing = new Map<string, Promise<void>>();
 
@@ -189,7 +273,11 @@ export class TourManager {
   }
 
   static teamOf(b: Bracket, userId: string): Entry | null {
-    return b.teams.find((t) => t.captainDiscordId === userId) ?? b.teams.find((t) => t.roster.some((r) => r.discordId === userId)) ?? null;
+    return (
+      b.teams.find((t) => t.captainDiscordId === userId) ??
+      b.teams.find((t) => t.roster.some((r) => r.discordId === userId) || (t.memberDiscordIds ?? []).includes(userId)) ??
+      null
+    );
   }
 
   /** Can this user confirm a result posted by `posterTeamId`? The other team, or an organizer. */
@@ -339,7 +427,7 @@ export class TourManager {
     await i.editReply(
       [
         `✅ สร้าง **${t.name}** และเปิดรับสมัครแล้ว (ประกาศที่ <#${tour.announceChannelId}>)`,
-        "ขั้นต่อไป: ให้หัวหน้าทีมใช้ `/register` → ปิดรับสมัคร `/tour registration open:False` → จัดสาย `/tour seed` → ตรวจ/แก้ แล้วกดยืนยันเริ่มแข่ง",
+        "ขั้นต่อไป: ให้หัวหน้าทีมกดปุ่ม 📝 สมัครทีม ในประกาศ (หรือ `/register`) → ปิดรับสมัคร `/tour registration open:False` → จัดสาย `/tour seed` → ตรวจ/แก้ แล้วกดยืนยันเริ่มแข่ง",
       ].join("\n"),
     );
   }
@@ -377,8 +465,12 @@ export class TourManager {
       override: Boolean(captainUser && organizer),
     });
     await this.refreshPanel(i.client, tour);
-    await i.editReply({ content: `✅ สมัครทีม **${entry.name}** แล้ว\n${rosterLines(entry)}\n\nเปลี่ยนรายชื่อได้ด้วย \`/roster set\` ก่อนแมตช์แรกเริ่ม`, allowedMentions: { parse: [] } });
-    const channel = await i.client.channels.fetch(tour.announceChannelId).catch(() => null);
+    await i.editReply({ content: `✅ สมัครทีม **${entry.name}** แล้ว\n${rosterLines(entry)}\n\nเปลี่ยนรายชื่อได้ด้วย \`/roster set\` หรือปุ่ม ⚙️ จัดการทีมของฉัน ก่อนแมตช์แรกเริ่ม`, allowedMentions: { parse: [] } });
+    await this.announceSignup(i.client, tour, entry);
+  }
+
+  private async announceSignup(client: Client, tour: TourConfig, entry: Entry) {
+    const channel = await client.channels.fetch(tour.announceChannelId).catch(() => null);
     if (channel?.isSendable()) await channel.send({ content: `📝 ทีม **${entry.name}** สมัครแล้ว (หัวหน้าทีม <@${entry.captainDiscordId}>)`, allowedMentions: { parse: [] } }).catch(() => null);
   }
 
@@ -503,6 +595,7 @@ export class TourManager {
     if (!tour) return void (await i.reply({ ephemeral: true, content: "ไม่พบทัวร์นาเมนต์นี้ในบอท (อาจถูกลบไปแล้ว)" }));
     const organizer = this.isOrganizer(tour, i.user.id, info);
     try {
+      if (action === "treg" || action === "tmy" || action === "ted" || action === "tcp" || action === "twd") return await this.teamButton(i, tour, action, ref, extra, organizer);
       if (action === "tls") {
         const b = await this.bracket(tid);
         const text = b.teams.map((t) => `**${t.name}**\n${rosterLines(t)}`).join("\n\n") || "ยังไม่มีทีมสมัคร";
@@ -585,6 +678,7 @@ export class TourManager {
 
   async onModal(i: ModalSubmitInteraction) {
     const [, action, tid, ref] = i.customId.split(":");
+    if (action === "trm" || action === "tem" || action === "tcm") return this.teamModal(i, action, tid, ref);
     if (action !== "tdm") return;
     const tour = this.tours.get(tid);
     if (!tour) return void (await i.reply({ ephemeral: true, content: "ไม่พบทัวร์นาเมนต์นี้" }));
@@ -602,6 +696,157 @@ export class TourManager {
       await this.refreshHeader(i.client, tour, b, slot);
     } catch (e) {
       await i.reply({ ephemeral: true, content: `❌ ${thaiError(e)}` }).catch(() => null);
+    }
+  }
+
+  // ---------- Teams on their own: sign up, change the roster, hand over, withdraw ----------
+
+  private async teamButton(i: ButtonInteraction, tour: TourConfig, action: string, teamId: string | undefined, extra: string | undefined, organizer: boolean) {
+    const tid = tour.tournamentId;
+    const b = await this.bracket(tid);
+    const mine = TourManager.teamOf(b, i.user.id);
+    if (action === "treg") {
+      if (!b.registrationOpen || b.status === "LIVE" || b.status === "DONE") return void (await i.reply({ ephemeral: true, content: "🔒 ปิดรับสมัครแล้ว" }));
+      if (mine) {
+        const lead = mine.captainDiscordId === i.user.id;
+        return void (await i.reply({
+          ephemeral: true,
+          content: `คุณอยู่ในทีม **${mine.name}** แล้ว${lead ? " (หัวหน้าทีม)" : ""} หนึ่งคนลงได้ทีมเดียว`,
+          components: lead ? captainButtons(tid, mine, b) : [],
+          allowedMentions: { parse: [] },
+        }));
+      }
+      if (b.maxTeams && b.teams.length >= b.maxTeams) return void (await i.reply({ ephemeral: true, content: `ทีมเต็มแล้ว (${b.maxTeams} ทีม)` }));
+      return void (await i.showModal(rosterModal(tid, b, null, this.drafts.get(`${i.user.id}:${tid}:new`))));
+    }
+    if (action === "tmy") {
+      if (!mine) {
+        const hint = organizer ? "\nผู้จัดแก้ทีมอื่นได้ด้วย `/roster set team:` หรือบนเว็บ" : "";
+        return void (await i.reply({ ephemeral: true, content: `คุณยังไม่ได้อยู่ในทีมไหน กด 📝 สมัครทีม เพื่อสมัคร${hint}` }));
+      }
+      const lead = mine.captainDiscordId === i.user.id;
+      const status = b.rosterLocked ? "\n🔒 ล็อกรายชื่อแล้วเพราะแมตช์แรกเริ่มแล้ว ถ้าต้องเปลี่ยนให้ติดต่อผู้จัด" : lead ? "" : "\nเปลี่ยนรายชื่อได้เฉพาะหัวหน้าทีม";
+      return void (await i.reply({
+        ephemeral: true,
+        content: `**${mine.name}**${lead ? " (คุณเป็นหัวหน้าทีม)" : ""}\n${rosterLines(mine)}${status}`.slice(0, 1900),
+        components: lead ? captainButtons(tid, mine, b) : [],
+        allowedMentions: { parse: [] },
+      }));
+    }
+
+    // The rest are captain-only, on their own team.
+    const team = b.teams.find((t) => t.id === teamId);
+    if (!team) return void (await i.reply({ ephemeral: true, content: "ไม่พบทีมนี้ในทัวร์นาเมนต์ (อาจถอนไปแล้ว)" }));
+    if (team.captainDiscordId !== i.user.id) return void (await i.reply({ ephemeral: true, content: "ปุ่มนี้สำหรับหัวหน้าทีมเท่านั้น" }));
+    if (action === "ted") {
+      if (b.rosterLocked) return void (await i.reply({ ephemeral: true, content: "🔒 ล็อกรายชื่อแล้ว ติดต่อผู้จัดถ้าต้องเปลี่ยน" }));
+      return void (await i.showModal(rosterModal(tid, b, team, this.drafts.get(`${i.user.id}:${tid}:${team.id}`))));
+    }
+    if (action === "tcp") {
+      if (b.rosterLocked) return void (await i.reply({ ephemeral: true, content: "🔒 ล็อกรายชื่อแล้ว ติดต่อผู้จัดถ้าต้องเปลี่ยน" }));
+      const modal = new ModalBuilder()
+        .setCustomId(`tr:tcm:${tid}:${team.id}`)
+        .setTitle(`โอนหัวหน้าทีม ${team.name}`.slice(0, 45))
+        .addLabelComponents(
+          new LabelBuilder()
+            .setLabel("หัวหน้าทีมคนใหม่")
+            .setDescription("คุณจะยังอยู่ในทีมและเข้าห้องแข่งได้ แต่แก้รายชื่อไม่ได้แล้ว")
+            .setUserSelectMenuComponent(new UserSelectMenuBuilder().setCustomId("captain").setRequired(true).setMinValues(1).setMaxValues(1)),
+        );
+      return void (await i.showModal(modal));
+    }
+    // twd: withdraw, after a confirm press.
+    if (b.status === "LIVE" || b.status === "DONE") return void (await i.reply({ ephemeral: true, content: "เริ่มแข่งแล้ว ถอนทีมไม่ได้ ติดต่อผู้จัด" }));
+    if (extra !== "y") {
+      return void (await i.reply({
+        ephemeral: true,
+        content: `ถอนทีม **${team.name}** ออกจาก ${b.name} แน่ใจไหม? รายชื่อทั้งหมดจะถูกลบ ถ้าจะลงอีกต้องสมัครใหม่`,
+        components: [
+          new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`tr:twd:${tid}:${team.id}:y`).setLabel("ยืนยันถอนทีม").setEmoji("🚪").setStyle(ButtonStyle.Danger)),
+        ],
+        allowedMentions: { parse: [] },
+      }));
+    }
+    await i.deferReply({ ephemeral: true });
+    await this.api.delete(`/tournaments/${tid}/entries/${team.id}`);
+    await this.refreshPanel(i.client, tour);
+    await i.editReply({ content: `🚪 ถอนทีม **${team.name}** แล้ว`, allowedMentions: { parse: [] } });
+    const channel = await i.client.channels.fetch(tour.announceChannelId).catch(() => null);
+    if (channel?.isSendable()) await channel.send({ content: `🚪 ทีม **${team.name}** ถอนตัว`, allowedMentions: { parse: [] } }).catch(() => null);
+  }
+
+  private async teamModal(i: ModalSubmitInteraction, action: string, tid: string, teamId: string | undefined) {
+    const tour = this.tours.get(tid);
+    if (!tour) return void (await i.reply({ ephemeral: true, content: "ไม่พบทัวร์นาเมนต์นี้" }));
+    let retry: { key: string; button: string } | null = null;
+    try {
+      if (action === "tcm") {
+        const user = i.fields.getSelectedUsers("captain", true).first();
+        if (!user) return void (await i.reply({ ephemeral: true, content: "เลือกหัวหน้าทีมคนใหม่" }));
+        if (user.bot) return void (await i.reply({ ephemeral: true, content: `${user.username} เป็นบอท` }));
+        await i.deferReply({ ephemeral: true });
+        const b = await this.bracket(tid);
+        const team = b.teams.find((t) => t.id === teamId);
+        if (!team || team.captainDiscordId !== i.user.id) return void (await i.editReply("เฉพาะหัวหน้าทีมเท่านั้น"));
+        if (user.id === i.user.id) return void (await i.editReply("คุณเป็นหัวหน้าทีมอยู่แล้ว"));
+        const updated = await this.api.put<Entry>(`/tournaments/${tid}/entries/${team.id}/roster`, {
+          players: team.roster.map((r) => ({ name: r.name, discordId: r.discordId, uid: r.uid ?? null, server: r.server ?? null })),
+          captainDiscordId: user.id,
+          // The old captain stays on the team.
+          memberDiscordIds: [...(team.memberDiscordIds ?? []), i.user.id],
+        });
+        await this.refreshTeamRooms(i.client, tour);
+        return void (await i.editReply({ content: `👑 โอนหัวหน้าทีม **${updated.name}** ให้ <@${user.id}> แล้ว`, allowedMentions: { parse: [] } }));
+      }
+
+      const draftKey = `${i.user.id}:${tid}:${action === "trm" ? "new" : teamId}`;
+      const draft: Draft = { players: i.fields.getTextInputValue("players") };
+      if (action === "trm") Object.assign(draft, { team: i.fields.getTextInputValue("team"), tag: i.fields.getTextInputValue("tag") });
+      this.drafts.set(draftKey, draft);
+      retry = { key: draftKey, button: action === "trm" ? `tr:treg:${tid}` : `tr:ted:${tid}:${teamId}` };
+      const parsed = parseRosterText(draft.players);
+      if ("error" in parsed) return void (await i.reply(retryReply(parsed.error, retry.button)));
+      const selected = [...(i.fields.getSelectedUsers("members") ?? new Map()).values()];
+      const bots = selected.filter((u) => u.bot);
+      if (bots.length) return void (await i.reply(retryReply(`${bots.map((u) => u.username).join(", ")} เป็นบอท เลือกเฉพาะคน`, retry.button)));
+      const memberDiscordIds = selected.map((u) => u.id).filter((id) => id !== i.user.id);
+      const players = parsed.players.map((p) => ({ ...p, discordId: null }));
+      await i.deferReply({ ephemeral: true });
+
+      if (action === "trm") {
+        const entry = await this.api.post<Entry>(`/tournaments/${tid}/registrations`, {
+          teamName: i.fields.getTextInputValue("team"),
+          tag: i.fields.getTextInputValue("tag") || null,
+          captainDiscordId: i.user.id,
+          memberDiscordIds,
+          players,
+        });
+        this.drafts.delete(draftKey);
+        await this.refreshPanel(i.client, tour);
+        const b = await this.bracket(tid);
+        await i.editReply({
+          content: `✅ สมัครทีม **${entry.name}** แล้ว คุณเป็นหัวหน้าทีม\n${rosterLines(entry)}\n\nแก้รายชื่อได้จากปุ่มด้านล่าง หรือปุ่ม ⚙️ จัดการทีมของฉัน ในประกาศรับสมัคร (ก่อนแมตช์แรกเริ่ม)`.slice(0, 1900),
+          components: captainButtons(tid, entry, b),
+          allowedMentions: { parse: [] },
+        });
+        await this.announceSignup(i.client, tour, entry);
+        return;
+      }
+
+      // tem: the captain changes the roster.
+      const b = await this.bracket(tid);
+      const team = b.teams.find((t) => t.id === teamId);
+      if (!team || team.captainDiscordId !== i.user.id) return void (await i.editReply("เฉพาะหัวหน้าทีมเท่านั้น"));
+      const updated = await this.api.put<Entry>(`/tournaments/${tid}/entries/${team.id}/roster`, { players, memberDiscordIds });
+      this.drafts.delete(draftKey);
+      await this.refreshTeamRooms(i.client, tour);
+      await this.refreshPanel(i.client, tour);
+      await i.editReply({ content: `✅ อัปเดตทีม **${updated.name}** แล้ว\n${rosterLines(updated)}`.slice(0, 1900), allowedMentions: { parse: [] } });
+    } catch (e) {
+      this.log("team form failed:", e instanceof Error ? e.message : e);
+      const reply = retry ? retryReply(thaiError(e), retry.button) : { ephemeral: true, content: `❌ ${thaiError(e)}`, components: [] };
+      if (i.deferred || i.replied) await i.editReply({ content: reply.content, components: reply.components }).catch(() => null);
+      else await i.reply(reply).catch(() => null);
     }
   }
 
@@ -794,9 +1039,10 @@ export class TourManager {
     return present.filter((x): x is string => x !== null && x !== tour.ownerId);
   }
 
-  private async categoryFor(guild: Guild, tour: TourConfig, b: Bracket) {
+  /** A category with room for `slots` more channels (a match takes two: text and voice). */
+  private async categoryFor(guild: Guild, tour: TourConfig, b: Bracket, slots = 2) {
     const cats = [...tour.categories];
-    let cat = cats.find((c) => c.count < CATEGORY_LIMIT);
+    let cat = cats.find((c) => c.count + slots <= CATEGORY_LIMIT);
     if (!cat) {
       const created = await guild.channels.create({
         name: `🏆 ${b.name}${cats.length ? ` (${cats.length + 1})` : ""}`.slice(0, 100),
@@ -805,7 +1051,7 @@ export class TourManager {
       cat = { id: created.id, count: 0 };
       cats.push(cat);
     }
-    cat.count++;
+    cat.count += slots;
     this.save(tour.tournamentId, { categories: cats });
     return cat.id;
   }
@@ -830,8 +1076,26 @@ export class TourManager {
         topic: `${b.name} · M${m.number} ${m.label} · ${m.teamA!.name} vs ${m.teamB!.name}`.slice(0, 1024),
         permissionOverwrites: overwrites,
       });
+      // The voice room sits right under the text room; a failure here (no Connect/Speak permission) keeps the text room.
+      const voice = await guild.channels
+        .create({
+          name: `🔊 M${m.number} ${m.teamA!.name} vs ${m.teamB!.name}`.slice(0, 100),
+          type: ChannelType.GuildVoice,
+          parent,
+          permissionOverwrites: [
+            { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+            { id: client.user!.id, allow: [...VOICE_ALLOW, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageRoles] },
+            { id: tour.ownerId, allow: VOICE_ALLOW },
+            ...(tour.organizerRoleId ? [{ id: tour.organizerRoleId, allow: VOICE_ALLOW }] : []),
+            ...members.map((id) => ({ id, allow: VOICE_ALLOW })),
+          ],
+        })
+        .catch((e) => {
+          this.log("voice room create failed:", e instanceof Error ? e.message : e);
+          return null;
+        });
       const header = await channel.send({
-        content: `🏀 ${members.map((id) => `<@${id}>`).join(" ")} ห้องแข่ง M${m.number} พร้อมแล้ว`,
+        content: `🏀 ${members.map((id) => `<@${id}>`).join(" ")} ห้องแข่ง M${m.number} พร้อมแล้ว${voice ? `\n🔊 ห้องเสียง: <#${voice.id}>` : "\n⚠️ สร้างห้องเสียงไม่ได้ บอทต้องมีสิทธิ์ Connect และ Speak (เชิญบอทใหม่ด้วยลิงก์ล่าสุด)"}`,
         embeds: [roomEmbed(b, m)],
         components: roomButtons(tour.tournamentId, m),
         allowedMentions: { users: members },
@@ -839,6 +1103,7 @@ export class TourManager {
       await header.pin().catch(() => null);
       this.saveRoom(tour.tournamentId, m.id, {
         channelId: channel.id,
+        voiceChannelId: voice?.id ?? null,
         headerId: header.id,
         teamAId: m.teamA!.id,
         teamBId: m.teamB!.id,
@@ -872,6 +1137,11 @@ export class TourManager {
       const remove = room.memberIds.filter((id) => !wanted.includes(id));
       for (const id of add) await channel.permissionOverwrites.edit(id, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true, AttachFiles: true, EmbedLinks: true }).catch(() => null);
       for (const id of remove) await channel.permissionOverwrites.delete(id).catch(() => null);
+      const voice = room.voiceChannelId ? await client.channels.fetch(room.voiceChannelId).catch(() => null) : null;
+      if (voice && "permissionOverwrites" in voice) {
+        for (const id of add) await voice.permissionOverwrites.edit(id, VOICE_EDIT).catch(() => null);
+        for (const id of remove) await voice.permissionOverwrites.delete(id).catch(() => null);
+      }
       this.saveRoom(tour.tournamentId, slotId, { memberIds: wanted });
       await this.refreshHeader(client, tour, b, m);
       if (add.length) await this.roomSay(client, tour, slotId, `👥 รายชื่อเปลี่ยน: ยินดีต้อนรับ ${add.map((id) => `<@${id}>`).join(" ")}`, add);
@@ -880,14 +1150,16 @@ export class TourManager {
 
   private async lockRoom(client: Client, room: Room) {
     const channel = await client.channels.fetch(room.channelId).catch(() => null);
-    if (!channel || !("permissionOverwrites" in channel)) return;
-    for (const id of room.memberIds) await channel.permissionOverwrites.edit(id, { SendMessages: false }).catch(() => null);
+    if (channel && "permissionOverwrites" in channel) for (const id of room.memberIds) await channel.permissionOverwrites.edit(id, { SendMessages: false }).catch(() => null);
+    const voice = room.voiceChannelId ? await client.channels.fetch(room.voiceChannelId).catch(() => null) : null;
+    // A voice room keeps nothing worth reading, so a cancelled match's one goes.
+    if (voice && "delete" in voice) await voice.delete().catch(() => null);
   }
 
   private async refreshPanel(client: Client, tour: TourConfig) {
     const b = await this.bracket(tour.tournamentId).catch(() => null);
     if (!b) return;
-    const payload = { embeds: [registrationPanel(b, this.siteUrl)], components: panelButtons(tour.tournamentId), allowedMentions: { parse: [] } };
+    const payload = { embeds: [registrationPanel(b, this.siteUrl)], components: panelButtons(tour.tournamentId, b.registrationOpen && b.status !== "LIVE" && b.status !== "DONE"), allowedMentions: { parse: [] } };
     const fresh = this.tours.get(tour.tournamentId)!;
     const old = fresh.panel ? await this.fetchMessage(client, fresh.panel.channelId, fresh.panel.messageId) : null;
     if (old) {
@@ -909,6 +1181,8 @@ export class TourManager {
         await channel.delete().catch(() => null);
         n++;
       }
+      const voice = room.voiceChannelId ? await client.channels.fetch(room.voiceChannelId).catch(() => null) : null;
+      if (voice && "delete" in voice) await voice.delete().catch(() => null);
     }
     for (const cat of fresh.categories) {
       const channel = await client.channels.fetch(cat.id).catch(() => null);
