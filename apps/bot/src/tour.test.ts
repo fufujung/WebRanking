@@ -607,7 +607,7 @@ describe("a whole tournament from Discord", () => {
     assert.ok(![...channels.values()].some((c) => /blue vs green/i.test(c.name) && !c.deleted), "no leftover voice room");
     const cats = bot.tour.tours.get(tid)!.categories;
     assert.equal(cats.length, 1);
-    assert.equal(cats[0].count, 2, "failed tries give their category slots back");
+    assert.equal(cats[0].count, 4, "failed tries give their category slots back (one match takes 4)");
     textFails = /^$/;
     await bot.tour.sync(fakeClient, tid);
     voiceFails = /^$/;
@@ -639,7 +639,16 @@ describe("a whole tournament from Discord", () => {
     for (const id of [...roster(0), person(98), ...roster(3)]) assert.ok(voice.canSee(id), `${id} can join the voice room`);
     for (const id of roster(1)) assert.ok(!voice.canSee(id));
     assert.ok(voice.overwrites.get(captain(0))!.allow.includes(PermissionFlagsBits.Speak));
-    assert.match(header.content, new RegExp(`ห้องเสียง: <#${voice.id}>`));
+    assert.match(header.content, new RegExp(`ห้องเสียงรวม[^\n]*<#${voice.id}>`));
+    // And one voice room per team, that only the team (and organizers) can join.
+    const tv = rooms[m1.id].teamVoice!;
+    const redVoice = channels.get(tv.A!.id)!;
+    const goldVoice = channels.get(tv.B!.id)!;
+    assert.deepEqual([redVoice.name, goldVoice.name, redVoice.type, redVoice.parentId], ["🔒 M1 Red", "🔒 M1 Gold", ChannelType.GuildVoice, room.parentId]);
+    for (const id of [...roster(0), person(98)]) assert.ok(redVoice.canSee(id) && !goldVoice.canSee(id), `${id} only in Red's room`);
+    for (const id of roster(3)) assert.ok(goldVoice.canSee(id) && !redVoice.canSee(id), `${id} only in Gold's room`);
+    assert.ok(redVoice.overwrites.has(ORG_ROLE) && goldVoice.overwrites.has(OWNER), "organizers can join both");
+    assert.match(header.content, new RegExp(`ห้องเสียงทีม Red[^\n]*<#${redVoice.id}>`));
     // No voice room (missing permission): the text room still works and says why.
     const m2 = b.matches.find((m: any) => m.code === "W1-1");
     assert.equal(rooms[m2.id].voiceChannelId, null);
@@ -654,6 +663,9 @@ describe("a whole tournament from Discord", () => {
     const slot = b.matches.find((m: any) => m.code === "W1-0").id;
     const room = roomOf(slot);
     assert.ok(!room.canSee(person(98)), "the removed sub loses access");
+    const tv = bot.tour.tours.get(tid)!.rooms[slot].teamVoice!;
+    assert.ok(!channels.get(tv.A!.id)!.canSee(person(98)), "and Red's own voice room");
+    assert.deepEqual(tv.A!.memberIds, roster(0));
     assert.ok(!channels.get(bot.tour.tours.get(tid)!.rooms[slot].voiceChannelId!)!.canSee(person(98)), "and the voice room too");
   });
 
@@ -695,6 +707,10 @@ describe("a whole tournament from Discord", () => {
     assert.equal(stats.source, "discord");
     assert.match(room.texts.join("\n"), /✅ M1 · สายบน รอบ 1: \*\*Red\*\* 2 - 0 \*\*Gold\*\*/);
     assert.equal(room.sent[0].buttons[0].disabled, true, "check-in closed");
+    const r = bot.tour.tours.get(tid)!.rooms[m1.id];
+    assert.deepEqual(r.teamVoice, { A: null, B: null }, "the teams' own voice rooms go when the match is over");
+    assert.equal([...channels.values()].filter((c) => /^🔒 M1 /.test(c.name)).length, 0);
+    assert.ok(channels.get(r.voiceChannelId!), "the shared voice room stays for disputes");
     assert.ok(announce().texts.some((t) => /Red\*\* 2 - 0 \*\*Gold/.test(t) && /Gold ไป M3/.test(t)), announce().texts.join("\n---\n"));
 
     const again = new FakeMessage(room.id, "Red 2-0 Gold", 1, undefined, captain(0));
@@ -790,6 +806,33 @@ describe("a whole tournament from Discord", () => {
     assert.equal(w2room.name, "m4-red-vs-green", "a fresh room for the teams that really meet");
     assert.ok(Object.values(rooms).every((r) => channels.get(r.channelId)), "the cancelled rooms are forgotten");
     assert.ok([...channels.values()].some((c) => c.name === "m4-red-vs-blue" && c.texts.some((t) => /ถูกยกเลิก/.test(t))), [...channels.values()].map((c) => `${c.name}: ${c.texts.join(" | ")}`).join("\n"));
+    assert.ok(![...channels.values()].some((c) => c.name === "🔒 M4 Blue"), "the cancelled match's team voice rooms go too");
+
+    // A room made before team voice rooms existed gets them on the next sync.
+    const w2id = w2.id;
+    const before = bot.tour.tours.get(tid)!.rooms[w2id];
+    for (const v of [before.teamVoice!.A!, before.teamVoice!.B!]) await channels.get(v.id)!.delete();
+    const { teamVoice: _drop, ...old } = before;
+    const cur = bot.tour.tours.get(tid)!;
+    bot.tour.tours.set(tid, { ...cur, rooms: { ...cur.rooms, [w2id]: old } });
+    await bot.tour.sync(fakeClient, tid);
+    const upgraded = bot.tour.tours.get(tid)!.rooms[w2id].teamVoice!;
+    assert.ok(upgraded.A && upgraded.B && channels.get(upgraded.A.id)!.name === "🔒 M4 Red");
+    assert.match(last(w2room.texts), /ห้องเสียงทีม Red[\s\S]*ห้องเสียงทีม Green/);
+
+    // Reopening M2: its teams get their own voice rooms back; then the organizer decides it again.
+    const reopen = press(`tr:tro:${tid}:${m2.id}`, REF, header);
+    await bot.onButton(reopen);
+    assert.match(text(last(reopen.replies)), /ยกเลิกผล|ให้แข่งใหม่/, JSON.stringify(reopen.replies));
+    const back = bot.tour.tours.get(tid)!.rooms[m2.id].teamVoice!;
+    assert.ok(back.A && back.B, "team voice rooms restored");
+    const blueVoice = channels.get(back.A!.id)!;
+    assert.equal(blueVoice.parentId, room.parentId);
+    assert.ok(blueVoice.canSee(roster(1)[0]) && !blueVoice.canSee(roster(2)[0]));
+    const again = press(`tr:taw:${tid}:${m2.id}:B`, REF, header);
+    await bot.onButton(again);
+    assert.match(text(last(again.replies)), /ตัดสินให้ Green ชนะ M2/);
+    assert.deepEqual(bot.tour.tours.get(tid)!.rooms[m2.id].teamVoice, { A: null, B: null });
   });
 
   test("organizers finish the bracket; the champion is announced", async () => {
@@ -820,7 +863,9 @@ describe("a whole tournament from Discord", () => {
 
   test("/tour cleanup removes the match rooms", async () => {
     const roomIds = Object.values(bot.tour.tours.get(tid)!.rooms).map((r) => r.channelId);
-    const voiceIds = Object.values(bot.tour.tours.get(tid)!.rooms).map((r) => r.voiceChannelId).filter((x): x is string => Boolean(x));
+    const voiceIds = Object.values(bot.tour.tours.get(tid)!.rooms)
+      .flatMap((r) => [r.voiceChannelId, r.teamVoice?.A?.id, r.teamVoice?.B?.id])
+      .filter((x): x is string => Boolean(x));
     assert.ok(roomIds.length >= 4);
     assert.ok(voiceIds.length >= 3);
     const i = command("tour", "cleanup", {}, OWNER);
