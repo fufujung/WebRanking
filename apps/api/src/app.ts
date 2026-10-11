@@ -8,6 +8,7 @@ import YAML from "yaml";
 import { requireApiKey } from "./lib/apiKeys.js";
 import { errorHandler, HttpError } from "./lib/errors.js";
 import { UPLOAD_DIR } from "./lib/uploads.js";
+import { ads } from "./routes/ads.js";
 import { keys } from "./routes/keys.js";
 import { matches } from "./routes/matches.js";
 import { players } from "./routes/players.js";
@@ -52,6 +53,7 @@ export function createApp() {
   v1.use("/rankings", rankings);
   v1.use("/stats", stats);
   v1.use("/keys", keys);
+  v1.use("/ads", ads);
   v1.use(uploads);
   app.use("/api/v1", v1);
 

@@ -557,6 +557,74 @@ describe("api keys", () => {
   });
 });
 
+describe("ads", () => {
+  const ad = (extra: Record<string, unknown> = {}) => ({
+    title: "ร้านเติมเกม",
+    placement: "banner",
+    imageUrl: "https://example.com/banner.png",
+    linkUrl: "https://shop.example.com/promo",
+    ...extra,
+  });
+
+  test("admin creates, edits and deletes an ad; readers cannot", async () => {
+    assert.equal((await call("POST", "/api/v1/ads", ad(), reader)).status, 403);
+    const created = await call("POST", "/api/v1/ads", ad());
+    assert.equal(created.status, 201);
+    assert.equal(created.body.active, true);
+    assert.equal(created.body.clicks, 0);
+    const id = created.body.id;
+    const edited = await call("PATCH", `/api/v1/ads/${id}`, ad({ title: "โปรใหม่", placement: "popup" }));
+    assert.equal(edited.status, 200);
+    assert.equal(edited.body.title, "โปรใหม่");
+    assert.equal(edited.body.placement, "popup");
+    assert.equal((await call("PATCH", `/api/v1/ads/${id}`, ad(), reader)).status, 403);
+    assert.equal((await call("DELETE", `/api/v1/ads/${id}`)).status, 204);
+    assert.equal((await call("GET", `/api/v1/ads/${id}`)).status, 404);
+  });
+
+  test("input is validated", async () => {
+    assert.equal((await call("POST", "/api/v1/ads", ad({ placement: "sidebar" }))).status, 400);
+    assert.equal((await call("POST", "/api/v1/ads", ad({ imageUrl: "" }))).status, 400);
+    assert.equal((await call("POST", "/api/v1/ads", ad({ linkUrl: "javascript:alert(1)" }))).status, 400);
+    assert.equal((await call("POST", "/api/v1/ads", ad({ linkUrl: "shop.example.com" }))).status, 400);
+    const backwards = ad({ startsAt: "2026-10-10T00:00:00Z", endsAt: "2026-10-09T00:00:00Z" });
+    assert.equal((await call("POST", "/api/v1/ads", backwards)).status, 400);
+  });
+
+  test("live=1 only lists switched-on ads inside their dates", async () => {
+    const day = 24 * 3600 * 1000;
+    const iso = (offset: number) => new Date(Date.now() + offset).toISOString();
+    const make = async (title: string, extra: Record<string, unknown>) => (await call("POST", "/api/v1/ads", ad({ title, placement: "card", ...extra }))).body.id;
+    const ids = {
+      now: await make("now", {}),
+      window: await make("window", { startsAt: iso(-day), endsAt: iso(day) }),
+      off: await make("off", { active: false }),
+      later: await make("later", { startsAt: iso(day) }),
+      over: await make("over", { endsAt: iso(-day) }),
+    };
+    const live = await call("GET", "/api/v1/ads?placement=card&live=1", undefined, reader);
+    assert.equal(live.status, 200);
+    assert.deepEqual(live.body.data.map((a: { title: string }) => a.title).sort(), ["now", "window"]);
+    const all = await call("GET", "/api/v1/ads?placement=card");
+    assert.equal(all.body.data.length, 5);
+    assert.equal((await call("GET", "/api/v1/ads?placement=card&live=1")).body.data.every((a: { placement: string }) => a.placement === "card"), true);
+    for (const id of Object.values(ids)) await call("DELETE", `/api/v1/ads/${id}`);
+  });
+
+  test("a click is counted and returns the link", async () => {
+    const id = (await call("POST", "/api/v1/ads", ad())).body.id;
+    assert.equal((await call("POST", `/api/v1/ads/${id}/click`, undefined, reader)).status, 403);
+    const click = await call("POST", `/api/v1/ads/${id}/click`);
+    assert.equal(click.status, 200);
+    assert.equal(click.body.linkUrl, "https://shop.example.com/promo");
+    await call("POST", `/api/v1/ads/${id}/click`);
+    assert.equal((await call("GET", `/api/v1/ads/${id}`)).body.clicks, 2);
+    assert.equal((await call("POST", "/api/v1/ads/missing/click")).status, 404);
+    assert.equal((await call("POST", `/api/v1/ads/${id}/click`, undefined, null)).status, 401);
+    await call("DELETE", `/api/v1/ads/${id}`);
+  });
+});
+
 describe("misc", () => {
   test("unknown routes are JSON 404s", async () => {
     const res = await call("GET", "/api/v1/nope");

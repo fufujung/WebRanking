@@ -18,7 +18,7 @@ const optionalText = (max: number) =>
     .transform((v) => (v ? v : null));
 
 /** Accepts an absolute http(s) URL or a path to a file uploaded to this API (/uploads/...). */
-const imageUrl = z
+export const imageUrl = z
   .string()
   .trim()
   .max(500)
@@ -224,3 +224,17 @@ export const bracketResultInput = z
     message: "Each player can only appear once per game",
     path: ["games"],
   });
+
+/** An advert. Times are optional: no start = from now, no end = until switched off. */
+export const adInput = z
+  .object({
+    title: z.string().trim().min(1).max(100),
+    placement: z.enum(["banner", "card", "popup"]),
+    imageUrl: imageUrl.refine((v) => v !== null, { message: "An image is required" }),
+    mobileImageUrl: imageUrl,
+    linkUrl: z.string().trim().max(500).url().refine((v) => /^https?:\/\//.test(v), { message: "Must be an http(s) URL" }),
+    active: z.boolean().default(true),
+    startsAt: z.coerce.date().nullish().transform((v) => v ?? null),
+    endsAt: z.coerce.date().nullish().transform((v) => v ?? null),
+  })
+  .refine((a) => !a.startsAt || !a.endsAt || a.endsAt > a.startsAt, { message: "End must be after start", path: ["endsAt"] });

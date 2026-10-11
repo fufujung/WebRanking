@@ -263,7 +263,7 @@ export async function saveRoster(tournamentId: string, teamId: string, players: 
 
 // Deletes
 // After a delete, go back to the list the item was in.
-const deletable = { teams: "/admin/teams", players: "/admin/players", tournaments: "/admin/tournaments", matches: "/admin/matches" } as const;
+const deletable = { teams: "/admin/teams", players: "/admin/players", tournaments: "/admin/tournaments", matches: "/admin/matches", ads: "/admin/ads" } as const;
 
 export async function remove(kind: keyof typeof deletable, id: string): Promise<FormState> {
   const result = await run(async () => {
@@ -272,6 +272,41 @@ export async function remove(kind: keyof typeof deletable, id: string): Promise<
   if (result) return result;
   revalidatePath("/", "layout");
   redirect(`${deletable[kind]}?deleted=1`);
+}
+
+// Shop ads
+const adBody = (form: FormData) => ({
+  title: text(form, "title"),
+  placement: text(form, "placement"),
+  imageUrl: text(form, "imageUrl"),
+  mobileImageUrl: text(form, "placement") === "banner" ? orNull(text(form, "mobileImageUrl")) : null,
+  linkUrl: text(form, "linkUrl"),
+  active: form.get("active") === "on",
+  startsAt: fromBangkokInput(text(form, "startsAt")),
+  endsAt: fromBangkokInput(text(form, "endsAt")),
+});
+
+export async function saveAd(id: string | null, _: FormState, form: FormData): Promise<FormState> {
+  const body = adBody(form);
+  if (!body.imageUrl) return { error: "ใส่รูปโฆษณาก่อน" };
+  if (!/^https?:\/\//.test(body.linkUrl)) return { error: "ลิงก์ต้องขึ้นต้นด้วย https:// เช่น https://overtimeboosboos.com" };
+  const result = await run(async () => {
+    await api(id ? `/ads/${id}` : "/ads", { method: id ? "PATCH" : "POST", json: body });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  redirect("/admin/ads?saved=1");
+}
+
+/** Switches an ad on or off from the list without opening it. */
+export async function setAdActive(id: string, active: boolean): Promise<FormState> {
+  const result = await run(async () => {
+    const ad = await api<Record<string, unknown>>(`/ads/${encodeURIComponent(id)}`);
+    const { title, placement, imageUrl, mobileImageUrl, linkUrl, startsAt, endsAt } = ad;
+    await api(`/ads/${encodeURIComponent(id)}`, { method: "PATCH", json: { title, placement, imageUrl, mobileImageUrl, linkUrl, startsAt, endsAt, active } });
+  });
+  revalidatePath("/", "layout");
+  return result;
 }
 
 // API keys

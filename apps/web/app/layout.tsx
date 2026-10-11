@@ -10,6 +10,8 @@ import { isAdmin } from "@/lib/auth";
 import { getMember } from "@/lib/member";
 import { discordEnabled } from "@/lib/discord";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { AdBanner, AdPopupSlot } from "@/components/ads/Ads";
+import { HideOnAdmin } from "@/components/ads/HideOnAdmin";
 
 export const metadata: Metadata = {
   title: { default: "Tournament Ranking", template: "%s · Tournament Ranking" },
@@ -55,7 +57,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </div>
           </div>
         </header>
-        <main className="container">{children}</main>
+        <main className="container">
+          <HideOnAdmin>
+            <AdBanner />
+          </HideOnAdmin>
+          {children}
+        </main>
+        <HideOnAdmin>
+          <AdPopupSlot />
+        </HideOnAdmin>
         <footer className="footer">
           <div className="container row between">
             <span>Tournament Ranking</span>

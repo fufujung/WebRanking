@@ -270,3 +270,22 @@ model ApiKey {
   lastUsedAt DateTime?
   revokedAt  DateTime?
 }
+
+/// An advert for the organizer's own shop, shown on the public site.
+model Ad {
+  id             String    @id @default(cuid())
+  title          String
+  placement      String // banner | card | popup
+  imageUrl       String
+  /// Optional narrower image for phones (banner only).
+  mobileImageUrl String?
+  linkUrl        String
+  active         Boolean   @default(true)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  clicks         Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([placement])
+}

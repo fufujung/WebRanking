@@ -622,3 +622,40 @@ h4 { font-size: 15px; font-weight: 700; }
 .nav-me img { width: 22px; height: 22px; border-radius: 50%; }
 .claim-form h2 { margin-bottom: 4px; }
 .discord-link { border-color: color-mix(in srgb, #5865f2 45%, var(--border)); }
+
+/* Shop ads */
+.ad-chip { position: absolute; top: 8px; left: 8px; font-size: 11px; line-height: 1; padding: 4px 7px; border-radius: 999px; background: rgba(0, 0, 0, 0.6); color: #fff; pointer-events: none; }
+.ad-banner { margin-bottom: 24px; }
+.ad-rotator { position: relative; }
+.ad-banner-link { position: relative; display: block; border-radius: 14px; overflow: hidden; border: 1px solid var(--border); background: var(--card); }
+.ad-banner-link img { display: block; width: 100%; height: auto; max-height: 240px; object-fit: cover; }
+.ad-dots { position: absolute; right: 12px; bottom: 10px; display: flex; gap: 6px; }
+.ad-dot { width: 9px; height: 9px; padding: 0; border-radius: 999px; border: 0; background: rgba(255, 255, 255, 0.5); cursor: pointer; }
+.ad-dot-on { background: var(--accent); }
+.ad-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .ad-cards { grid-template-columns: 1fr; } }
+.ad-card { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 10px; color: var(--text); }
+.ad-card:hover { border-color: var(--accent); color: var(--text); }
+.ad-card img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; display: block; }
+.ad-card .ad-chip { top: 18px; left: 18px; }
+.ad-card-title { font-weight: 600; padding: 0 4px 4px; }
+.ad-popup-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, 0.72); display: grid; place-items: center; padding: 16px; animation: ad-fade 0.2s ease-out; }
+.ad-popup { position: relative; max-width: min(480px, 100%); }
+.ad-popup a { display: block; }
+.ad-popup img { display: block; max-width: 100%; max-height: 80vh; border-radius: 16px; box-shadow: 0 20px 60px var(--shadow); }
+.ad-popup-close { position: absolute; top: -14px; right: -14px; width: 36px; height: 36px; border-radius: 999px; border: 2px solid #fff; background: var(--accent); color: #fff; font-size: 16px; cursor: pointer; z-index: 1; }
+@media (max-width: 520px) { .ad-popup-close { top: 8px; right: 8px; } }
+@keyframes ad-fade { from { opacity: 0; } to { opacity: 1; } }
+.ad-places { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.ad-places legend { margin-bottom: 6px; }
+.ad-place { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; cursor: pointer; }
+.ad-place input { position: absolute; opacity: 0; pointer-events: none; }
+.ad-place-on { border-color: var(--accent); background: var(--accent-soft); }
+.ad-place:focus-within { box-shadow: 0 0 0 3px var(--focus-ring); }
+.ad-preview { position: relative; display: inline-block; max-width: 100%; }
+.ad-preview img { display: block; max-width: 100%; border-radius: 12px; border: 1px solid var(--border); }
+.ad-preview-banner { display: block; }
+.ad-preview-banner img { width: 100%; max-height: 240px; object-fit: cover; }
+.ad-preview-card img { width: 320px; aspect-ratio: 16 / 9; object-fit: cover; }
+.ad-preview-popup img { max-height: 360px; }
+.ad-thumb { width: 72px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); flex: none; }

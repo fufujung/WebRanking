@@ -578,6 +578,83 @@ await page.click("button:has-text('บันทึกรายชื่อ')");
 await page.locator("tr", { hasText: "Night Owls" }).locator("td", { hasText: "Kite (UID 81000108 · Asia), Lynx, Moss" }).waitFor();
 step("roster saved for Night Owls, with UID and server");
 
+// Shop ads: a banner under the menu, a home page card and a once-a-day popup, managed in the back office.
+console.log("— Shop ads");
+const SHOP = `${base}/rankings?shop=${uniq}`;
+async function newAd(placement, title, extra = async () => {}) {
+  await page.goto(base + "/admin/ads/new");
+  await page.locator(`.ad-place:has(input[value="${placement}"])`).click();
+  await page.fill('input[name="title"]', title);
+  await page.fill('input[name="linkUrl"]', SHOP);
+  await page.setInputFiles('.drop input[type="file"] >> nth=0', LOGO);
+  await page.waitForSelector(".drop img");
+  await extra();
+  await page.click("button:has-text('เพิ่มโฆษณา')");
+  await page.waitForURL(/\/admin\/ads\?saved=1/);
+  await page.locator(".ad-row", { hasText: title }).waitFor();
+}
+await page.goto(base + "/admin/ads");
+await page.locator('.side-link[href="/admin/ads"]').waitFor();
+await page.click("a:has-text('+ เพิ่มโฆษณา')");
+await page.fill('input[name="title"]', `Shop ${uniq}`);
+await page.fill('input[name="linkUrl"]', SHOP);
+await page.click("button:has-text('เพิ่มโฆษณา')");
+await page.locator(".error:has-text('ใส่รูปโฆษณาก่อน')").waitFor();
+await page.setInputFiles('.drop input[type="file"] >> nth=0', LOGO);
+await page.waitForSelector(".drop img");
+await page.fill('input[name="linkUrl"]', "ftp://shop.example.com");
+await page.click("button:has-text('เพิ่มโฆษณา')");
+await page.locator(".error:has-text('https://')").waitFor();
+step("ad form asks for a picture and an http(s) shop link");
+await page.fill('input[name="linkUrl"]', SHOP);
+await page.click("button:has-text('เพิ่มโฆษณา')");
+await page.waitForURL(/\/admin\/ads\?saved=1/);
+await page.locator(".ad-row", { hasText: `Shop ${uniq}` }).locator(".pill:has-text('กำลังแสดง')").waitFor();
+await newAd("popup", `Popup ${uniq}`);
+await newAd("card", `Card ${uniq}`);
+await newAd("card", `Later ${uniq}`, async () => page.fill('input[name="startsAt"]', "2099-01-01T10:00"));
+await page.locator(".ad-row", { hasText: `Later ${uniq}` }).locator(".pill:has-text('รอเริ่ม')").waitFor();
+if (await page.locator(".ad-banner, .ad-popup").count()) throw new Error("ads shown inside the back office");
+step("banner, popup and card ads created; a future card waits for its start time");
+
+await page.goto(base + "/");
+await page.locator(".ad-popup").waitFor();
+await page.click(".ad-popup-close");
+await page.locator(".ad-popup").waitFor({ state: "detached" });
+const bannerOk = await page.locator(".ad-banner img").first().evaluate((el) => el.complete && el.naturalWidth > 0);
+if (!bannerOk) throw new Error("banner picture not displayed");
+if (!(await page.locator(".ad-card", { hasText: `Card ${uniq}` }).count())) throw new Error("home page card missing");
+if (await page.locator(".ad-card", { hasText: `Later ${uniq}` }).count()) throw new Error("card shown before its start time");
+await page.reload();
+await page.waitForTimeout(2000);
+if (await page.locator(".ad-popup").count()) throw new Error("popup shown twice on the same day");
+await page.goto(base + "/teams");
+await page.locator(".ad-banner").waitFor();
+step("home shows the banner, the card and the popup once; the popup stays closed after a reload; banner on other pages too");
+
+const go = await page.locator(".ad-banner a").first().getAttribute("href");
+const hop = await page.request.get(base + go, { maxRedirects: 0 });
+if (hop.status() !== 302 || hop.headers().location !== SHOP) throw new Error(`ad click should go to the shop, got ${hop.status()} ${hop.headers().location}`);
+const lost = await page.request.get(base + "/go/ad/missing", { maxRedirects: 0 });
+if (lost.status() !== 302 || lost.headers().location !== "/") throw new Error("unknown ad should go home");
+await page.goto(base + "/admin/ads");
+const bannerRow = page.locator(".ad-row", { hasText: `Shop ${uniq}` });
+if ((await bannerRow.locator("td.num").textContent()).trim() !== "1") throw new Error("ad click not counted");
+step("a click is counted and goes to the shop link");
+
+await bannerRow.locator("button:has-text('ปิด')").click();
+await bannerRow.locator(".pill:has-text('ปิดอยู่')").waitFor();
+await page.goto(base + "/");
+if (await page.locator(`.ad-banner img[alt="Shop ${uniq}"]`).count()) throw new Error("switched-off banner still shown");
+await page.goto(base + "/admin/ads");
+for (const t of [`Shop ${uniq}`, `Popup ${uniq}`, `Card ${uniq}`, `Later ${uniq}`]) {
+  page.once("dialog", (d) => d.accept());
+  await page.locator(".ad-row", { hasText: t }).locator("button:has-text('ลบ')").click();
+  await page.waitForURL(/\/admin\/ads\?deleted=1/);
+  await page.locator(".ad-row", { hasText: t }).waitFor({ state: "detached" });
+}
+step("ad switched off from the list disappears from the site; ads deleted");
+
 // Logout
 await page.click("button:has-text('ออกจากระบบ')");
 await page.waitForURL(base + "/");
