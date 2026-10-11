@@ -72,12 +72,13 @@ model Player {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  team      Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  game      Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
-  statLines MatchPlayerStat[]
-  rosters   RosterPlayer[]
-  names     PlayerName[]
-  mmrLog    PlayerMmrChange[]
+  team        Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  game        Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  statLines   MatchPlayerStat[]
+  rosters     RosterPlayer[]
+  soloSignups SoloSignup[]
+  names       PlayerName[]
+  mmrLog      PlayerMmrChange[]
 
   @@index([teamId])
   @@index([uid])
@@ -140,9 +141,17 @@ model Tournament {
   grandFinalReset  Boolean @default(true) // double elimination: a second final if the losers-bracket team wins the first
   bracketStatus    String  @default("NONE") // NONE | DRAFT (seeded, not started) | LIVE | DONE
 
+  /// TEAM = teams sign up; SOLO = players sign up alone and the organizer draws them into teams.
+  entryMode String @default("TEAM")
+  /// Players per drawn team (SOLO).
+  teamSize  Int    @default(3)
+  /// SOLO: in-game ranks players pick from, lowest first, as a JSON array. "[]" = the default list.
+  soloRanks String @default("[]")
+
   entries        TournamentEntry[]
   matches        Match[]
   bracketMatches BracketMatch[]
+  soloSignups    SoloSignup[]
   gameRef        Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
 
   @@index([gameId])
@@ -162,6 +171,22 @@ model TournamentEntry {
   roster           RosterPlayer[]
 
   @@unique([tournamentId, teamId])
+}
+
+/// A player signed up alone for a SOLO tournament, with the position they play and their in-game rank.
+model SoloSignup {
+  id           String   @id @default(cuid())
+  tournamentId String
+  playerId     String
+  discordId    String?
+  position     String // GUARD | FORWARD | CENTER | ALL (All Around)
+  rank         String // one of the tournament's soloRanks
+  createdAt    DateTime @default(now())
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  player     Player     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, playerId])
 }
 
 /// A player registered to play for a team in one tournament.

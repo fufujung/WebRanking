@@ -127,6 +127,11 @@ export interface Tournament {
   name: string;
   game: string | null;
   gameId?: string | null;
+  /** TEAM: teams sign up. SOLO: players sign up alone and are drawn into teams. */
+  entryMode?: "TEAM" | "SOLO";
+  teamSize?: number;
+  /** SOLO: in-game ranks to pick from, lowest first. */
+  soloRanks?: string[];
   location: string | null;
   description: string | null;
   status: Status;
@@ -420,4 +425,34 @@ export interface InviteInfo {
   game: { id: string; name: string } | null;
   memberCount: number;
   full: boolean;
+}
+
+export type SoloPosition = "GUARD" | "FORWARD" | "CENTER" | "ALL";
+
+export interface SoloSignup {
+  playerId: string;
+  name: string;
+  nickname: string | null;
+  avatarUrl: string | null;
+  uid: string | null;
+  server: string | null;
+  mmr: number;
+  discordId: string | null;
+  position: SoloPosition;
+  rank: string;
+  signedUpAt: string;
+}
+
+export interface SoloView {
+  entryMode: "TEAM" | "SOLO";
+  teamSize: number;
+  ranks: string[];
+  registrationOpen: boolean;
+  drawn: boolean;
+  signups: SoloSignup[];
+}
+
+export interface SoloDraw {
+  teams: { players: SoloSignup[]; rankTotal: number; mmrAverage: number; positionsOk: boolean }[];
+  reserves: SoloSignup[];
 }

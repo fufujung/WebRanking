@@ -10,6 +10,7 @@ import { formatLabel, statusLabel, toBangkokInput, toDateInput } from "@/lib/for
 export function TournamentForm({ tournament, games }: { tournament?: Tournament; games: Game[] }) {
   const [state, onSubmit, pending] = useFormAction(saveTournament.bind(null, tournament?.id ?? null), undefined);
   const [format, setFormat] = useState<Format | "">(tournament?.format ?? "");
+  const [mode, setMode] = useState<"TEAM" | "SOLO">(tournament?.entryMode ?? "TEAM");
   // The shape of a started bracket can't change; reset the bracket first.
   const started = tournament?.bracketStatus === "LIVE" || tournament?.bracketStatus === "DONE";
   return (
@@ -61,14 +62,32 @@ export function TournamentForm({ tournament, games }: { tournament?: Tournament;
       {format && (
         <>
           <div className="form-row">
+            <label>
+              การสมัคร
+              <select name="entryMode" value={mode} onChange={(e) => setMode(e.target.value as "TEAM" | "SOLO")}>
+                <option value="TEAM">สมัครเป็นทีม</option>
+                <option value="SOLO">ลงเดี่ยว แล้วระบบสุ่มจัดทีม</option>
+              </select>
+            </label>
+            {mode === "SOLO" && (
+              <>
+                <label>ผู้เล่นต่อทีม (สุ่ม)<input type="number" name="teamSize" min={2} max={10} defaultValue={tournament?.teamSize ?? 3} /></label>
+                <label>
+                  แรงค์ในเกม (ต่ำ → สูง คั่นด้วย ,)
+                  <input name="soloRanks" maxLength={600} defaultValue={(tournament?.soloRanks ?? ["ฟ้า", "ทอง", "แดง", "โซน"]).join(", ")} placeholder="เช่น ฟ้า, ทอง, แดง, โซน" />
+                </label>
+              </>
+            )}
+          </div>
+          {mode === "TEAM" && <div className="form-row">
             <label>ผู้เล่นต่อทีม ขั้นต่ำ<input type="number" name="rosterMin" min={1} max={10} defaultValue={tournament?.rosterMin ?? 3} /></label>
             <label>ผู้เล่นต่อทีม สูงสุด<input type="number" name="rosterMax" min={1} max={10} defaultValue={tournament?.rosterMax ?? 5} /></label>
             <label>รับสูงสุด (ทีม)<input type="number" name="maxTeams" min={2} max={256} defaultValue={tournament?.maxTeams ?? ""} placeholder="ไม่จำกัด" /></label>
-          </div>
+          </div>}
           <div className="row" style={{ flexWrap: "wrap", gap: 16 }}>
             <input type="hidden" name="registrationOpenPresent" value="1" />
             <label className="row" style={{ gap: 6 }}>
-              <input type="checkbox" name="registrationOpen" defaultChecked={tournament?.registrationOpen ?? false} /> เปิดรับสมัครทาง Discord
+              <input type="checkbox" name="registrationOpen" defaultChecked={tournament?.registrationOpen ?? false} /> {mode === "SOLO" ? "เปิดรับลงทะเบียนเดี่ยว (หน้าเว็บ)" : "เปิดรับสมัครทาง Discord"}
             </label>
             {format !== "ROUND_ROBIN" && (
               <>

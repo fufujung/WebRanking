@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { discordId } from "../lib/members.js";
+import { leaveSolo, signUp } from "../lib/solo.js";
 import { createTeam, inviteInfo, joinTeam, kickMember, leaveTeam, makeCaptain, memberView, resetInvite } from "../lib/teamSelf.js";
 
 /**
@@ -35,4 +36,12 @@ members.post("/:discordId/captain", async (req, res) => {
 });
 members.post("/:discordId/invite", async (req, res) => {
   res.json(await resetInvite(who(req.params.discordId), req.body));
+});
+
+/** Signs up alone for a SOLO tournament with position and rank (again to change them). */
+members.post("/:discordId/solo/:tournamentId", async (req, res) => {
+  res.json(await signUp(who(req.params.discordId), String(req.params.tournamentId), req.body));
+});
+members.delete("/:discordId/solo/:tournamentId", async (req, res) => {
+  res.json(await leaveSolo(who(req.params.discordId), String(req.params.tournamentId)));
 });

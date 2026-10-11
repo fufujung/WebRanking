@@ -722,6 +722,33 @@ if (await page.locator(".game-tabs").count()) throw new Error("game picker shown
 step("unused game deleted; with one game the picker is gone");
 await page.goto(base + "/admin");
 
+// SOLO tournament: players sign up alone with position and in-game rank, then teams are drawn.
+console.log("— Solo tournament");
+await page.goto(base + "/admin/tournaments/new");
+await page.fill('input[name="name"]', `Solo ${uniq}`);
+await page.fill('input[name="startDate"]', "2026-12-01T19:00");
+await page.selectOption('select[name="format"]', "SINGLE_ELIMINATION");
+await page.selectOption('select[name="entryMode"]', "SOLO");
+await page.fill('input[name="soloRanks"]', "ฟ้า, ทอง, แดง, โซน");
+await page.check('input[name="registrationOpen"]');
+await page.click("button:has-text('สร้างทัวร์นาเมนต์')");
+await page.waitForURL(/\/admin\/tournaments\/(?!new)/);
+const soloId = page.url().split("/").pop().split("?")[0];
+await page.locator("h2:has-text('ลงเดี่ยว / สุ่มทีม')").waitFor();
+// Five players sign up through the API the way the website and bot do; the sixth uses the website below.
+const apiCall = (method, url, body) =>
+  fetch(`${API}/api/v1${url}`, { method, headers: { "X-API-Key": WEB_KEY, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => {
+    if (r.status >= 300) throw new Error(`${method} ${url} → ${r.status} ${await r.text()}`);
+    return r.json();
+  });
+const soloPlan = [["GUARD", "โซน"], ["FORWARD", "ฟ้า"], ["GUARD", "ทอง"], ["FORWARD", "แดง"], ["ALL", "ฟ้า"]];
+for (const [i, [position, rank]] of soloPlan.entries()) {
+  const discord = `68${uniq}00000${i}`;
+  const p = await apiCall("POST", `/players/discord/${discord}/claim`, { uid: `69${uniq}${i}`, name: `Solo${i}-${uniq}` });
+  await apiCall("POST", `/members/${discord}/solo/${soloId}`, { playerId: p.id, position, rank });
+}
+step("SOLO tournament created with in-game ranks; 5 players signed up");
+
 // Logout
 await page.click("button:has-text('ออกจากระบบ')");
 await page.waitForURL(base + "/");
@@ -841,6 +868,53 @@ if (!(await page.locator(".btn-discord").count())) {
   await ctx2.close();
   discordUser = DISCORD_USER;
   step("captain handed the team to the teammate; 👑 shows on the team page");
+
+  // The logged-in player signs up for the SOLO tournament on its page.
+  await page.goto(base + `/tournaments/${soloId}`);
+  await page.locator("h2:has-text('ลงทะเบียนเดี่ยว')").waitFor();
+  const soloForm = page.locator(".solo-form");
+  if (await soloForm.locator('select[name="playerId"]').count()) await soloForm.locator('select[name="playerId"]').selectOption({ label: `Disc-${uniq} (UID 77${uniq})` });
+  await soloForm.locator('select[name="position"]').selectOption("FORWARD");
+  await soloForm.locator('select[name="rank"]').selectOption("โซน");
+  await soloForm.locator("button:has-text('ลงทะเบียน')").click();
+  await soloForm.locator(".success").waitFor();
+  await page.locator("tr.row-me:has-text('Forward')").waitFor();
+  // Changing position keeps one sign-up.
+  await soloForm.locator('select[name="position"]').selectOption("CENTER");
+  await soloForm.locator("button:has-text('บันทึกการเปลี่ยนแปลง')").click();
+  await page.locator("tr.row-me:has-text('Center')").waitFor();
+  await page.locator("h2:has-text('6 คน · ได้ 2 ทีม')").waitFor();
+  await page.screenshot({ path: OUT + "/solo-signup.png", fullPage: true });
+  step("player signed up alone with position and rank on the tournament page, then changed position");
+
+  // An organizer draws the teams and saves them.
+  const adminCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const admin = await adminCtx.newPage();
+  admin.on("pageerror", (e) => problems.push(`pageerror: ${e.message} @ ${admin.url()}`));
+  await admin.goto(base + LOGIN);
+  await admin.fill('input[name="password"]', PASSWORD);
+  await admin.click("button:has-text('เข้าสู่ระบบ')");
+  await admin.waitForURL(base + "/admin");
+  await admin.goto(base + `/admin/tournaments/${soloId}`);
+  await admin.click("button:has-text('สุ่มทีม')");
+  await admin.locator(".solo-team").nth(1).waitFor();
+  if ((await admin.locator(".solo-team").count()) !== 2) throw new Error("expected 2 drawn teams");
+  for (let i = 0; i < 2; i++) {
+    const team = admin.locator(".solo-team").nth(i);
+    if ((await team.locator("li").count()) !== 3) throw new Error("drawn team is not 3 players");
+    if (await team.locator(".notice").count()) throw new Error("drawn team is missing a position");
+  }
+  await admin.click("button:has-text('สุ่มใหม่')");
+  await admin.locator(".solo-team").nth(1).waitFor();
+  await admin.screenshot({ path: OUT + "/solo-draw.png", fullPage: true });
+  await admin.click("button:has-text('ยืนยันทีมชุดนี้')");
+  await admin.locator(".solo-admin .success:has-text('2 ทีม')").waitFor();
+  await admin.locator(".solo-admin .pill:has-text('สุ่มทีมแล้ว')").waitFor();
+  await adminCtx.close();
+  await page.reload();
+  await page.locator(".notice:has-text('สุ่มทีมเรียบร้อยแล้ว')").waitFor();
+  await page.locator(`h2:has-text('รายชื่อผู้เล่น')`).waitFor();
+  step("organizer drew 2 balanced teams (every team has G/F/C), redrew and saved; the page shows the teams");
 
   await page.goto(base + "/me");
   page.once("dialog", (d) => d.accept());

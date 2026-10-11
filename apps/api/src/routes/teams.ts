@@ -50,6 +50,10 @@ teams.get("/:id", async (req, res) => {
     },
   });
   if (!team) throw notFound("Team");
+  // A team drawn for a SOLO tournament has no players of its own: show who played for it.
+  if (!team.players.length && team.entries.length) {
+    team.players = await prisma.player.findMany({ where: { rosters: { some: { entry: { teamId: team.id } } } }, orderBy: { name: "asc" } });
+  }
 
   const [matches, lines, higher, movement] = await Promise.all([
     prisma.match.findMany({

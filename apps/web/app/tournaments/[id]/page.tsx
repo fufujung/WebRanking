@@ -4,6 +4,7 @@ import type { Bracket, TournamentDetail } from "@/lib/types";
 import { fmtDate, fmtThaiTime, formatLabel } from "@/lib/format";
 import { BracketView, Rosters } from "@/components/Bracket";
 import { Empty, MatchCard, StatusBadge, TeamLink } from "@/components/ui";
+import { SoloSection } from "./SoloSection";
 
 export default async function TournamentPage({ params }: { params: Promise<{ id: string }> }) {
   const t = await apiOrNull<TournamentDetail>(`/tournaments/${encodeURIComponent((await params).id)}`);
@@ -26,7 +27,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
               <span className="badge">BO{t.bestOf}</span>
               {t.finalBestOf && t.finalBestOf !== t.bestOf && t.format !== "ROUND_ROBIN" && <span className="badge">รอบชิง BO{t.finalBestOf}</span>}
               <span className="badge">เลทได้ {t.lateMinutes} นาที</span>
-              {t.registrationOpen && <span className="badge badge-accent">เปิดรับสมัครทาง Discord</span>}
+              {t.entryMode === "SOLO" && <span className="badge">ลงเดี่ยว · สุ่มทีมละ {t.teamSize} คน</span>}
+              {t.registrationOpen && t.entryMode !== "SOLO" && <span className="badge badge-accent">เปิดรับสมัครทาง Discord</span>}
             </div>
           )}
         </div>
@@ -43,6 +45,8 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
           ))}
         </div>
       )}
+
+      {t.entryMode === "SOLO" && <SoloSection t={t} />}
 
       {bracket && (
         <>

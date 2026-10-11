@@ -9,6 +9,7 @@ import { datesInOrder, entryInput, rosterSizeOk, searchQuery, tournamentInput, t
 import * as comp from "../lib/competition.js";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { matchInclude, matchOrder } from "../lib/selects.js";
+import { confirmTeams, drawTeams, removeSignup, soloView, withRanks } from "../lib/solo.js";
 
 export const tournaments = Router();
 
@@ -33,7 +34,7 @@ tournaments.get("/", async (req, res) => {
     }),
     prisma.tournament.count({ where }),
   ]);
-  const data = rows.map(({ _count, ...t }) => ({ ...t, teamCount: _count.entries, matchCount: _count.matches }));
+  const data = rows.map(({ _count, ...t }) => ({ ...withRanks(t), teamCount: _count.entries, matchCount: _count.matches }));
   res.json({ data, total, limit: q.limit, offset: q.offset });
 });
 
@@ -41,7 +42,7 @@ tournaments.post("/", requireAdmin, async (req, res) => {
   const input = tournamentInput.parse(req.body);
   if (!datesInOrder(input)) throw badDates();
   if (!rosterSizeOk(input)) throw badRoster();
-  res.status(201).json(await prisma.tournament.create({ data: { ...input, ...(await tournamentGame(prisma, input)) } }));
+  res.status(201).json(withRanks(await prisma.tournament.create({ data: { ...input, ...(await tournamentGame(prisma, input)) } })));
 });
 
 tournaments.get("/:id", async (req, res) => {
@@ -65,7 +66,7 @@ tournaments.get("/:id", async (req, res) => {
     };
   });
   res.json({
-    ...t,
+    ...withRanks(t),
     teams: entries.sort((a, b) => (a.placement ?? Infinity) - (b.placement ?? Infinity) || a.name.localeCompare(b.name)),
     standings: table,
   });
@@ -92,7 +93,7 @@ tournaments.patch("/:id", requireAdmin, async (req, res) => {
     return tx.tournament.update({ where: { id: existing.id }, data: input });
   });
   await adoptGame(updated.id);
-  res.json(updated);
+  res.json(withRanks(updated));
 });
 
 tournaments.delete("/:id", requireAdmin, async (req, res) => {
@@ -150,6 +151,28 @@ tournaments.put("/:id/entries/:teamId/roster", requireAdmin, async (req, res) =>
   const entry = await comp.setRoster(String(req.params.id), String(req.params.teamId), req.body);
   await adoptGame(String(req.params.id));
   res.json(entry);
+});
+
+// ---------- Solo sign-ups and the team draw ----------
+
+tournaments.get("/:id/solo", async (req, res) => {
+  res.json(await soloView(String(req.params.id)));
+});
+
+/** Proposes balanced teams from the sign-ups (nothing is saved). */
+tournaments.post("/:id/solo/draw", requireAdmin, async (req, res) => {
+  res.json(await drawTeams(String(req.params.id)));
+});
+
+/** Saves the drawn teams as registered teams with rosters. */
+tournaments.post("/:id/solo/teams", requireAdmin, async (req, res) => {
+  const view = await confirmTeams(String(req.params.id), req.body);
+  await adoptGame(String(req.params.id));
+  res.json(view);
+});
+
+tournaments.delete("/:id/solo/:playerId", requireAdmin, async (req, res) => {
+  res.json(await removeSignup(String(req.params.id), String(req.params.playerId)));
 });
 
 // ---------- Bracket ----------

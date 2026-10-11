@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import { endSession, passwordMatches, requireAdmin, startSession } from "@/lib/auth";
 import { explain } from "@/lib/explain";
 import { fromBangkokInput } from "@/lib/format";
+import type { SoloDraw } from "@/lib/types";
 
 export type FormState = {
   error?: string;
@@ -135,6 +136,12 @@ function bracketSettings(form: FormData) {
   for (const k of ["bestOf", "lateMinutes", "rosterMin", "rosterMax"]) if (n(k) !== undefined) out[k] = n(k);
   if (form.has("maxTeams")) out.maxTeams = n("maxTeams") ?? null;
   if (form.has("finalBestOf")) out.finalBestOf = n("finalBestOf") ?? null;
+  if (form.has("entryMode")) out.entryMode = text(form, "entryMode") === "SOLO" ? "SOLO" : "TEAM";
+  if (n("teamSize") !== undefined) out.teamSize = n("teamSize");
+  if (form.has("soloRanks")) {
+    const ranks = text(form, "soloRanks").split(/[,\n]/).map((r) => r.trim()).filter(Boolean);
+    if (ranks.length) out.soloRanks = ranks;
+  }
   // Checkboxes: a hidden "present" marker tells unchecked apart from locked.
   for (const k of ["registrationOpen", "thirdPlaceMatch", "grandFinalReset"]) if (form.has(`${k}Present`)) out[k] = form.get(k) === "on";
   return out;
@@ -268,6 +275,39 @@ export async function saveRoster(tournamentId: string, teamId: string, players: 
     () => api(`/tournaments/${encodeURIComponent(tournamentId)}/entries/${encodeURIComponent(teamId)}/roster`, { method: "PUT", json: { players, captainDiscordId, override: true } }),
     "บันทึกรายชื่อแล้ว",
   );
+}
+
+// Solo tournaments
+/** Proposes balanced teams from the solo sign-ups; nothing is saved. */
+export async function drawSolo(tournamentId: string): Promise<{ draw?: SoloDraw; error?: string }> {
+  await requireAdmin();
+  try {
+    return { draw: await api<SoloDraw>(`/tournaments/${encodeURIComponent(tournamentId)}/solo/draw`, { method: "POST" }) };
+  } catch (e) {
+    return { error: explain(e) };
+  }
+}
+
+/** Saves drawn teams; replace=true swaps out teams drawn before. */
+export async function confirmSolo(tournamentId: string, teams: string[][], replace: boolean): Promise<FormState & { needsReplace?: boolean }> {
+  await requireAdmin();
+  try {
+    await api(`/tournaments/${encodeURIComponent(tournamentId)}/solo/teams`, { method: "POST", json: { teams, replace } });
+  } catch (e) {
+    const needsReplace = e instanceof ApiError && Boolean((e.details as { needsReplace?: boolean } | undefined)?.needsReplace);
+    return { error: explain(e), needsReplace };
+  }
+  revalidatePath("/", "layout");
+  return { ok: `บันทึก ${teams.length} ทีมแล้ว จัดสายแข่งต่อได้เลย` };
+}
+
+export async function removeSoloSignup(tournamentId: string, playerId: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/tournaments/${encodeURIComponent(tournamentId)}/solo/${encodeURIComponent(playerId)}`, { method: "DELETE" });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: "เอาออกแล้ว" };
 }
 
 // Games
