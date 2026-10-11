@@ -10,6 +10,8 @@ import { saveMatch } from "../src/lib/matchWrite.js";
 const webEnv = path.resolve(import.meta.dirname, "../../web/.env.local");
 const botEnv = path.resolve(import.meta.dirname, "../../bot/.env");
 const freshDatabase = (await prisma.apiKey.count()) === 0;
+/** Hard-to-guess address for the admin login page, e.g. admin-3f9c2a7b1d. */
+const secretPath = () => `admin-${randomBytes(5).toString("hex")}`;
 
 if (freshDatabase || !fs.existsSync(webEnv)) {
   const { key } = await createApiKey("Website (server-side)", "admin");
@@ -21,12 +23,21 @@ if (freshDatabase || !fs.existsSync(webEnv)) {
       `API_KEY=${key}`,
       `ADMIN_PASSWORD=${adminPassword}`,
       `SESSION_SECRET=${randomBytes(32).toString("hex")}`,
+      `ADMIN_PATH=${secretPath()}`,
       "",
     ].join("\n"),
   );
   console.log(`Wrote ${webEnv}`);
   console.log(`Admin password for the website: ${adminPassword}`);
 }
+
+// Older installs: give the login page a secret address too, keeping everything else in the file.
+const webLines = fs.readFileSync(webEnv, "utf8");
+if (!/^ADMIN_PATH=\S/m.test(webLines)) {
+  fs.writeFileSync(webEnv, `${webLines.replace(/^ADMIN_PATH=.*\r?\n?/m, "").replace(/\s*$/, "\n")}ADMIN_PATH=${secretPath()}\n`);
+}
+const loginPath = /^ADMIN_PATH=(\S+)/m.exec(fs.readFileSync(webEnv, "utf8"))![1];
+console.log(`Admin login page (keep it private): http://localhost:3000/${loginPath}`);
 
 // The Discord bot gets its own key. A DISCORD_TOKEN already pasted into apps/bot/.env is kept.
 const botLines = fs.existsSync(botEnv) ? fs.readFileSync(botEnv, "utf8").split(/\r?\n/) : [];

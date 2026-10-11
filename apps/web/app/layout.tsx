@@ -33,7 +33,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/teams">ทีม</Link>
               <Link href="/players">ผู้เล่น</Link>
               <Link href="/matches">ผลการแข่ง</Link>
-              <Link href="/admin">{admin ? "จัดการข้อมูล" : "เข้าสู่ระบบ"}</Link>
+              {admin && <Link href="/admin">จัดการข้อมูล</Link>}
             </nav>
             <div className="header-tools">
             <form action="/search" className="header-search" role="search">

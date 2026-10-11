@@ -1,7 +1,7 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 const COOKIE = "tr_admin";
 const MAX_AGE = 60 * 60 * 24 * 7;
@@ -48,7 +48,19 @@ export async function isAdmin() {
   return Boolean(expires && sig) && safeEqual(sig, sign(expires)) && Number(expires) > Date.now();
 }
 
+/**
+ * Secret address of the login page, e.g. ADMIN_PATH=bank-7f3a9c opens it at /bank-7f3a9c.
+ * When it is set, /admin/login and every admin page answer "not found" to anyone not logged in,
+ * so visitors can't tell the back office exists. Unset = the login page stays at /admin/login.
+ */
+export function adminPath() {
+  const p = process.env.ADMIN_PATH?.trim().replace(/^\/+|\/+$/g, "");
+  return p && /^[A-Za-z0-9_-]+$/.test(p) ? p : null;
+}
+
 /** Use at the top of every admin page and server action. */
 export async function requireAdmin() {
-  if (!(await isAdmin())) redirect("/admin/login");
+  if (await isAdmin()) return;
+  if (adminPath()) notFound();
+  redirect("/admin/login");
 }
