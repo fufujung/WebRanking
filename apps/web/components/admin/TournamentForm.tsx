@@ -72,10 +72,9 @@ export function TournamentForm({ tournament, games }: { tournament?: Tournament;
             {mode === "SOLO" && (
               <>
                 <label>ผู้เล่นต่อทีม (สุ่ม)<input type="number" name="teamSize" min={2} max={10} defaultValue={tournament?.teamSize ?? 3} /></label>
-                <label>
-                  แรงค์ในเกม (ต่ำ → สูง คั่นด้วย ,)
-                  <input name="soloRanks" maxLength={600} defaultValue={(tournament?.soloRanks ?? ["ฟ้า", "ทอง", "แดง", "โซน"]).join(", ")} placeholder="เช่น ฟ้า, ทอง, แดง, โซน" />
-                </label>
+                <p className="muted small" style={{ alignSelf: "end" }}>
+                  ผู้เล่นเลือกแรงค์จากรายการแรงค์ของเกม ตั้งชื่อและรูปไอคอนได้ที่ <a href="/admin/games">หลังบ้าน &gt; เกม</a>
+                </p>
               </>
             )}
           </div>

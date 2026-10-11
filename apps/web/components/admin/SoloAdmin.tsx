@@ -3,13 +3,14 @@
 import { useState, useTransition } from "react";
 import { confirmSolo, drawSolo, removeSoloSignup } from "@/app/admin/actions";
 import { positionLabel, positionShort } from "@/lib/solo";
-import type { SoloDraw, SoloSignup, SoloView } from "@/lib/types";
+import type { GameRank, SoloDraw, SoloSignup, SoloView } from "@/lib/types";
+import { RankBadge } from "../RankBadge";
 
-const Player = ({ p }: { p: SoloSignup }) => (
+const Player = ({ p, ranks }: { p: SoloSignup; ranks: GameRank[] }) => (
   <li>
     <span className={`pos-chip pos-${p.position.toLowerCase()}`} title={positionLabel[p.position]}>{positionShort[p.position]}</span>
     <strong>{p.nickname || p.name}</strong>
-    <span className="pill">{p.rank}</span>
+    <RankBadge rank={p.rank} ranks={ranks} />
     <span className="muted small">{p.mmr} MMR</span>
   </li>
 );
@@ -69,7 +70,7 @@ export function SoloAdmin({ tournamentId, view, started }: { tournamentId: strin
                   <strong>ทีม {i + 1}</strong>
                   <span className="muted small">แรงค์รวม {t.rankTotal} · MMR เฉลี่ย {t.mmrAverage}</span>
                 </div>
-                <ul>{t.players.map((p) => <Player key={p.playerId} p={p} />)}</ul>
+                <ul>{t.players.map((p) => <Player key={p.playerId} p={p} ranks={view.ranks} />)}</ul>
                 {!t.positionsOk && <div className="notice small">ตำแหน่งไม่ครบ (คนลงตำแหน่งนี้ไม่พอ)</div>}
               </div>
             ))}
@@ -77,7 +78,7 @@ export function SoloAdmin({ tournamentId, view, started }: { tournamentId: strin
           {draw.reserves.length > 0 && (
             <div>
               <strong className="small">สำรอง</strong>
-              <ul className="solo-reserves">{draw.reserves.map((p) => <Player key={p.playerId} p={p} />)}</ul>
+              <ul className="solo-reserves">{draw.reserves.map((p) => <Player key={p.playerId} p={p} ranks={view.ranks} />)}</ul>
             </div>
           )}
           <div className="row">
@@ -100,7 +101,7 @@ export function SoloAdmin({ tournamentId, view, started }: { tournamentId: strin
                   <tr key={s.playerId}>
                     <td>{s.nickname || s.name}{s.uid ? <span className="muted small"> · UID {s.uid}</span> : null}</td>
                     <td>{positionLabel[s.position]}</td>
-                    <td>{s.rank}</td>
+                    <td><RankBadge rank={s.rank} ranks={view.ranks} /></td>
                     <td className="num">{s.mmr}</td>
                     <td className="right">
                       {!view.drawn && (

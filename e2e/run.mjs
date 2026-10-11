@@ -724,12 +724,21 @@ await page.goto(base + "/admin");
 
 // SOLO tournament: players sign up alone with position and in-game rank, then teams are drawn.
 console.log("— Solo tournament");
+// The game's in-game ranks, lowest first, with an icon for the top one.
+await page.goto(base + "/admin/games");
+await page.locator("tr:has-text('Basketball 3v3') a:has-text('แรงค์')").click();
+await page.locator("h1:has-text('แรงค์ในเกม')").waitFor();
+if ((await page.locator(".rank-editor-row").count()) !== 4) throw new Error("default ranks not offered");
+await page.locator(".rank-editor-row").nth(3).locator('input[type="file"]').setInputFiles(LOGO);
+await page.locator(".rank-editor-row").nth(3).locator(".drop img").waitFor();
+await page.click("button:has-text('บันทึกแรงค์')");
+await page.locator(".rank-editor .success").waitFor();
+step("game ranks saved with an icon");
 await page.goto(base + "/admin/tournaments/new");
 await page.fill('input[name="name"]', `Solo ${uniq}`);
 await page.fill('input[name="startDate"]', "2026-12-01T19:00");
 await page.selectOption('select[name="format"]', "SINGLE_ELIMINATION");
 await page.selectOption('select[name="entryMode"]', "SOLO");
-await page.fill('input[name="soloRanks"]', "ฟ้า, ทอง, แดง, โซน");
 await page.check('input[name="registrationOpen"]');
 await page.click("button:has-text('สร้างทัวร์นาเมนต์')");
 await page.waitForURL(/\/admin\/tournaments\/(?!new)/);
@@ -741,7 +750,7 @@ const apiCall = (method, url, body) =>
     if (r.status >= 300) throw new Error(`${method} ${url} → ${r.status} ${await r.text()}`);
     return r.json();
   });
-const soloPlan = [["GUARD", "โซน"], ["FORWARD", "ฟ้า"], ["GUARD", "ทอง"], ["FORWARD", "แดง"], ["ALL", "ฟ้า"]];
+const soloPlan = [["GUARD", "เจ้าแห่ง ZONE"], ["FORWARD", "แม่ทัพไร้มงกุฎ"], ["GUARD", "ซูเปอร์สตาร์ ม.ปลาย"], ["FORWARD", "รุ่นแห่งปาฏิหาริย์"], ["ALL", "แม่ทัพไร้มงกุฎ"]];
 for (const [i, [position, rank]] of soloPlan.entries()) {
   const discord = `68${uniq}00000${i}`;
   const p = await apiCall("POST", `/players/discord/${discord}/claim`, { uid: `69${uniq}${i}`, name: `Solo${i}-${uniq}` });
@@ -875,7 +884,8 @@ if (!(await page.locator(".btn-discord").count())) {
   const soloForm = page.locator(".solo-form");
   if (await soloForm.locator('select[name="playerId"]').count()) await soloForm.locator('select[name="playerId"]').selectOption({ label: `Disc-${uniq} (UID 77${uniq})` });
   await soloForm.locator('select[name="position"]').selectOption("FORWARD");
-  await soloForm.locator('select[name="rank"]').selectOption("โซน");
+  if (!(await soloForm.locator(".rank-pick label:has-text('เจ้าแห่ง ZONE') img").count())) throw new Error("rank icon missing in the picker");
+  await soloForm.locator(".rank-pick label:has-text('เจ้าแห่ง ZONE')").click();
   await soloForm.locator("button:has-text('ลงทะเบียน')").click();
   await soloForm.locator(".success").waitFor();
   await page.locator("tr.row-me:has-text('Forward')").waitFor();

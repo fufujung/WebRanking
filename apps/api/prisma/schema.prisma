@@ -11,6 +11,8 @@ datasource db {
 model Game {
   id        String   @id @default(cuid())
   name      String   @unique
+  /// In-game ranks, lowest first, as JSON [{ name, iconUrl }]. Players pick one when signing up alone.
+  ranks     String   @default("[]")
   createdAt DateTime @default(now())
 
   players     Player[]
@@ -145,8 +147,6 @@ model Tournament {
   entryMode String @default("TEAM")
   /// Players per drawn team (SOLO).
   teamSize  Int    @default(3)
-  /// SOLO: in-game ranks players pick from, lowest first, as a JSON array. "[]" = the default list.
-  soloRanks String @default("[]")
 
   entries        TournamentEntry[]
   matches        Match[]
@@ -180,7 +180,7 @@ model SoloSignup {
   playerId     String
   discordId    String?
   position     String // GUARD | FORWARD | CENTER | ALL (All Around)
-  rank         String // one of the tournament's soloRanks
+  rank         String // the name of one of the game's ranks
   createdAt    DateTime @default(now())
 
   tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)

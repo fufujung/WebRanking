@@ -5,6 +5,7 @@ import { discordEnabled } from "@/lib/discord";
 import { positionLabel } from "@/lib/solo";
 import type { MyCharacter, SoloView, TournamentDetail } from "@/lib/types";
 import { DiscordMark } from "@/components/DiscordMark";
+import { RankBadge } from "@/components/RankBadge";
 import { Avatar, Empty } from "@/components/ui";
 import { SoloForm } from "./SoloForm";
 
@@ -79,7 +80,7 @@ export async function SoloSection({ t }: { t: TournamentDetail }) {
                     </Link>
                   </td>
                   <td>{positionLabel[s.position]}</td>
-                  <td><span className="pill">{s.rank}</span></td>
+                  <td><RankBadge rank={s.rank} ranks={solo.ranks} /></td>
                 </tr>
               ))}
             </tbody>

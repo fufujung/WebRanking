@@ -60,10 +60,23 @@ paths:
         "409": { description: A game with this name exists }
   /api/v1/games/{id}:
     parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [Games]
+      summary: A game with its in-game ranks
+      responses:
+        "200": { description: Game, content: { application/json: { schema: { $ref: "#/components/schemas/GameTitle" } } } }
     patch:
       tags: [Games]
-      summary: Rename a game; its tournaments' `game` name changes too (admin)
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, maxLength: 100 } } } } } }
+      summary: Rename a game (its tournaments' `game` name changes too) and/or set its in-game ranks (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+                ranks: { type: array, maxItems: 30, description: Lowest first, items: { $ref: "#/components/schemas/GameRank" } }
       responses:
         "200": { description: Renamed }
         "409": { description: A game with this name exists }
@@ -170,7 +183,7 @@ paths:
               properties:
                 playerId: { type: string, description: One of this member's characters }
                 position: { type: string, enum: [GUARD, FORWARD, CENTER, ALL] }
-                rank: { type: string, description: One of the tournament's soloRanks }
+                rank: { type: string, description: "The name of one of the game's ranks (GET /games/{id})" }
       responses:
         "200": { description: The sign-up view }
         "403": { description: Not this member's character }
@@ -997,11 +1010,18 @@ components:
     Forbidden: { description: Read-only key used for a write, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    GameRank:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 30 }
+        iconUrl: { type: string, nullable: true, description: http(s) URL or /uploads/... path }
     GameTitle:
       type: object
       properties:
         id: { type: string }
         name: { type: string }
+        ranks: { type: array, items: { $ref: "#/components/schemas/GameRank" }, description: Lowest first }
         players: { type: integer }
         teams: { type: integer }
         tournaments: { type: integer }
@@ -1174,7 +1194,6 @@ components:
         grandFinalReset: { type: boolean, default: true, description: "Double elimination: a second final if the losers-bracket team wins the first" }
         entryMode: { type: string, enum: [TEAM, SOLO], default: TEAM, description: "SOLO = players sign up alone and are drawn into teams" }
         teamSize: { type: integer, default: 3, description: Players per drawn team (SOLO) }
-        soloRanks: { type: array, items: { type: string }, description: "SOLO: in-game ranks, lowest first (default ฟ้า, ทอง, แดง, โซน)" }
     RosterInput:
       type: object
       required: [players]

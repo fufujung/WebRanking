@@ -3,11 +3,24 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "./db.js";
 import { fail } from "./errors.js";
-import { normaliseName } from "./validate.js";
+import { imageUrl, normaliseName } from "./validate.js";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
 export const gameInput = z.object({ name: z.string().trim().min(1).max(100) });
+
+/** One in-game rank: its name and, if uploaded, its icon. */
+export const rankInput = z.object({ name: z.string().trim().min(1).max(30), iconUrl: imageUrl });
+export type GameRank = { name: string; iconUrl: string | null };
+
+/** The ranks stored on a game; [] when none were set. */
+export function parseRanks(raw: string | null | undefined): GameRank[] {
+  try {
+    const v = JSON.parse(raw ?? "[]");
+    if (Array.isArray(v)) return v.filter((r) => r && typeof r.name === "string").map((r) => ({ name: r.name, iconUrl: typeof r.iconUrl === "string" ? r.iconUrl : null }));
+  } catch {}
+  return [];
+}
 
 /** The game with this name (ignoring case, spaces and punctuation), created when new. */
 export async function gameByName(db: Db, name: string) {

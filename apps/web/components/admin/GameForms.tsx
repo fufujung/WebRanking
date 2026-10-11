@@ -61,6 +61,7 @@ export function GameRow({ game }: { game: Game }) {
       <td className="num hide-sm">{game.tournaments ?? 0}</td>
       <td className="right">
         <span className="row-actions">
+          <a className="btn btn-sm" href={`/admin/games/${game.id}`}>แรงค์{game.ranks?.length ? ` (${game.ranks.length})` : ""}</a>
           {!editing && <button type="button" className="btn btn-sm" onClick={() => setEditing(true)}>เปลี่ยนชื่อ</button>}
           <button
             type="button"

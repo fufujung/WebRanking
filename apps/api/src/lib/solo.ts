@@ -4,28 +4,24 @@
  * Guard, Forward and Center (All Around fills any spot). The drawn teams then play a normal bracket.
  */
 import { randomInt } from "node:crypto";
-import type { Tournament } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "./db.js";
 import { fail, notFound } from "./errors.js";
 import { normaliseName } from "./validate.js";
+import { parseRanks, type GameRank } from "./games.js";
 
-/** The in-game ranks used by the Discord bot's player pool, lowest first. */
-export const DEFAULT_SOLO_RANKS = ["ฟ้า", "ทอง", "แดง", "โซน"];
+/** Used while the tournament's game has no ranks set: Kuroko's season ranks, lowest first. */
+export const DEFAULT_SOLO_RANKS: GameRank[] = ["แม่ทัพไร้มงกุฎ", "ซูเปอร์สตาร์ ม.ปลาย", "รุ่นแห่งปาฏิหาริย์", "เจ้าแห่ง ZONE"].map((name) => ({ name, iconUrl: null }));
 export const POSITIONS = ["GUARD", "FORWARD", "CENTER", "ALL"] as const;
 export type Position = (typeof POSITIONS)[number];
 const ROLES = ["GUARD", "FORWARD", "CENTER"] as const;
 
-export function ranksOf(t: Pick<Tournament, "soloRanks">): string[] {
-  try {
-    const v = JSON.parse(t.soloRanks);
-    if (Array.isArray(v) && v.length && v.every((x) => typeof x === "string")) return v;
-  } catch {}
-  return DEFAULT_SOLO_RANKS;
+/** The ranks players of this tournament pick from: its game's ranks, lowest first. */
+export async function ranksOf(t: { gameId: string | null }): Promise<GameRank[]> {
+  const g = t.gameId ? await prisma.game.findUnique({ where: { id: t.gameId }, select: { ranks: true } }) : null;
+  const ranks = parseRanks(g?.ranks);
+  return ranks.length ? ranks : DEFAULT_SOLO_RANKS;
 }
-
-/** A tournament row as API clients see it: soloRanks as a list. */
-export const withRanks = <T extends Pick<Tournament, "soloRanks">>(t: T) => ({ ...t, soloRanks: ranksOf(t) });
 
 export const signupInput = z.object({
   playerId: z.string().trim().min(1),
@@ -61,7 +57,7 @@ export async function soloView(tournamentId: string) {
   return {
     entryMode: t.entryMode,
     teamSize: t.teamSize,
-    ranks: ranksOf(t),
+    ranks: await ranksOf(t),
     registrationOpen: t.registrationOpen,
     /** Teams have been drawn: sign-ups are closed. */
     drawn: teams > 0,
@@ -76,7 +72,7 @@ export async function signUp(discordId: string, tournamentId: string, body: unkn
   if (!t.registrationOpen) throw fail(409, "Registration is closed", "ปิดรับสมัครแล้ว");
   if (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") throw fail(409, "The tournament has started", "ทัวร์นาเมนต์เริ่มแข่งแล้ว");
   if (await prisma.tournamentEntry.count({ where: { tournamentId } })) throw fail(409, "Teams have been drawn", "ผู้จัดสุ่มทีมไปแล้ว ลงทะเบียนเพิ่มไม่ได้ (ติดต่อผู้จัด)");
-  if (!ranksOf(t).includes(input.rank)) throw fail(400, "Unknown rank", "เลือกแรงค์จากรายการ");
+  if (!(await ranksOf(t)).some((r) => r.name === input.rank)) throw fail(400, "Unknown rank", "เลือกแรงค์จากรายการ");
   const player = await prisma.player.findUnique({ where: { id: input.playerId } });
   if (!player || player.discordId !== discordId) throw fail(403, "Not your character", "ตัวละครนี้ไม่ใช่ของคุณ");
   if (t.gameId && player.gameId && player.gameId !== t.gameId) throw fail(400, "This character plays another game", "ตัวละครนี้อยู่คนละเกมกับทัวร์นาเมนต์");
@@ -197,7 +193,7 @@ export function balanceTeams(players: DrawPlayer[], size: number, rand: (n: numb
 export async function drawTeams(tournamentId: string) {
   const t = await soloTournament(tournamentId);
   const view = await soloView(tournamentId);
-  const ranks = ranksOf(t);
+  const ranks = (await ranksOf(t)).map((r) => r.name);
   if (view.signups.length < t.teamSize * 2) {
     throw fail(409, "Not enough players for two teams", `ต้องมีผู้ลงทะเบียนอย่างน้อย ${t.teamSize * 2} คน (ตอนนี้ ${view.signups.length} คน)`);
   }

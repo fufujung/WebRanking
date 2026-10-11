@@ -3,7 +3,7 @@
 import { startTransition, useActionState, useState, useTransition } from "react";
 import { soloLeave, soloSignUp, type SoloState } from "./actions";
 import { POSITIONS, positionLabel } from "@/lib/solo";
-import type { SoloPosition } from "@/lib/types";
+import type { GameRank, SoloPosition } from "@/lib/types";
 
 /** Sign-up for a SOLO tournament: character, position and in-game rank. */
 export function SoloForm({
@@ -14,7 +14,7 @@ export function SoloForm({
 }: {
   tournamentId: string;
   characters: { id: string; label: string }[];
-  ranks: string[];
+  ranks: GameRank[];
   current: { playerId: string; position: SoloPosition; rank: string } | null;
 }) {
   const [state, dispatch, pending] = useActionState<SoloState, FormData>(soloSignUp.bind(null, tournamentId), undefined);
@@ -53,14 +53,21 @@ export function SoloForm({
             {POSITIONS.map((p) => <option key={p} value={p}>{positionLabel[p]}</option>)}
           </select>
         </label>
-        <label>
-          แรงค์ในเกมตอนนี้ *
-          <select name="rank" required defaultValue={current?.rank ?? ""}>
-            <option value="" disabled>เลือกแรงค์</option>
-            {ranks.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </label>
       </div>
+      <fieldset className="rank-field">
+        <legend>แรงค์ในเกมตอนนี้ *</legend>
+        <div className="rank-pick">
+          {ranks.map((r, i) => (
+            <label key={r.name}>
+              <input type="radio" name="rank" value={r.name} required defaultChecked={current?.rank === r.name} />
+              {r.iconUrl && <img src={r.iconUrl} alt="" />}
+              <span>{r.name}</span>
+              {i === 0 && <span className="muted small">ต่ำสุด</span>}
+              {i === ranks.length - 1 && ranks.length > 1 && <span className="muted small">สูงสุด</span>}
+            </label>
+          ))}
+        </div>
+      </fieldset>
       {shown?.error && <div className="error">{shown.error}</div>}
       {shown?.ok && <div className="success">{shown.ok}</div>}
       <div className="row">

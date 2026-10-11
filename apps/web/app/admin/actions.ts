@@ -138,10 +138,6 @@ function bracketSettings(form: FormData) {
   if (form.has("finalBestOf")) out.finalBestOf = n("finalBestOf") ?? null;
   if (form.has("entryMode")) out.entryMode = text(form, "entryMode") === "SOLO" ? "SOLO" : "TEAM";
   if (n("teamSize") !== undefined) out.teamSize = n("teamSize");
-  if (form.has("soloRanks")) {
-    const ranks = text(form, "soloRanks").split(/[,\n]/).map((r) => r.trim()).filter(Boolean);
-    if (ranks.length) out.soloRanks = ranks;
-  }
   // Checkboxes: a hidden "present" marker tells unchecked apart from locked.
   for (const k of ["registrationOpen", "thirdPlaceMatch", "grandFinalReset"]) if (form.has(`${k}Present`)) out[k] = form.get(k) === "on";
   return out;
@@ -328,6 +324,16 @@ export async function renameGame(id: string, _: FormState, form: FormData): Prom
   if (result) return result;
   revalidatePath("/", "layout");
   return { ok: "บันทึกชื่อแล้ว" };
+}
+
+/** Replaces a game's in-game ranks (lowest first), each with an optional icon. */
+export async function saveGameRanks(id: string, ranks: { name: string; iconUrl: string | null }[]): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/games/${encodeURIComponent(id)}`, { method: "PATCH", json: { ranks } });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: "บันทึกแรงค์แล้ว" };
 }
 
 export async function deleteGame(id: string): Promise<FormState> {

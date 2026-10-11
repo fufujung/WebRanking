@@ -130,8 +130,6 @@ export interface Tournament {
   /** TEAM: teams sign up. SOLO: players sign up alone and are drawn into teams. */
   entryMode?: "TEAM" | "SOLO";
   teamSize?: number;
-  /** SOLO: in-game ranks to pick from, lowest first. */
-  soloRanks?: string[];
   location: string | null;
   description: string | null;
   status: Status;
@@ -376,9 +374,16 @@ export interface Ad {
   createdAt: string;
 }
 
+export interface GameRank {
+  name: string;
+  iconUrl: string | null;
+}
+
 export interface Game {
   id: string;
   name: string;
+  /** In-game ranks, lowest first. */
+  ranks?: GameRank[];
   players?: number;
   teams?: number;
   tournaments?: number;
@@ -446,7 +451,7 @@ export interface SoloSignup {
 export interface SoloView {
   entryMode: "TEAM" | "SOLO";
   teamSize: number;
-  ranks: string[];
+  ranks: GameRank[];
   registrationOpen: boolean;
   drawn: boolean;
   signups: SoloSignup[];

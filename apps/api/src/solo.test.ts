@@ -106,10 +106,17 @@ describe("SOLO tournament", () => {
   before(async () => {
     const t = await ok("POST", "/tournaments", {
       name: "Solo Cup", game: "Kuroko", startDate: new Date().toISOString(), format: "SINGLE_ELIMINATION",
-      entryMode: "SOLO", teamSize: 3, soloRanks: ranks, registrationOpen: true,
+      entryMode: "SOLO", teamSize: 3, registrationOpen: true,
     });
     tid = t.id;
-    assert.deepEqual(t.soloRanks, ranks);
+    // The game's ranks (lowest first) are what players pick from; icons are optional.
+    assert.deepEqual((await ok("GET", `/tournaments/${tid}/solo`)).ranks.map((r: { name: string }) => r.name), ["แม่ทัพไร้มงกุฎ", "ซูเปอร์สตาร์ ม.ปลาย", "รุ่นแห่งปาฏิหาริย์", "เจ้าแห่ง ZONE"]);
+    assert.equal((await call("PATCH", `/games/${t.gameId}`, { ranks: [{ name: "Gold" }, { name: "gold" }] })).status, 400);
+    assert.equal((await call("PATCH", `/games/${t.gameId}`, { ranks: [{ name: "Gold", iconUrl: "javascript:alert(1)" }] })).status, 400);
+    const game = await ok("PATCH", `/games/${t.gameId}`, { ranks: ranks.map((name, i) => ({ name, iconUrl: i === 3 ? "/uploads/diamond.png" : null })) });
+    assert.equal(game.name, "Kuroko");
+    assert.deepEqual(game.ranks[3], { name: "Diamond", iconUrl: "/uploads/diamond.png" });
+    assert.equal((await ok("GET", `/tournaments/${tid}/solo`)).ranks[3].iconUrl, "/uploads/diamond.png");
     for (let i = 0; i < 7; i++) {
       const discord = `55500000000000000${i}`;
       const player = (await ok("POST", `/players/discord/${discord}/claim`, { uid: `9100${i}`, name: `Solo${i}` })).id;
