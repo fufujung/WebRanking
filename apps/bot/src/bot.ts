@@ -51,6 +51,7 @@ import {
   type Settings,
 } from "./results.js";
 import { JsonStore } from "./store.js";
+import { PoolManager } from "./pool.js";
 import { parseSeriesScore, TourManager } from "./tour.js";
 import type { BracketMatch, Draft, Match, MatchDetail, Page, PlayerDetail, RankedPlayer, RankedTeam, TeamDetail, Tournament } from "./types.js";
 
@@ -95,6 +96,8 @@ export interface BotOptions {
   download?: Download;
   log?: (...args: unknown[]) => void;
   now?: () => Date;
+  /** Random numbers for the player-pool draws (tests make them predictable). */
+  random?: () => number;
 }
 
 /** Everything the bot does, independent of the Discord connection so it can be tested with stand-ins. */
@@ -102,6 +105,7 @@ export class TournamentBot {
   readonly settings: JsonStore<Settings>;
   readonly pending: JsonStore<Pending>;
   readonly tour: TourManager;
+  readonly pool: PoolManager;
   private trackers = new Map<string, AnnounceTracker>();
   /** Result posts being saved right now, so two admins can't record one twice. */
   private busy = new Set<string>();
@@ -119,6 +123,7 @@ export class TournamentBot {
     this.pending = new JsonStore(path.join(opts.dataDir, "pending.json"));
     this.pending.prune((p) => Date.now() - p.createdAt < 4 * WEEK);
     this.tour = new TourManager({ api: this.api, dataDir: opts.dataDir, siteUrl: opts.siteUrl, log: this.log, now: opts.now });
+    this.pool = new PoolManager({ dataDir: opts.dataDir, log: this.log, random: opts.random });
   }
 
   settingsFor(guildId: string): Settings {
@@ -289,8 +294,9 @@ export class TournamentBot {
 
   async onButton(i: ButtonInteraction) {
     const [prefix, action, sourceId] = i.customId.split(":");
-    if (prefix !== "tr" || !sourceId) return;
     const info = memberInfo(i.member as MemberLike, i.memberPermissions);
+    if (prefix === "tp") return this.pool.onButton(i, info);
+    if (prefix !== "tr" || !sourceId) return;
     if (TOUR_ACTIONS.has(action)) return this.tour.onButton(i, info);
     const pending = this.pending.get(sourceId);
     if (action === "save") {
@@ -334,11 +340,13 @@ export class TournamentBot {
   /** Menus inside the bot's private messages (the team builder). */
   async onSelect(i: AnySelectMenuInteraction) {
     const [prefix, action, tid, key] = i.customId.split(":");
+    if (prefix === "tp") return this.pool.onSelect(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     if (prefix === "tr" && (action === "tbe" || action === "tbr" || action === "tbu") && tid && key) await this.tour.onBuilder(i, action, tid, key);
   }
 
   async onModal(i: ModalSubmitInteraction) {
     if (i.customId.startsWith("tr:tsm:")) return this.submitRoomResult(i);
+    if (i.customId.startsWith("tp:")) return this.pool.onModal(i);
     await this.tour.onModal(i);
   }
 
@@ -424,6 +432,7 @@ export class TournamentBot {
 
   async onCommand(i: ChatInputCommandInteraction) {
     if (["tour", "register", "roster"].includes(i.commandName)) return this.tour.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
+    if (i.commandName === "pool") return this.pool.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     try {
       switch (i.commandName) {
         case "setup":
@@ -484,6 +493,7 @@ export class TournamentBot {
 
   async onAutocomplete(i: AutocompleteInteraction) {
     if (["tour", "register", "roster"].includes(i.commandName)) return this.tour.onAutocomplete(i);
+    if (i.commandName === "pool") return this.pool.onAutocomplete(i);
     const focused = i.options.getFocused(true);
     try {
       if (i.commandName === "setup" && focused.name === "tournament") {

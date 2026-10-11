@@ -144,6 +144,37 @@ const rosterCommand: ApplicationCommandData = {
   ],
 };
 
+const poolCommand: ApplicationCommandData = {
+  name: "pool",
+  description: "ผู้เล่นช่วยแข่ง (เล่นเก่งปากเก่ง): ลงทะเบียนตามแรงค์และสุ่มเข้าทีม",
+  dmPermission: false,
+  options: [
+    {
+      type: O.Subcommand,
+      name: "setup",
+      description: "ตั้งห้องลงทะเบียนและรายการแรงค์ (แอดมิน)",
+      options: [
+        { type: O.Channel, name: "channel", description: "ห้องลงทะเบียน (ไม่ใส่ = ห้องนี้)", channelTypes: [ChannelType.GuildText] },
+        { type: O.String, name: "ranks", description: "แรงค์ คั่นด้วยจุลภาค (ค่าเริ่มต้น ฟ้า, ทอง, แดง, โซน)", maxLength: 300 },
+        { type: O.Role, name: "organizer_role", description: "ยศที่สุ่มและเปลี่ยนตัวได้" },
+      ],
+    },
+    {
+      type: O.Subcommand,
+      name: "draw",
+      description: "สุ่มผู้เล่นตามแรงค์ (ใส่ A และ B เพื่อแบ่งเข้า 2 ทีม)",
+      options: [
+        { type: O.String, name: "rank", description: "แรงค์ที่จะสุ่ม", required: true, autocomplete: true },
+        { type: O.Integer, name: "count", description: "สุ่มกี่คน (รวมทุกทีม)", required: true, minValue: 1, maxValue: 20 },
+        { type: O.User, name: "player_a", description: "คนที่ 1 (หัวหน้าทีม A)" },
+        { type: O.User, name: "player_b", description: "คนที่ 2 (หัวหน้าทีม B)" },
+      ],
+    },
+    { type: O.Subcommand, name: "list", description: "ดูรายชื่อที่ลงทะเบียนไว้ (ผู้จัด)", options: [{ type: O.String, name: "rank", description: "เฉพาะแรงค์นี้", autocomplete: true }] },
+    { type: O.Subcommand, name: "remove", description: "เอาผู้เล่นออกจากรายชื่อ (ผู้จัด)", options: [{ type: O.User, name: "user", description: "ผู้เล่น", required: true }] },
+  ],
+};
+
 /** Slash commands and the right-click message command, registered per server. */
 export const commandData: ApplicationCommandData[] = [
   {
@@ -193,4 +224,5 @@ export const commandData: ApplicationCommandData[] = [
   tourCommand,
   registerCommand,
   rosterCommand,
+  poolCommand,
 ];
