@@ -27,8 +27,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               Tournament Ranking
             </Link>
             <nav className="nav">
-              <Link href="/rankings">Ranking ทีม</Link>
               <Link href="/rankings/players">Ranking ผู้เล่น</Link>
+              <Link href="/rankings">Ranking ทีม</Link>
               <Link href="/tournaments">ทัวร์นาเมนต์</Link>
               <Link href="/teams">ทีม</Link>
               <Link href="/players">ผู้เล่น</Link>

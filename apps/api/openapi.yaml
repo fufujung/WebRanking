@@ -61,7 +61,72 @@ paths:
                               properties:
                                 rank: { type: integer }
                                 stats: { $ref: "#/components/schemas/TeamStats" }
+                            - $ref: "#/components/schemas/Movement"
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/rankings/mmr:
+    get:
+      tags: [Rankings]
+      summary: Player MMR ladder with tiers, recent form and rank movement
+      description: |
+        Every player has a personal MMR (starts at 1000) that moves after each series they play.
+        A side's strength is the average MMR of its players in that series; change = K × (result − expected),
+        K = 48 for a player's first 3 series and 32 after, plus 2 per MVP and 1 per SVP.
+        Players need 3 series to be ranked; until then they are listed under `placing`.
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/offset"
+        - { name: teamId, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Ranked players, players still placing, and the tier list with player counts
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: "#/components/schemas/Player"
+                            - $ref: "#/components/schemas/Movement"
+                            - type: object
+                              properties:
+                                rank: { type: integer }
+                                series: { type: integer, description: Series played }
+                      placing:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: "#/components/schemas/Player"
+                            - type: object
+                              properties:
+                                series: { type: integer }
+                                seriesToPlace: { type: integer }
+                      tiers:
+                        type: array
+                        items:
+                          allOf:
+                            - $ref: "#/components/schemas/Tier"
+                            - type: object
+                              properties: { players: { type: integer } }
+                      rules: { type: object, description: The numbers used to compute MMR }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/rankings/tiers:
+    get:
+      tags: [Rankings]
+      summary: The MMR tiers, lowest first
+      responses:
+        "200":
+          description: Tiers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Tier" } }
   /api/v1/rankings/players:
     get:
       tags: [Rankings]
@@ -71,7 +136,7 @@ paths:
         - $ref: "#/components/parameters/offset"
         - name: sort
           in: query
-          schema: { type: string, enum: [pts, ppg, avgRating, reb, ast, blk, stl, lbr, mvp, wins, winRate, games], default: pts }
+          schema: { type: string, enum: [mmr, pts, ppg, avgRating, reb, ast, blk, stl, lbr, mvp, wins, winRate, games], default: pts }
         - { name: minGames, in: query, description: Only players with at least this many games (minMatches is accepted as an alias), schema: { type: integer, minimum: 0, default: 0 } }
         - { name: teamId, in: query, schema: { type: string } }
       responses:
@@ -151,7 +216,7 @@ paths:
   /api/v1/players:
     get:
       tags: [Players]
-      summary: List or search players
+      summary: List or search players (by name, past name or UID)
       parameters:
         - $ref: "#/components/parameters/search"
         - { name: teamId, in: query, schema: { type: string } }
@@ -172,7 +237,7 @@ paths:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:
       tags: [Players]
-      summary: Player profile with career stats and recent stat lines
+      summary: Player profile with MMR, tier, MMR history, past names, career stats and recent stat lines
       responses:
         "200": { description: Player detail }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -189,6 +254,30 @@ paths:
       summary: Delete a player (admin)
       responses:
         "204": { description: Deleted }
+  /api/v1/players/uid/{uid}:
+    get:
+      tags: [Players]
+      summary: Find a player by in-game UID (same detail as /players/{id})
+      parameters:
+        - { name: uid, in: path, required: true, schema: { type: string } }
+        - { name: server, in: query, description: Needed only when the UID exists on several servers, schema: { type: string } }
+      responses:
+        "200": { description: Player detail }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/players/{id}/merge:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Players]
+      summary: Merge a duplicate into this player (admin)
+      description: Moves the duplicate's scoreboards, rosters and names onto this player, deletes the duplicate and replays MMR.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [fromId], properties: { fromId: { type: string } } }
+      responses:
+        "200": { description: The merged player detail }
+        "409": { description: The two players have different UIDs or appear on the same scoreboard }
   /api/v1/tournaments:
     get:
       tags: [Tournaments]
@@ -629,6 +718,10 @@ components:
         role: { type: string, nullable: true }
         avatarUrl: { type: string, nullable: true }
         teamId: { type: string, nullable: true }
+        uid: { type: string, nullable: true, description: In-game UID; the same player across name changes }
+        server: { type: string, nullable: true }
+        mmr: { type: integer, description: Personal rating, starts at 1000 }
+        peakMmr: { type: integer }
         team: { $ref: "#/components/schemas/Team" }
     PlayerInput:
       type: object
@@ -640,6 +733,26 @@ components:
         role: { type: string, nullable: true }
         avatarUrl: { type: string, nullable: true }
         teamId: { type: string, nullable: true }
+        uid: { type: string, nullable: true, description: One player per UID + server (409 if taken) }
+        server: { type: string, nullable: true }
+    Tier:
+      type: object
+      properties:
+        key: { type: string, example: gold }
+        name: { type: string, example: Gold }
+        nameTh: { type: string }
+        color: { type: string, example: "#f5b400" }
+        min: { type: integer }
+        next: { type: integer, nullable: true, description: First MMR of the next tier }
+    Movement:
+      type: object
+      properties:
+        tier: { $ref: "#/components/schemas/Tier" }
+        tierProgress: { type: integer, description: 0-100 % of the way to the next tier }
+        toNextTier: { type: integer }
+        form: { type: array, items: { type: string, enum: [W, L, D] }, description: Last five series, newest first }
+        lastDelta: { type: integer, nullable: true, description: Rating change from the latest series }
+        rankChange: { type: integer, nullable: true, description: Places gained (+) or lost (−) over the last 7 days; null = new }
     PlayerStats:
       type: object
       properties:

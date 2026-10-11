@@ -103,7 +103,7 @@ export async function buildDraft(read: ExtractedSeries, text: string, imageUrls:
   const parsed = parseResultText(text);
   const [teams, players] = await Promise.all([
     prisma.team.findMany({ select: { id: true, name: true, tag: true } }),
-    prisma.player.findMany({ select: { id: true, name: true, nickname: true, teamId: true } }),
+    prisma.player.findMany({ select: { id: true, name: true, nickname: true, teamId: true, names: { select: { name: true } } } }),
   ]);
   const findTeam = (name: string) => {
     const key = normaliseName(name);
@@ -147,7 +147,11 @@ export async function buildDraft(read: ExtractedSeries, text: string, imageUrls:
       const side = p.side === "ally" ? allySide : flip(allySide);
       const key = normaliseName(p.name);
       const same = (x: (typeof players)[number]) => normaliseName(x.name) === key || (x.nickname !== null && normaliseName(x.nickname) === key);
-      const found = players.find((x) => x.teamId === teamIdOf(side) && same(x)) ?? players.find(same);
+      // A name the player used before a rename still finds them.
+      const before = (x: (typeof players)[number]) => x.names.some((n) => normaliseName(n.name) === key);
+      const found =
+        players.find((x) => x.teamId === teamIdOf(side) && same(x)) ?? players.find(same) ??
+        players.find((x) => x.teamId === teamIdOf(side) && before(x)) ?? players.find(before);
       if (!found) newPlayers.add(p.name);
       return {
         playerId: found?.id ?? null,

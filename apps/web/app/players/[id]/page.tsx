@@ -1,14 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { apiOrNull } from "@/lib/api";
-import { STAT_KEYS, type PlayerDetail } from "@/lib/types";
-import { fmtDate, fmtRating, statLabels } from "@/lib/format";
+import { api, apiOrNull } from "@/lib/api";
+import { STAT_KEYS, type PlayerDetail, type Tier } from "@/lib/types";
+import { fmtDate, fmtRating, signed, statLabels } from "@/lib/format";
 import { AwardBadge, Avatar, Empty, StatTile, TeamLink } from "@/components/ui";
+import { Form, MmrChart, RankMove, TierEmblem, TierProgress } from "@/components/Tier";
 
 export default async function PlayerPage({ params }: { params: Promise<{ id: string }> }) {
-  const p = await apiOrNull<PlayerDetail>(`/players/${encodeURIComponent((await params).id)}`);
+  const [p, tiers] = await Promise.all([
+    apiOrNull<PlayerDetail>(`/players/${encodeURIComponent((await params).id)}`),
+    api<{ data: Tier[] }>("/rankings/tiers"),
+  ]);
   if (!p) notFound();
   const s = p.stats;
+  const history = p.mmrHistory.slice(-30);
+  const form = [...p.mmrHistory].reverse().slice(0, 5).map((h) => h.result);
   return (
     <>
       <div className="page-head">
@@ -17,10 +23,61 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
           <div>
             <h1>{p.name}</h1>
             <span className="muted">{[p.nickname && `“${p.nickname}”`, p.role, p.country].filter(Boolean).join(" · ") || " "}</span>
+            {(p.uid || p.names.length > 0) && (
+              <div className="row small" style={{ gap: 8, marginTop: 6 }}>
+                {p.uid && <span className="chip uid-chip" title="UID ในเกม">UID {p.uid}{p.server ? ` · ${p.server}` : ""}</span>}
+                {p.names.length > 0 && (
+                  <span className="muted" title={p.names.map((n) => `${n.name} (ใช้ถึง ${fmtDate(n.lastSeen)})`).join("\n")}>
+                    เคยใช้ชื่อ: {p.names.map((n) => n.name).join(", ")}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <div>{p.team ? <TeamLink team={p.team} /> : <span className="muted">ไม่มีสังกัด</span>}</div>
       </div>
+
+      <section className="mmr-card" style={{ ["--tier" as string]: p.tier.color }}>
+        <div className="mmr-card-emblem">
+          <TierEmblem tier={p.tier} size={112} />
+          <strong>{p.placed ? p.tier.name : "กำลังจัดอันดับ"}</strong>
+          <span className="muted small">{p.placed ? p.tier.nameTh : `อีก ${p.seriesToPlace} แมตช์`}</span>
+        </div>
+        <div className="mmr-card-main">
+          <div className="row" style={{ alignItems: "baseline", gap: 14 }}>
+            <span className="mmr-big">{p.mmr}<small>MMR</small></span>
+            {p.mmrHistory.length > 0 && (
+              <span className={p.mmrHistory.at(-1)!.delta >= 0 ? "delta-up" : "delta-down"} title="จากแมตช์ล่าสุด">
+                <strong>{signed(p.mmrHistory.at(-1)!.delta)}</strong> <span className="small">แมตช์ล่าสุด</span>
+              </span>
+            )}
+          </div>
+          <TierProgress tier={p.tier} progress={p.tierProgress} toNext={p.toNextTier} />
+          <div className="mmr-facts">
+            <div>
+              <strong>{p.mmrRank ? <>#{p.mmrRank} <RankMove change={p.rankChange} isNew /></> : "-"}</strong>
+              <span>{p.mmrRank ? `อันดับจาก ${p.rankedPlayers} คน` : `ลงอีก ${p.seriesToPlace} แมตช์เพื่อติดอันดับ`}</span>
+            </div>
+            <div><strong>{p.peakMmr}</strong><span>MMR สูงสุดที่เคยทำได้</span></div>
+            <div><strong>{p.series}</strong><span>แมตช์ที่นับ MMR</span></div>
+            <div><Form results={form} /><span>ฟอร์ม 5 แมตช์ล่าสุด</span></div>
+          </div>
+        </div>
+      </section>
+
+      {history.length >= 2 && (
+        <section className="card" style={{ marginBottom: 16 }}>
+          <div className="row between">
+            <h2 style={{ margin: 0 }}>MMR ตามเวลา</h2>
+            <Link href="/rankings/players" className="small muted">ดู Ranking ทั้งหมด →</Link>
+          </div>
+          <MmrChart
+            tiers={tiers.data}
+            points={history.map((h) => ({ after: h.after, result: h.result, label: `${fmtDate(h.match.playedAt)} ${h.match.teamA.name} ${h.match.scoreA}-${h.match.scoreB} ${h.match.teamB.name}` }))}
+          />
+        </section>
+      )}
 
       <div className="grid grid-4">
         <StatTile label="เกม (ซีรีส์)" value={`${s.games} (${s.matches})`} />

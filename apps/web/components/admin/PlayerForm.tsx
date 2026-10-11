@@ -19,6 +19,14 @@ export function PlayerForm({ player, teams, defaultTeamId }: { player?: Player; 
       </div>
       <div className="form-row">
         <label>
+          UID ในเกม
+          <input name="uid" maxLength={40} defaultValue={player?.uid ?? ""} placeholder="เช่น 812345678" inputMode="numeric" />
+          <span className="muted small">UID เดิมคือคนเดิม เปลี่ยนชื่อในเกมได้ สถิติและ MMR ยังต่อเนื่อง</span>
+        </label>
+        <label>Server<input name="server" maxLength={40} defaultValue={player?.server ?? ""} placeholder="เช่น Asia" /></label>
+      </div>
+      <div className="form-row">
+        <label>
           ทีม
           <TeamPicker teams={teams} value={teamId} onChange={setTeamId} name="teamId" placeholder="ไม่มีสังกัด (พิมพ์เพื่อหาทีม)" />
         </label>

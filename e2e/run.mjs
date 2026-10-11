@@ -40,7 +40,7 @@ const step = (s) => console.log("✓", s);
 const uniq = Date.now().toString().slice(-5);
 
 console.log("— Public pages");
-const paths = ["/", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=ppg", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", "/admin/login"];
+const paths = ["/", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=ppg", "/rankings/stats", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", "/admin/login"];
 for (const p of paths) {
   await page.goto(base + p);
   await page.waitForLoadState("networkidle");
@@ -316,10 +316,54 @@ const profile = await page.locator("main").textContent();
 if (!profile.includes("Alpha")) throw new Error("new player should be on Alpha: " + profile.slice(0, 200));
 step("new player's profile shows their team and games");
 
-// Player ranking
+// Player ranking (old links to the stat leaderboard still work)
 await page.goto(base + "/rankings/players?sort=mvp");
+if (!page.url().includes("/rankings/stats?sort=mvp")) throw new Error("old stat ranking link not redirected: " + page.url());
 if (!(await page.locator("tbody").textContent()).includes(`P01-${uniq}`)) throw new Error("MVP player missing from ranking");
 step("player ranking by MVP lists the player");
+
+// MMR ladder: podium, tiers, and the new player still placing (one series played)
+await page.goto(base + "/rankings/players");
+if ((await page.locator(".podium-card").count()) !== 3) throw new Error("MMR podium should show 3 players");
+if ((await page.locator(".tier-row").count()) !== 7) throw new Error("tier list should show 7 tiers");
+if (!(await page.locator(".placing-grid").textContent()).includes(`P01-${uniq}`)) throw new Error("a player with one series should be placing");
+step("MMR ladder shows the podium, 7 tiers and players still placing");
+
+// UID keeps a player across a rename; a UID can't be given to two players; duplicates can be merged
+const WEB_KEY = fromEnvFile("API_KEY");
+const findPlayer = async (name) => (await (await fetch(`${API}/api/v1/players?search=${encodeURIComponent(name)}`, { headers: { "X-API-Key": WEB_KEY } })).json()).data[0];
+const p01 = await findPlayer(`P01-${uniq}`);
+await page.goto(`${base}/admin/players/${p01.id}`);
+await page.fill('input[name="uid"]', `9${uniq}`);
+await page.fill('input[name="server"]', "Asia");
+await page.fill('input[name="name"]', `Renamed-${uniq}`);
+await page.click("button:has-text('บันทึกการแก้ไข')");
+await page.waitForURL(`${base}/players/${p01.id}`);
+const prof = await page.locator(".page-head").textContent();
+if (!prof.includes(`Renamed-${uniq}`) || !prof.includes(`UID 9${uniq}`) || !prof.includes(`P01-${uniq}`)) throw new Error("rename/UID not shown on profile: " + prof);
+if (!(await page.locator(".mmr-card").textContent()).includes("กำลังจัดอันดับ")) throw new Error("MMR card should say placing");
+step("player renamed with a UID: profile shows UID, old name and MMR card");
+const p02 = await findPlayer(`P02-${uniq}`);
+await page.goto(`${base}/admin/players/${p02.id}`);
+await page.fill('input[name="uid"]', `9${uniq}`);
+await page.fill('input[name="server"]', "Asia");
+await page.click("button:has-text('บันทึกการแก้ไข')");
+await page.waitForSelector(".error");
+if (!(await page.textContent(".error")).includes(`Renamed-${uniq}`)) throw new Error("duplicate UID error should name the owner");
+step("UID already owned by another player rejected: " + (await page.textContent(".error")));
+// A duplicate record of the same person is merged into the renamed player
+const dup = await (await fetch(`${API}/api/v1/players`, { method: "POST", headers: { "X-API-Key": WEB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ name: `Dup-${uniq}` }) })).json();
+await page.goto(`${base}/admin/players/${p01.id}`);
+const mergeCombo = page.locator('input[aria-label="ผู้เล่นที่ซ้ำ"]');
+await mergeCombo.click();
+await mergeCombo.fill(`Dup-${uniq}`);
+await page.locator(".combo-list [role=option]", { hasText: `Dup-${uniq}` }).click();
+page.once("dialog", (d) => d.accept());
+await page.click("button:has-text('รวมเข้ากับผู้เล่นนี้')");
+await page.waitForSelector(".success");
+const gone2 = await fetch(`${API}/api/v1/players/${dup.id}`, { headers: { "X-API-Key": WEB_KEY } });
+if (gone2.status !== 404) throw new Error("merged duplicate should be deleted");
+step("duplicate player merged: " + (await page.textContent(".success")));
 
 // Rankings reflect result
 await page.goto(base + "/rankings?q=" + uniq);
@@ -456,14 +500,14 @@ step("semi-final reopened, final cleared");
 await page.locator("tr", { hasText: "Night Owls" }).locator("button:has-text('แก้รายชื่อ')").click();
 const rosterInputs = page.locator('label:has-text("ชื่อตัวละคร") input');
 await rosterInputs.nth(0).fill("Kite");
-await page.locator('label:has-text("UID") input').nth(0).fill("812345678");
+await page.locator('label:has-text("UID") input').nth(0).fill("81000108");
 await page.locator('label:has-text("Server") input').nth(0).fill("Asia");
 await page.click("button:has-text('+ เพิ่มผู้เล่น')");
 await rosterInputs.nth(1).fill("Lynx");
 await page.click("button:has-text('+ เพิ่มผู้เล่น')");
 await rosterInputs.nth(2).fill("Moss");
 await page.click("button:has-text('บันทึกรายชื่อ')");
-await page.locator("tr", { hasText: "Night Owls" }).locator("td", { hasText: "Kite (UID 812345678 · Asia), Lynx, Moss" }).waitFor();
+await page.locator("tr", { hasText: "Night Owls" }).locator("td", { hasText: "Kite (UID 81000108 · Asia), Lynx, Moss" }).waitFor();
 step("roster saved for Night Owls, with UID and server");
 
 // Logout

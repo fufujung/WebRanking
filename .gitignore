@@ -10,3 +10,4 @@ e2e/screenshots
 apps/api/uploads
 *.tsbuildinfo
 apps/bot/data
+apps/web/AGENTS.md

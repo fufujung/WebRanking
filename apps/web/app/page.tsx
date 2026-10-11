@@ -2,7 +2,8 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import type { Overview } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
-import { Empty, MatchCard, StatTile, StatusBadge, TeamLink } from "@/components/ui";
+import { Empty, MatchCard, PlayerLink, StatTile, StatusBadge, TeamLink } from "@/components/ui";
+import { RankMove, TierBadge } from "@/components/Tier";
 
 export default async function Home() {
   const o = await api<Overview>("/stats/overview");
@@ -36,7 +37,7 @@ export default async function Home() {
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>#</th><th>ทีม</th><th className="num">Rating</th></tr>
+                  <tr><th>#</th><th>ทีม</th><th className="num">MMR</th></tr>
                 </thead>
                 <tbody>
                   {o.topTeams.map((t, i) => (
@@ -44,6 +45,32 @@ export default async function Home() {
                       <td className={`rank rank-${i + 1}`}>{i + 1}</td>
                       <td><TeamLink team={t} /></td>
                       <td className="num"><strong>{t.rating}</strong></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="row between mt">
+            <h2>ผู้เล่น MMR สูงสุด</h2>
+            <Link href="/rankings/players" className="small muted">ดูทั้งหมด →</Link>
+          </div>
+          {o.topPlayers.length === 0 ? (
+            <Empty>ยังไม่มีผู้เล่นติดอันดับ</Empty>
+          ) : (
+            <div className="table-wrap ladder-table">
+              <table>
+                <thead>
+                  <tr><th>#</th><th>ผู้เล่น</th><th>แรงค์</th><th className="num">MMR</th></tr>
+                </thead>
+                <tbody>
+                  {o.topPlayers.map((p) => (
+                    <tr key={p.id} style={{ ["--tier" as string]: p.tier.color }}>
+                      <td><span className={`rank rank-${p.rank}`}>{p.rank}</span> <RankMove change={p.rankChange} isNew /></td>
+                      <td><PlayerLink player={p} /></td>
+                      <td><TierBadge tier={p.tier} size={20} /></td>
+                      <td className="num"><strong>{p.mmr}</strong></td>
                     </tr>
                   ))}
                 </tbody>
