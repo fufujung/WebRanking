@@ -39,6 +39,7 @@ export const teamInput = z.object({
   tag: optionalText(12),
   country: optionalText(60),
   logoUrl: imageUrl,
+  gameId: optionalText(40).optional(),
 });
 
 export const playerInput = z.object({
@@ -51,6 +52,7 @@ export const playerInput = z.object({
   /** In-game UID: the same player across name changes. */
   uid: optionalText(40),
   server: optionalText(40),
+  gameId: optionalText(40).optional(),
 });
 
 export const mergeInput = z.object({
@@ -62,7 +64,9 @@ export const tournamentStatus = z.enum(["UPCOMING", "ONGOING", "COMPLETED"]);
 
 export const tournamentInput = z.object({
   name: z.string().trim().min(1).max(150),
+  /** The game's name (a new name adds the game) — or gameId for a game that already exists. */
   game: optionalText(100),
+  gameId: optionalText(40),
   location: optionalText(150),
   description: optionalText(2000),
   status: tournamentStatus.default("UPCOMING"),

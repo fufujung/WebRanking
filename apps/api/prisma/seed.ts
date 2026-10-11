@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import { prisma } from "../src/lib/db.js";
 import { createApiKey } from "../src/lib/apiKeys.js";
 import { saveMatch } from "../src/lib/matchWrite.js";
+import { backfillGames } from "../src/lib/games.js";
 
 const webEnv = path.resolve(import.meta.dirname, "../../web/.env.local");
 const botEnv = path.resolve(import.meta.dirname, "../../bot/.env");
@@ -160,5 +161,7 @@ await prisma.tournamentEntry.updateMany({ where: { tournamentId: cup.id, teamId:
 await prisma.tournamentEntry.updateMany({ where: { tournamentId: cup.id, teamId: teams[1].id }, data: { placement: 3 } });
 // A player who changed their in-game name: same UID, stats carried over, old name kept.
 await prisma.playerName.create({ data: { playerId: teams[0].players[0].id, name: "AceTH", firstSeen: new Date(now - 60 * day), lastSeen: new Date(now - 30 * day) } });
+// The demo tournaments' game becomes a game that every demo team and player belongs to.
+await backfillGames();
 console.log("Seeded demo teams, players, tournaments and matches.");
 await prisma.$disconnect();

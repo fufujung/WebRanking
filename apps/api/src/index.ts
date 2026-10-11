@@ -2,6 +2,7 @@ import "./env.js";
 import { createApp } from "./app.js";
 import { recomputeRatings } from "./lib/elo.js";
 import { backfillPlayerUids } from "./lib/players.js";
+import { backfillGames } from "./lib/games.js";
 
 const port = Number(process.env.PORT ?? 4000);
 createApp().listen(port, () => {
@@ -9,7 +10,8 @@ createApp().listen(port, () => {
 });
 
 // Data saved before players had their own UID and MMR: fill both in once on start.
-backfillPlayerUids()
+backfillGames()
+  .then(() => backfillPlayerUids())
   .then((n) => {
     if (n) console.log(`Linked ${n} player(s) to the UID from their tournament roster`);
     return recomputeRatings();

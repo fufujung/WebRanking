@@ -17,6 +17,8 @@ export interface TeamSummary {
 
 export interface Team extends TeamSummary {
   country: string | null;
+  gameId?: string | null;
+  captainId?: string | null;
   playerCount?: number;
 }
 
@@ -62,6 +64,7 @@ export type StatKey = (typeof STAT_KEYS)[number];
 
 export interface Player {
   id: string;
+  gameId?: string | null;
   name: string;
   nickname: string | null;
   country: string | null;
@@ -123,6 +126,7 @@ export interface Tournament {
   id: string;
   name: string;
   game: string | null;
+  gameId?: string | null;
   location: string | null;
   description: string | null;
   status: Status;
@@ -270,6 +274,7 @@ export interface MatchDetail extends Match {
 
 export interface TeamDetail extends Team, Movement {
   rank: number;
+  game?: { id: string; name: string } | null;
   stats: TeamStats;
   players: (Player & { mmr: number; tier: Tier; stats: PlayerStats })[];
   tournaments: { placement: number | null; tournament: Tournament }[];
@@ -285,6 +290,9 @@ export interface PlayerDetail extends Player {
   series: number;
   placed: boolean;
   seriesToPlace: number;
+  /** The game this character plays; the rank below is within it. */
+  game?: { id: string; name: string } | null;
+  gameId?: string | null;
   /** Place on the MMR ladder; null while placing. */
   mmrRank: number | null;
   rankedPlayers: number;
@@ -361,4 +369,55 @@ export interface Ad {
   endsAt: string | null;
   clicks: number;
   createdAt: string;
+}
+
+export interface Game {
+  id: string;
+  name: string;
+  players?: number;
+  teams?: number;
+  tournaments?: number;
+}
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  nickname: string | null;
+  avatarUrl: string | null;
+  mmr: number;
+  linked: boolean;
+  captain: boolean;
+}
+
+/** One of the logged-in player's characters, with its game, rank in that game and team. */
+export interface MyCharacter extends Omit<Player, "team"> {
+  mmr: number;
+  tier: Tier;
+  game: { id: string; name: string } | null;
+  rank: number | null;
+  rankedPlayers: number;
+  series: number;
+  seriesToPlace: number;
+  team: {
+    id: string;
+    name: string;
+    tag: string | null;
+    logoUrl: string | null;
+    rating: number;
+    captainId: string | null;
+    isCaptain: boolean;
+    inviteCode: string | null;
+    members: TeamMember[];
+  } | null;
+}
+
+export interface InviteInfo {
+  id: string;
+  name: string;
+  tag: string | null;
+  logoUrl: string | null;
+  rating: number;
+  game: { id: string; name: string } | null;
+  memberCount: number;
+  full: boolean;
 }

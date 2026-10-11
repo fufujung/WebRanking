@@ -3,11 +3,12 @@
 import { useFormAction } from "./useFormAction";
 import { useState } from "react";
 import { savePlayer } from "@/app/admin/actions";
-import type { Player } from "@/lib/types";
+import type { Game, Player } from "@/lib/types";
+import { GameSelect } from "./GameForms";
 import { ImageDrop } from "../ImageDrop";
 import { TeamPicker, type PickerTeam } from "../TeamPicker";
 
-export function PlayerForm({ player, teams, defaultTeamId }: { player?: Player; teams: PickerTeam[]; defaultTeamId?: string }) {
+export function PlayerForm({ player, teams, games, defaultTeamId }: { player?: Player; teams: PickerTeam[]; games: Game[]; defaultTeamId?: string }) {
   const [state, onSubmit, pending] = useFormAction(savePlayer.bind(null, player?.id ?? null), undefined);
   const [avatar, setAvatar] = useState<string | null>(player?.avatarUrl ?? null);
   const [teamId, setTeamId] = useState<string | null>(player?.teamId ?? defaultTeamId ?? null);
@@ -24,6 +25,7 @@ export function PlayerForm({ player, teams, defaultTeamId }: { player?: Player; 
           <span className="muted small">UID เดิมคือคนเดิม เปลี่ยนชื่อในเกมได้ สถิติและ MMR ยังต่อเนื่อง</span>
         </label>
         <label>Server<input name="server" maxLength={40} defaultValue={player?.server ?? ""} placeholder="เช่น Asia" /></label>
+        <GameSelect games={games} value={player?.gameId} />
       </div>
       <div className="form-row">
         <label>

@@ -51,7 +51,14 @@ export async function logout() {
 export async function saveTeam(id: string | null, _: FormState, form: FormData): Promise<FormState> {
   let savedId = id;
   const result = await run(async () => {
-    const body = { name: text(form, "name"), tag: orNull(text(form, "tag")), country: orNull(text(form, "country")), logoUrl: orNull(text(form, "logoUrl")) };
+    const body = {
+      name: text(form, "name"),
+      tag: orNull(text(form, "tag")),
+      country: orNull(text(form, "country")),
+      logoUrl: orNull(text(form, "logoUrl")),
+      ...(form.has("gameId") ? { gameId: orNull(text(form, "gameId")) } : {}),
+      ...(form.has("captainId") ? { captainId: orNull(text(form, "captainId")) } : {}),
+    };
     const team = await api<{ id: string }>(id ? `/teams/${id}` : "/teams", { method: id ? "PATCH" : "POST", json: body });
     savedId = team.id;
   });
@@ -73,6 +80,7 @@ export async function savePlayer(id: string | null, _: FormState, form: FormData
       teamId: orNull(text(form, "teamId")),
       uid: orNull(text(form, "uid")),
       server: orNull(text(form, "server")),
+      ...(form.has("gameId") ? { gameId: orNull(text(form, "gameId")) } : {}),
     };
     const player = await api<{ id: string }>(id ? `/players/${id}` : "/players", { method: id ? "PATCH" : "POST", json: body });
     savedId = player.id;
@@ -101,7 +109,8 @@ export async function saveTournament(id: string | null, _: FormState, form: Form
   const result = await run(async () => {
     const body = {
       name: text(form, "name"),
-      game: orNull(text(form, "game")),
+      // An existing game is picked by id; "new" sends a typed name, which adds the game.
+      ...(text(form, "gameId") === "new" ? { gameId: null, game: orNull(text(form, "game")) } : { gameId: orNull(text(form, "gameId")), game: null }),
       location: orNull(text(form, "location")),
       description: orNull(text(form, "description")),
       status: text(form, "status") || "UPCOMING",
@@ -259,6 +268,45 @@ export async function saveRoster(tournamentId: string, teamId: string, players: 
     () => api(`/tournaments/${encodeURIComponent(tournamentId)}/entries/${encodeURIComponent(teamId)}/roster`, { method: "PUT", json: { players, captainDiscordId, override: true } }),
     "บันทึกรายชื่อแล้ว",
   );
+}
+
+// Games
+export async function addGame(_: FormState, form: FormData): Promise<FormState> {
+  const name = text(form, "name");
+  const result = await run(async () => {
+    await api("/games", { method: "POST", json: { name } });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: `เพิ่มเกม ${name} แล้ว` };
+}
+
+export async function renameGame(id: string, _: FormState, form: FormData): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/games/${encodeURIComponent(id)}`, { method: "PATCH", json: { name: text(form, "name") } });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: "บันทึกชื่อแล้ว" };
+}
+
+export async function deleteGame(id: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/games/${encodeURIComponent(id)}`, { method: "DELETE" });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: "ลบเกมแล้ว" };
+}
+
+/** A team's invite link code; fresh=true replaces the old link so it stops working. */
+export async function teamInvite(teamId: string, fresh: boolean): Promise<{ code?: string; error?: string }> {
+  await requireAdmin();
+  try {
+    return await api<{ code: string }>(`/teams/${encodeURIComponent(teamId)}/invite${fresh ? "?new=1" : ""}`);
+  } catch (e) {
+    return { error: explain(e) };
+  }
 }
 
 // Deletes

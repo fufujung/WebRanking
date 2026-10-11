@@ -3,7 +3,7 @@
 import { startTransition, useActionState, useState } from "react";
 import { claimPlayer, unlinkMyPlayer, updateMyPlayer, type MeState } from "./actions";
 import { ImageDrop } from "@/components/ImageDrop";
-import type { Player } from "@/lib/types";
+import type { Game, Player } from "@/lib/types";
 
 function useSubmit(action: (s: MeState, f: FormData) => Promise<MeState>) {
   const [state, dispatch, pending] = useActionState<MeState, FormData>(action, undefined);
@@ -15,7 +15,7 @@ function useSubmit(action: (s: MeState, f: FormData) => Promise<MeState>) {
   return [state, onSubmit, pending] as const;
 }
 
-export function ClaimForm({ first }: { first: boolean }) {
+export function ClaimForm({ first, games }: { first: boolean; games: Game[] }) {
   const [state, onSubmit, pending] = useSubmit(claimPlayer);
   return (
     <form onSubmit={onSubmit} className="form card claim-form">
@@ -26,6 +26,15 @@ export function ClaimForm({ first }: { first: boolean }) {
         </p>
       </div>
       <div className="form-row">
+        {games.length > 1 && (
+          <label>
+            เกม *
+            <select name="gameId" required defaultValue="">
+              <option value="" disabled>เลือกเกม</option>
+              {games.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </label>
+        )}
         <label>UID ในเกม *<input name="uid" required maxLength={40} inputMode="numeric" placeholder="เช่น 812345678" /></label>
         <label>Server<input name="server" maxLength={40} placeholder="เช่น Asia" /></label>
         <label>ชื่อในเกม {state?.needsName ? "*" : "(ถ้าสร้างใหม่)"}<input name="name" maxLength={100} required={state?.needsName} autoFocus={state?.needsName} /></label>

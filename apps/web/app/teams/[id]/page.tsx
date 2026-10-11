@@ -50,7 +50,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
             <tbody>
               {team.players.map((p) => (
                 <tr key={p.id}>
-                  <td><PlayerLink player={p} /></td>
+                  <td><PlayerLink player={p} />{p.id === team.captainId && <span className="captain-chip" title="หัวหน้าทีม"> 👑 หัวหน้า</span>}</td>
                   <td>{p.stats.games ? <TierBadge tier={p.tier} size={20} /> : <span className="muted">-</span>}</td>
                   <td className="num"><strong>{p.stats.games ? p.mmr : "-"}</strong></td>
                   <td className="muted">{p.role ?? "-"}</td>

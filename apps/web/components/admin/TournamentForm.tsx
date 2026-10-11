@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { useFormAction } from "./useFormAction";
 import { saveTournament } from "@/app/admin/actions";
-import type { Format, Tournament } from "@/lib/types";
+import type { Format, Game, Tournament } from "@/lib/types";
+import { TournamentGameField } from "./GameForms";
 import { formatLabel, statusLabel, toBangkokInput, toDateInput } from "@/lib/format";
 
-export function TournamentForm({ tournament }: { tournament?: Tournament }) {
+export function TournamentForm({ tournament, games }: { tournament?: Tournament; games: Game[] }) {
   const [state, onSubmit, pending] = useFormAction(saveTournament.bind(null, tournament?.id ?? null), undefined);
   const [format, setFormat] = useState<Format | "">(tournament?.format ?? "");
   // The shape of a started bracket can't change; reset the bracket first.
@@ -15,7 +16,7 @@ export function TournamentForm({ tournament }: { tournament?: Tournament }) {
     <form onSubmit={onSubmit} className="form card">
       <div className="form-row">
         <label>ชื่อรายการ *<input name="name" required maxLength={150} defaultValue={tournament?.name} autoFocus={!tournament} /></label>
-        <label>เกม<input name="game" maxLength={100} defaultValue={tournament?.game ?? ""} /></label>
+        <TournamentGameField games={games} value={tournament?.gameId} legacyName={tournament?.game} />
         <label>สถานที่<input name="location" maxLength={150} defaultValue={tournament?.location ?? ""} placeholder="เช่น Bangkok หรือ Online" /></label>
       </div>
       <div className="form-row">

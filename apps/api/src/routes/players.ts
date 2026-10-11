@@ -5,9 +5,10 @@ import { notFound } from "../lib/errors.js";
 import { emptyPlayerStats, statLineSelect, statsByPlayer } from "../lib/stats.js";
 import { mergeInput, playerInput, searchQuery } from "../lib/validate.js";
 import { requireAdmin } from "../lib/apiKeys.js";
-import { matchInclude, teamSummary } from "../lib/selects.js";
+import { gameSummary, matchInclude, teamSummary } from "../lib/selects.js";
 import { assertUidFree, findByUid, mergePlayers, playerSearch, renamePlayer } from "../lib/players.js";
 import { recomputeRatings } from "../lib/elo.js";
+import { gameIdOrNull } from "../lib/games.js";
 import { playerBoard, tierInfo } from "../lib/leaderboard.js";
 import { PLACEMENT_SERIES } from "../lib/mmr.js";
 import { claimByUid, claimInput, discordId, playersOfDiscord, unlinkDiscord } from "../lib/members.js";
@@ -29,6 +30,7 @@ players.get("/", async (req, res) => {
 
 players.post("/", requireAdmin, async (req, res) => {
   const input = playerInput.parse(req.body);
+  if (input.gameId !== undefined) input.gameId = await gameIdOrNull(prisma, input.gameId);
   const player = await prisma.$transaction(async (tx) => {
     await assertUidFree(tx, input.uid, input.server);
     return tx.player.create({ data: input, include: { team: teamSummary } });
@@ -67,7 +69,7 @@ players.get("/:id", async (req, res) => {
 async function playerDetail(id: string) {
   const player = await prisma.player.findUnique({
     where: { id },
-    include: { team: teamSummary, names: { orderBy: { lastSeen: "desc" }, select: { name: true, firstSeen: true, lastSeen: true } } },
+    include: { team: teamSummary, game: gameSummary, names: { orderBy: { lastSeen: "desc" }, select: { name: true, firstSeen: true, lastSeen: true } } },
   });
   if (!player) throw notFound("Player");
   const [lines, history, board] = await Promise.all([
@@ -86,7 +88,7 @@ async function playerDetail(id: string) {
       select: { before: true, delta: true, result: true, match: { include: matchInclude } },
       orderBy: [{ match: { playedAt: "asc" } }, { match: { createdAt: "asc" } }],
     }),
-    playerBoard(),
+    playerBoard(player.gameId),
   ]);
   const onBoard = board.ranked.find((p) => p.id === player.id);
   return {
@@ -112,6 +114,7 @@ async function playerDetail(id: string) {
 
 players.patch("/:id", requireAdmin, async (req, res) => {
   const input = playerInput.partial().parse(req.body);
+  if (input.gameId !== undefined) input.gameId = await gameIdOrNull(prisma, input.gameId);
   const id = String(req.params.id);
   const player = await prisma.$transaction(async (tx) => {
     const current = await tx.player.findUnique({ where: { id } });

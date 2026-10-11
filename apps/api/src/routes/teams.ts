@@ -1,6 +1,9 @@
 import { Router } from "express";
+import { z } from "zod";
+import { newCode } from "../lib/teamSelf.js";
+import { gameIdOrNull } from "../lib/games.js";
 import { prisma } from "../lib/db.js";
-import { notFound } from "../lib/errors.js";
+import { fail, notFound } from "../lib/errors.js";
 import { recomputeRatings } from "../lib/elo.js";
 import { emptyPlayerStats, emptyTeamStats, statLineSelect, statsByPlayer, statsByTeam } from "../lib/stats.js";
 import { searchQuery, teamInput } from "../lib/validate.js";
@@ -11,8 +14,11 @@ import { teamMovement, tierInfo } from "../lib/leaderboard.js";
 export const teams = Router();
 
 teams.get("/", async (req, res) => {
-  const q = searchQuery.parse(req.query);
-  const where = q.search ? { OR: [{ name: { contains: q.search } }, { tag: { contains: q.search } }] } : {};
+  const q = searchQuery.extend({ gameId: z.string().trim().min(1).optional() }).parse(req.query);
+  const where = {
+    ...(q.search ? { OR: [{ name: { contains: q.search } }, { tag: { contains: q.search } }] } : {}),
+    ...(q.gameId ? { gameId: q.gameId } : {}),
+  };
   const [rows, total] = await Promise.all([
     prisma.team.findMany({
       where,
@@ -28,7 +34,9 @@ teams.get("/", async (req, res) => {
 });
 
 teams.post("/", requireAdmin, async (req, res) => {
-  const team = await prisma.team.create({ data: teamInput.parse(req.body) });
+  const input = teamInput.parse(req.body);
+  if (input.gameId !== undefined) input.gameId = await gameIdOrNull(prisma, input.gameId);
+  const team = await prisma.team.create({ data: input });
   res.status(201).json(team);
 });
 
@@ -37,6 +45,7 @@ teams.get("/:id", async (req, res) => {
     where: { id: String(req.params.id) },
     include: {
       players: { orderBy: { name: "asc" } },
+      game: { select: { id: true, name: true } },
       entries: { include: { tournament: true }, orderBy: { tournament: { startDate: "desc" } } },
     },
   });
@@ -52,8 +61,8 @@ teams.get("/:id", async (req, res) => {
       where: { playerId: { in: team.players.map((p) => p.id) } },
       select: statLineSelect,
     }),
-    prisma.team.count({ where: { rating: { gt: team.rating } } }),
-    teamMovement(),
+    prisma.team.count({ where: { rating: { gt: team.rating }, ...(team.gameId ? { gameId: team.gameId } : {}) } }),
+    teamMovement(team.gameId),
   ]);
   const playerStats = statsByPlayer(lines);
   const { entries, players, ...rest } = team;
@@ -78,8 +87,26 @@ teams.get("/:id", async (req, res) => {
 });
 
 teams.patch("/:id", requireAdmin, async (req, res) => {
-  const team = await prisma.team.update({ where: { id: String(req.params.id) }, data: teamInput.partial().parse(req.body) });
+  const id = String(req.params.id);
+  const { captainId, ...input } = teamInput.extend({ captainId: z.string().trim().nullish().transform((v) => (v === undefined ? undefined : v || null)) }).partial().parse(req.body);
+  if (input.gameId !== undefined) input.gameId = await gameIdOrNull(prisma, input.gameId);
+  if (captainId) {
+    const member = await prisma.player.findUnique({ where: { id: captainId }, select: { teamId: true } });
+    if (member?.teamId !== id) throw fail(400, "The captain must be on the team", "หัวหน้าทีมต้องเป็นผู้เล่นในทีมนี้");
+  }
+  const team = await prisma.team.update({ where: { id }, data: { ...input, ...(captainId !== undefined ? { captainId } : {}) } });
   res.json(team);
+});
+
+/** The team's invite code (made on first use), for organizers to share. ?new=1 makes a new one. */
+teams.get("/:id/invite", requireAdmin, async (req, res) => {
+  const teamId = String(req.params.id);
+  if (!(await prisma.team.findUnique({ where: { id: teamId }, select: { id: true } }))) throw notFound("Team");
+  const current = await prisma.teamInvite.findUnique({ where: { teamId } });
+  if (current && req.query.new !== "1") return void res.json({ code: current.code });
+  const code = newCode();
+  await prisma.teamInvite.upsert({ where: { teamId }, create: { teamId, code }, update: { code, createdAt: new Date() } });
+  res.json({ code });
 });
 
 teams.delete("/:id", requireAdmin, async (req, res) => {

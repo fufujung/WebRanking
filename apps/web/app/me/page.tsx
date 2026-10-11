@@ -2,9 +2,13 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { getMember } from "@/lib/member";
 import { discordEnabled } from "@/lib/discord";
-import type { Player } from "@/lib/types";
+import type { MyCharacter } from "@/lib/types";
+import { siteOrigin } from "@/lib/site";
+import { allGames } from "@/lib/games";
 import { Avatar } from "@/components/ui";
+import { TierBadge } from "@/components/Tier";
 import { ClaimForm, EditMyPlayer } from "./MeForms";
+import { TeamPanel } from "./TeamPanel";
 import { memberLogout } from "./actions";
 import { DiscordMark } from "@/components/DiscordMark";
 
@@ -17,7 +21,22 @@ const ERRORS: Record<string, string> = {
   discord: "เชื่อมต่อ Discord ไม่สำเร็จ กรุณาลองใหม่",
 };
 
-export default async function MePage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+function RankLine({ p }: { p: MyCharacter }) {
+  return (
+    <span className="me-rank small">
+      {p.game && <span className="pill">{p.game.name}</span>}
+      <TierBadge tier={p.tier} size={20} />
+      <strong>{p.mmr} MMR</strong>
+      {p.rank ? (
+        <span>อันดับ <strong>#{p.rank}</strong> จาก {p.rankedPlayers} คน{p.game ? ` ใน ${p.game.name}` : ""}</span>
+      ) : (
+        <span className="muted">ยังไม่ติดอันดับ · แข่งอีก {p.seriesToPlace} ซีรีส์</span>
+      )}
+    </span>
+  );
+}
+
+export default async function MePage({ searchParams }: { searchParams: Promise<{ error?: string; joined?: string }> }) {
   const sp = await searchParams;
   const me = await getMember();
   const error = sp.error ? ERRORS[sp.error] ?? ERRORS.discord : null;
@@ -38,7 +57,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
     );
   }
 
-  const { data: mine } = await api<{ data: Player[] }>(`/players/discord/${me.id}`);
+  const [{ data: mine }, games, origin] = await Promise.all([api<{ data: MyCharacter[] }>(`/members/${me.id}`), allGames(), siteOrigin()]);
   return (
     <>
       <div className="page-head">
@@ -52,6 +71,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
         <form action={memberLogout}><button className="btn btn-sm">ออกจากระบบ</button></form>
       </div>
       {error && <div className="error" style={{ marginBottom: 16 }}>{error}</div>}
+      {sp.joined && <div className="success" style={{ marginBottom: 16 }}>เข้าร่วมทีมแล้ว ยินดีต้อนรับ!</div>}
 
       {mine.length > 0 && (
         <section className="stack" style={{ marginBottom: 24 }}>
@@ -63,17 +83,21 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
                   <Avatar src={p.avatarUrl} name={p.name} round />
                   <span>
                     <strong>{p.name}</strong>
-                    <span className="muted small"> · {p.uid ? `UID ${p.uid}${p.server ? ` (${p.server})` : ""}` : "ยังไม่มี UID"} · {p.team?.name ?? "ไม่มีสังกัด"}</span>
+                    <span className="muted small"> · {p.uid ? `UID ${p.uid}${p.server ? ` (${p.server})` : ""}` : "ยังไม่มี UID"}</span>
                   </span>
                 </Link>
-                <span className="row small"><strong>{p.mmr} MMR</strong><Link href={`/players/${p.id}`} className="muted">ดูหน้าโปรไฟล์ →</Link></span>
+                <Link href={`/players/${p.id}`} className="muted small">ดูหน้าโปรไฟล์ →</Link>
               </div>
-              <EditMyPlayer player={p} />
+              <RankLine p={p} />
+              <h3 className="me-sub">ทีม</h3>
+              <TeamPanel me={p} inviteBase={origin} />
+              <h3 className="me-sub">แก้ไขโปรไฟล์</h3>
+              <EditMyPlayer player={{ ...p, team: null }} />
             </div>
           ))}
         </section>
       )}
-      <ClaimForm first={mine.length === 0} />
+      <ClaimForm first={mine.length === 0} games={games} />
       <p className="muted small mt">ชื่อในเกม ทีม และสถิติ อัปเดตจากผลการแข่งและบอท Discord อัตโนมัติ ถ้าข้อมูลผิด แจ้งผู้จัดได้เลย</p>
     </>
   );

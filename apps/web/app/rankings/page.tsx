@@ -5,25 +5,29 @@ import { signed } from "@/lib/format";
 import { Avatar, Empty, TeamLink } from "@/components/ui";
 import { Form, RankMove, TierBadge, TierEmblem, TierProgress } from "@/components/Tier";
 import { RankingTabs } from "@/components/RankingTabs";
+import { GameTabs } from "@/components/GameTabs";
+import { currentGame } from "@/lib/games";
 
 export const metadata = { title: "Ranking ทีม" };
 
 type Row = Team & Movement & { rank: number; stats: TeamStats };
 
-export default async function TeamRankings({ searchParams }: { searchParams: Promise<{ min?: string; q?: string }> }) {
+export default async function TeamRankings({ searchParams }: { searchParams: Promise<{ min?: string; q?: string; game?: string }> }) {
   const sp = await searchParams;
   const min = sp.min === "1" ? 1 : 0;
   const q = (sp.q ?? "").trim().toLowerCase();
-  const page = await api<Page<Row>>(`/rankings/teams${qs({ limit: 200, minMatches: min })}`);
+  const { games, game } = await currentGame(sp.game);
+  const page = await api<Page<Row>>(`/rankings/teams${qs({ limit: 200, minMatches: min, gameId: game?.id })}`);
   const rows = q ? page.data.filter((t) => t.name.toLowerCase().includes(q) || t.tag?.toLowerCase().includes(q)) : page.data;
   const podium = q ? [] : rows.filter((t) => t.stats.matches > 0).slice(0, 3);
   const rest = rows.filter((t) => !podium.includes(t));
   return (
     <>
       <RankingTabs active="teams" />
+      <GameTabs games={games} active={game?.id ?? null} />
       <div className="page-head">
         <div>
-          <h1>Ranking ทีม</h1>
+          <h1>Ranking ทีม{game ? ` · ${game.name}` : ""}</h1>
           <p className="muted small" style={{ margin: 0 }}>เรียงตาม MMR ทีม (เริ่มที่ 1000) คำนวณใหม่จากผลการแข่งทุกนัด ▲▼ คืออันดับที่ขยับใน 7 วันล่าสุด</p>
         </div>
         <div className="tabs">

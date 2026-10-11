@@ -5,6 +5,8 @@ import { fmtRating, statLabels } from "@/lib/format";
 import { Empty, PlayerLink, TeamLink } from "@/components/ui";
 import { TeamFilter } from "@/components/TeamFilter";
 import { RankingTabs } from "@/components/RankingTabs";
+import { GameTabs } from "@/components/GameTabs";
+import { currentGame } from "@/lib/games";
 
 export const metadata = { title: "สถิติผู้เล่น" };
 
@@ -23,20 +25,22 @@ const SORTS = [
 
 type Row = Player & { rank: number; stats: PlayerStats };
 
-export default async function PlayerRankings({ searchParams }: { searchParams: Promise<{ sort?: string; teamId?: string }> }) {
+export default async function PlayerRankings({ searchParams }: { searchParams: Promise<{ sort?: string; teamId?: string; game?: string }> }) {
   const sp = await searchParams;
   const sort = SORTS.some(([k]) => k === sp.sort) ? sp.sort! : "pts";
+  const { games, game } = await currentGame(sp.game);
   const [page, teams] = await Promise.all([
-    api<Page<Row>>(`/rankings/players${qs({ sort, teamId: sp.teamId, minGames: 1, limit: 200 })}`),
-    api<Page<Team>>("/teams?limit=200"),
+    api<Page<Row>>(`/rankings/players${qs({ sort, teamId: sp.teamId, gameId: game?.id, minGames: 1, limit: 200 })}`),
+    api<Page<Team>>(`/teams${qs({ limit: 200, gameId: game?.id })}`),
   ]);
   const link = (s: string) => `/rankings/stats${qs({ sort: s, teamId: sp.teamId })}`;
   return (
     <>
       <RankingTabs active="stats" />
+      <GameTabs games={games} active={game?.id ?? null} />
       <div className="page-head">
         <div>
-          <h1>สถิติผู้เล่น</h1>
+          <h1>สถิติผู้เล่น{game ? ` · ${game.name}` : ""}</h1>
           <p className="muted small" style={{ margin: 0 }}>นับจากสกอร์บอร์ดทุกเกม เฉพาะผู้เล่นที่ลงแข่งอย่างน้อย 1 เกม</p>
         </div>
       </div>

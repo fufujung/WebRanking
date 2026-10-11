@@ -4,6 +4,7 @@ import { apiOrNull } from "@/lib/api";
 import { fetchAll } from "@/lib/fetchAll";
 import type { Player, PlayerDetail, Team } from "@/lib/types";
 import { PlayerForm } from "@/components/admin/PlayerForm";
+import { allGames } from "@/lib/games";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { MergePlayer } from "@/components/admin/MergePlayer";
 import { UnlinkDiscord } from "@/components/admin/UnlinkDiscord";
@@ -11,10 +12,11 @@ import { UnlinkDiscord } from "@/components/admin/UnlinkDiscord";
 export const metadata = { title: "แก้ไขผู้เล่น" };
 
 export default async function EditPlayer({ params }: { params: Promise<{ id: string }> }) {
-  const [player, teams, players] = await Promise.all([
+  const [player, teams, players, games] = await Promise.all([
     apiOrNull<PlayerDetail>(`/players/${encodeURIComponent((await params).id)}`),
     fetchAll<Team>("/teams"),
     fetchAll<Player>("/players"),
+    allGames(),
   ]);
   if (!player) notFound();
   const others = players
@@ -30,7 +32,7 @@ export default async function EditPlayer({ params }: { params: Promise<{ id: str
         </div>
       </div>
       {player.discordId && <div style={{ marginBottom: 16 }}><UnlinkDiscord playerId={player.id} discordId={player.discordId} /></div>}
-      <PlayerForm key={`${player.name}-${player.uid}`} player={player} teams={teams} />
+      <PlayerForm key={`${player.name}-${player.uid}-${player.gameId}`} player={player} teams={teams} games={games} />
       {player.names.length > 0 && (
         <p className="muted small" style={{ marginTop: 10 }}>เคยใช้ชื่อ: {player.names.map((n) => n.name).join(", ")}</p>
       )}

@@ -7,18 +7,21 @@ import { Avatar, Empty, PlayerLink } from "@/components/ui";
 import { Form, RankMove, TierBadge, TierEmblem, TierProgress } from "@/components/Tier";
 import { TeamFilter } from "@/components/TeamFilter";
 import { RankingTabs } from "@/components/RankingTabs";
+import { GameTabs } from "@/components/GameTabs";
+import { currentGame } from "@/lib/games";
 
 export const metadata = { title: "Ranking ผู้เล่น (MMR)" };
 
 const winRate = (p: { wins: number; series: number }) => (p.series ? Math.round((p.wins / p.series) * 100) : 0);
 
-export default async function MmrRanking({ searchParams }: { searchParams: Promise<{ sort?: string; teamId?: string; q?: string }> }) {
+export default async function MmrRanking({ searchParams }: { searchParams: Promise<{ sort?: string; teamId?: string; q?: string; game?: string }> }) {
   const sp = await searchParams;
   // This page used to be the stat leaderboard: old links with ?sort= go there.
   if (sp.sort && sp.sort !== "mmr") redirect(`/rankings/stats${qs({ sort: sp.sort, teamId: sp.teamId })}`);
+  const { games, game } = await currentGame(sp.game);
   const [ladder, teams] = await Promise.all([
-    api<MmrLadder>(`/rankings/mmr${qs({ teamId: sp.teamId, limit: 200 })}`),
-    api<Page<Team>>("/teams?limit=200"),
+    api<MmrLadder>(`/rankings/mmr${qs({ teamId: sp.teamId, gameId: game?.id, limit: 200 })}`),
+    api<Page<Team>>(`/teams${qs({ limit: 200, gameId: game?.id })}`),
   ]);
   const q = (sp.q ?? "").trim().toLowerCase();
   const matches = (p: { name: string; nickname: string | null; uid?: string | null }) =>
@@ -33,10 +36,11 @@ export default async function MmrRanking({ searchParams }: { searchParams: Promi
   return (
     <>
       <RankingTabs active="players" />
+      <GameTabs games={games} active={game?.id ?? null} />
       <section className="ladder-hero">
         <div>
           <span className="eyebrow">Season Ladder</span>
-          <h1>Ranking ผู้เล่น · MMR</h1>
+          <h1>Ranking ผู้เล่น · MMR{game ? ` · ${game.name}` : ""}</h1>
           <p className="muted">
             ทุกคนเริ่มที่ {ladder.rules.start} MMR ชนะแล้วขึ้น แพ้แล้วลง ชนะทีมที่เก่งกว่าได้มากกว่า แรงค์ของคุณดูได้จากตราด้านข้างชื่อ
           </p>
