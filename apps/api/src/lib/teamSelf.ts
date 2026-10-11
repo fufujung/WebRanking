@@ -12,6 +12,7 @@ import { imageUrl, normaliseName } from "./validate.js";
 import { playerBoard, tierInfo } from "./leaderboard.js";
 import { PLACEMENT_SERIES } from "./mmr.js";
 import { playersOfDiscord } from "./members.js";
+import { guildsForMember } from "./guilds.js";
 
 type Tx = Prisma.TransactionClient;
 
@@ -141,12 +142,13 @@ export async function memberView(discordId: string) {
   const gameIds = [...new Set(players.map((p) => p.gameId))];
   const boards = new Map(await Promise.all(gameIds.map(async (g) => [g, await playerBoard(g)] as const)));
   const teamIds = [...new Set(players.map((p) => p.teamId).filter((x): x is string => Boolean(x)))];
-  const [teams, games] = await Promise.all([
+  const [teams, games, guilds] = await Promise.all([
     prisma.team.findMany({
       where: { id: { in: teamIds } },
       include: { players: { select: { id: true, name: true, nickname: true, avatarUrl: true, discordId: true, mmr: true }, orderBy: { name: "asc" } }, invite: true },
     }),
     prisma.game.findMany({ where: { id: { in: gameIds.filter((g): g is string => Boolean(g)) } } }),
+    guildsForMember(players),
   ]);
   const gameName = new Map(games.map((g) => [g.id, g.name]));
   return players.map((p) => {
@@ -163,6 +165,7 @@ export async function memberView(discordId: string) {
       rankedPlayers: board.ranked.length,
       series: ranked?.series ?? placing?.series ?? 0,
       seriesToPlace: ranked ? 0 : Math.max(0, PLACEMENT_SERIES - (placing?.series ?? 0)),
+      ...guilds.get(p.id)!,
       team: team
         ? {
             id: team.id, name: team.name, tag: team.tag, logoUrl: team.logoUrl, rating: team.rating, captainId: team.captainId,

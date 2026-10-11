@@ -32,6 +32,7 @@ tags:
   - name: Members
   - name: Rankings
   - name: Teams
+  - name: Guilds
   - name: Players
   - name: Tournaments
   - name: Brackets
@@ -193,6 +194,48 @@ paths:
       summary: Withdraw from a SOLO tournament before the draw (admin)
       responses:
         "200": { description: The sign-up view }
+  /api/v1/members/{discordId}/guild/{action}:
+    parameters:
+      - { $ref: "#/components/parameters/discordId" }
+      - name: action
+        in: path
+        required: true
+        schema: { type: string, enum: [create, edit, invite, cancel-invite, accept, decline, leave, kick, leader] }
+    post:
+      tags: [Members]
+      summary: Run this member's guild (admin)
+      description: |
+        Every action names the character acting (`playerId`), which must belong to this Discord account.
+        - `create` { name, tag?, logoUrl?, description? }: start a guild and lead it (holds 200 members).
+        - `edit` { name?, tag?, logoUrl?, description? }: leader only.
+        - `invite` { uid, server? }: leader only; invites the character with this in-game UID.
+        - `cancel-invite` { inviteId }: leader only.
+        - `accept` / `decline` { inviteId }: the invited character's owner.
+        - `leave`: a leaving leader hands over to the highest-MMR member; the last member closes the guild.
+        - `kick` / `leader` { memberId }: leader only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [playerId]
+              properties:
+                playerId: { type: string }
+                name: { type: string, maxLength: 60 }
+                tag: { type: string, maxLength: 12 }
+                logoUrl: { type: string }
+                description: { type: string, maxLength: 500 }
+                uid: { type: string }
+                server: { type: string }
+                inviteId: { type: string }
+                memberId: { type: string }
+      responses:
+        "200": { description: Done }
+        "201": { description: Guild created }
+        "403": { description: Not this member's character, or not the leader }
+        "404": { description: Unknown action, UID, invite or member }
+        "409": { description: Already in a guild, guild full, or name taken }
   /api/v1/members/invites/{code}:
     get:
       tags: [Members]
@@ -404,6 +447,59 @@ paths:
       responses:
         "200": { description: "{ code }" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/guilds:
+    get:
+      tags: [Guilds]
+      summary: Guilds ranked by score (average MMR of their best 5 members who have played), each with rank, score, leader and number 1 player
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: gameId, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 24, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200": { description: "{ data, total, limit, offset }" }
+  /api/v1/guilds/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Guilds]
+      summary: A guild with its rank and score among all guilds, and its members ranked inside the guild by MMR (guildRank; null until they have played)
+      responses:
+        "200": { description: "Guild with leader, top, memberCount, capacity, full and members[]" }
+        "404": { description: Not found }
+    patch:
+      tags: [Guilds]
+      summary: Edit a guild, its size (capacity) or its leader, who must be a member (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 60 }
+                tag: { type: string, nullable: true }
+                logoUrl: { type: string, nullable: true }
+                description: { type: string, nullable: true }
+                capacity: { type: integer, minimum: 1, maximum: 10000 }
+                leaderId: { type: string }
+      responses:
+        "200": { description: The guild }
+        "400": { description: Leader not a member, or capacity below the member count }
+    delete:
+      tags: [Guilds]
+      summary: Delete a guild; its members stay, without a guild (admin)
+      responses:
+        "204": { description: Deleted }
+  /api/v1/guilds/{id}/members/{playerId}:
+    delete:
+      tags: [Guilds]
+      summary: Remove a member; a removed leader hands over, an emptied guild closes (admin)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: playerId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "{ closed, leader }" }
   /api/v1/players:
     get:
       tags: [Players]

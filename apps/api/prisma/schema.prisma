@@ -18,6 +18,7 @@ model Game {
   players     Player[]
   teams       Team[]
   tournaments Tournament[]
+  guilds      Guild[]
 }
 
 /// A competing team. Teams play matches and carry an Elo rating.
@@ -71,21 +72,25 @@ model Player {
   mmr       Int      @default(1000) // personal rating, replayed from every series the player appeared in
   peakMmr   Int      @default(1000)
   gameId    String? // the game this character plays; MMR and ranks are per game
+  guildId   String? // the guild (club) this character belongs to, separate from the team it plays for
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  team        Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  game        Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
-  statLines   MatchPlayerStat[]
-  rosters     RosterPlayer[]
-  soloSignups SoloSignup[]
-  names       PlayerName[]
-  mmrLog      PlayerMmrChange[]
+  team         Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  game         Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  guild        Guild?            @relation(fields: [guildId], references: [id], onDelete: SetNull)
+  guildInvites GuildInvite[]
+  statLines    MatchPlayerStat[]
+  rosters      RosterPlayer[]
+  soloSignups  SoloSignup[]
+  names        PlayerName[]
+  mmrLog       PlayerMmrChange[]
 
   @@index([teamId])
   @@index([uid])
   @@index([discordId])
   @@index([gameId])
+  @@index([guildId])
 }
 
 /// A name a player has used before, so old scoreboards and searches still find them.
@@ -348,4 +353,39 @@ model Ad {
   updatedAt      DateTime  @updatedAt
 
   @@index([placement])
+}
+
+/// A club players belong to outside of tournament teams. Only its leader invites; organizers can change the leader and the size.
+model Guild {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  tag         String?
+  logoUrl     String?
+  description String?
+  gameId      String?
+  leaderId    String?
+  /// Most members the guild can hold; organizers can raise it.
+  capacity    Int      @default(200)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  game    Game?         @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  members Player[]
+  invites GuildInvite[]
+
+  @@index([gameId])
+}
+
+/// The leader invited this character; it joins when its owner accepts on "my profile".
+model GuildInvite {
+  id        String   @id @default(cuid())
+  guildId   String
+  playerId  String
+  createdAt DateTime @default(now())
+
+  guild  Guild  @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, playerId])
+  @@index([playerId])
 }

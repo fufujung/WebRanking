@@ -69,7 +69,7 @@ players.get("/:id", async (req, res) => {
 async function playerDetail(id: string) {
   const player = await prisma.player.findUnique({
     where: { id },
-    include: { team: teamSummary, game: gameSummary, names: { orderBy: { lastSeen: "desc" }, select: { name: true, firstSeen: true, lastSeen: true } } },
+    include: { team: teamSummary, game: gameSummary, guild: { select: { id: true, name: true, tag: true, logoUrl: true } }, names: { orderBy: { lastSeen: "desc" }, select: { name: true, firstSeen: true, lastSeen: true } } },
   });
   if (!player) throw notFound("Player");
   const [lines, history, board] = await Promise.all([

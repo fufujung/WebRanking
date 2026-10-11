@@ -10,6 +10,7 @@ const MAIN: { href: string; label: string; icon: IconName }[] = [
   { href: "/admin/matches", label: "ผลการแข่ง", icon: "matches" },
   { href: "/admin/tournaments", label: "ทัวร์นาเมนต์", icon: "tournaments" },
   { href: "/admin/teams", label: "ทีม", icon: "teams" },
+  { href: "/admin/guilds", label: "กิลด์", icon: "guild" },
   { href: "/admin/players", label: "ผู้เล่น", icon: "players" },
   { href: "/admin/games", label: "เกม", icon: "game" },
   { href: "/admin/ads", label: "โฆษณาร้าน", icon: "megaphone" },

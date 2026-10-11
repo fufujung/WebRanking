@@ -285,6 +285,7 @@ export interface TeamDetail extends Team, Movement {
 }
 
 export interface PlayerDetail extends Player {
+  guild?: GuildSummary | null;
   mmr: number;
   peakMmr: number;
   tier: Tier;
@@ -419,6 +420,77 @@ export interface MyCharacter extends Omit<Player, "team"> {
     inviteCode: string | null;
     members: TeamMember[];
   } | null;
+  guild: MyGuild | null;
+  guildInvites: GuildInviteReceived[];
+}
+
+export interface GuildSummary {
+  id: string;
+  name: string;
+  tag: string | null;
+  logoUrl: string | null;
+}
+
+/** A member as the guild shows them: guildRank is their place inside the guild by MMR (null until they play). */
+export interface GuildMember {
+  id: string;
+  name: string;
+  nickname: string | null;
+  avatarUrl: string | null;
+  role: string | null;
+  mmr: number;
+  tier: Tier;
+  series: number;
+  linked: boolean;
+  leader: boolean;
+  guildRank: number | null;
+}
+
+export interface Guild extends GuildSummary {
+  description: string | null;
+  gameId: string | null;
+  game: { id: string; name: string } | null;
+  leaderId: string | null;
+  capacity: number;
+  memberCount: number;
+  createdAt: string;
+}
+
+/** Guilds rank by score: the average MMR of their best 5 members who have played (null until someone plays). */
+export interface GuildStanding {
+  score: number | null;
+  rank: number | null;
+}
+
+export interface GuildListItem extends Guild, GuildStanding {
+  leader: Pick<GuildMember, "id" | "name" | "nickname" | "avatarUrl" | "mmr" | "tier"> | null;
+  top: Pick<GuildMember, "id" | "name" | "nickname" | "avatarUrl" | "mmr" | "tier"> | null;
+}
+
+export interface GuildDetail extends Guild, GuildStanding {
+  /** How many guilds the rank is out of. */
+  guilds: number;
+  full: boolean;
+  leader: (GuildMember & { team: TeamSummary | null; mmrRank: number | null }) | null;
+  top: (GuildMember & { team: TeamSummary | null; mmrRank: number | null }) | null;
+  members: (GuildMember & { team: Omit<TeamSummary, "rating"> | null; mmrRank: number | null })[];
+}
+
+export interface MyGuild extends GuildSummary {
+  description: string | null;
+  capacity: number;
+  leaderId: string | null;
+  memberCount: number;
+  isLeader: boolean;
+  myRank: number | null;
+  members: GuildMember[];
+  invites: { id: string; createdAt: string; player: { id: string; name: string; uid: string | null; server: string | null; linked: boolean; inGuild: boolean } }[];
+}
+
+export interface GuildInviteReceived {
+  id: string;
+  createdAt: string;
+  guild: GuildSummary & { capacity: number; memberCount: number };
 }
 
 export interface InviteInfo {

@@ -76,7 +76,7 @@ await new Promise((r) => discordMock.listen(Number(process.env.DISCORD_MOCK_PORT
 const uniq = Date.now().toString().slice(-5);
 
 console.log("— Public pages");
-const paths = ["/", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=ppg", "/rankings/stats", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", LOGIN];
+const paths = ["/", "/guilds", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=ppg", "/rankings/stats", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", LOGIN];
 for (const p of paths) {
   await page.goto(base + p);
   await page.waitForLoadState("networkidle");
@@ -84,6 +84,8 @@ for (const p of paths) {
   console.log(p, "→", h1);
 }
 await page.goto(base + "/");
+if (await page.locator('footer a[href$="/docs"]').count()) throw new Error("visitors see the API docs link");
+await page.locator("h2:has-text('กิลด์อันดับ 1')").waitFor();
 await page.screenshot({ path: OUT + "/home.png", fullPage: true });
 // follow a team, player, tournament, match link
 for (const sel of ['a[href^="/teams/"]', 'a[href^="/tournaments/"]', 'a[href^="/matches/"]']) {
@@ -167,7 +169,8 @@ await page.fill('input[name="password"]', PASSWORD);
 await page.click("button:has-text('เข้าสู่ระบบ')");
 await page.waitForURL(base + "/admin");
 if (!(await page.locator('.nav a[href="/admin"]').count())) throw new Error("admin link missing from the menu after login");
-step("logged in");
+if (!(await page.locator('footer a[href$="/docs"]').count())) throw new Error("API docs link missing for the organizer");
+step("logged in; the API docs link shows only to organizers");
 
 // Tournament
 await page.goto(base + "/admin/tournaments/new");
@@ -874,6 +877,80 @@ if (!(await page.locator(".btn-discord").count())) {
   await mate.locator(".pill:has-text('คุณเป็นหัวหน้าทีม')").waitFor();
   await mate.locator(".team-panel a.entity").first().click();
   await mate.locator(`tr:has-text('Mate-${uniq}') .captain-chip`).waitFor();
+
+  console.log("— Guilds");
+  // A player starts a guild and leads it; only the leader can invite, by UID.
+  await page.goto(base + "/me");
+  const discGuild = disc.locator(".guild-panel");
+  await discGuild.locator(".guild-create summary").click();
+  await discGuild.locator('input[name="name"]').fill(`Club ${uniq}`);
+  await discGuild.locator('input[name="tag"]').fill("CLB");
+  await discGuild.locator('textarea[name="description"]').fill("Kuroko club for e2e");
+  await discGuild.locator("button:has-text('สร้างกิลด์')").click();
+  await discGuild.locator(".pill:has-text('คุณเป็นหัวหน้ากิลด์')").waitFor();
+  await discGuild.locator(".guild-invite input[name='uid']").fill("nope-" + uniq);
+  await discGuild.locator(".guild-invite button").click();
+  await discGuild.locator(".guild-invite .error:has-text('ไม่พบผู้เล่น')").waitFor();
+  await discGuild.locator(".guild-invite input[name='uid']").fill(`78${uniq}`);
+  await discGuild.locator(".guild-invite button").click();
+  await discGuild.locator(".guild-invite .success").waitFor();
+  await page.reload();
+  await discGuild.locator(`li:has-text('Mate-${uniq}') button:has-text('ยกเลิกคำเชิญ')`).waitFor();
+  step("player created a guild (leader) and invited a friend by UID; an unknown UID is refused");
+
+  // The friend sees the invite on their profile and accepts; members can't invite.
+  await mate.goto(base + "/me");
+  const mateGuild = mate.locator(`.me-player:has-text('Mate-${uniq}') .guild-panel`);
+  await mate.locator(`.me-sub:has-text('มีคำเชิญ 1')`).waitFor();
+  await mateGuild.locator(`.invite-box li:has-text('Club ${uniq}') button:has-text('รับคำเชิญ')`).click();
+  await mateGuild.locator(`a.entity:has-text('Club ${uniq}')`).waitFor();
+  await mateGuild.locator("text=2 / 200 คน").waitFor();
+  if (await mateGuild.locator(".guild-invite").count()) throw new Error("a member who isn't the leader can invite");
+  step("friend accepted the invite on /me; only the leader sees the invite form");
+
+  // Public guild pages: list with the #1 player, and the members ranked inside the guild.
+  await page.goto(base + "/guilds");
+  await page.locator(`.guild-card:has-text('Club ${uniq}'):has-text('2 / 200 คน')`).click();
+  await page.locator(`h1:has-text('Club ${uniq}')`).waitFor();
+  await page.locator(".guild-about:has-text('Kuroko club for e2e')").waitFor();
+  await page.locator(`tr:has-text('Disc-${uniq}') .captain-chip:has-text('หัวหน้า')`).waitFor();
+  if ((await page.locator("tbody tr").count()) !== 2) throw new Error("guild page should list 2 members");
+  await page.screenshot({ path: OUT + "/guild-page.png", fullPage: true });
+  await page.locator(`tr:has-text('Mate-${uniq}') a[href^='/players/']`).click();
+  await page.locator(`.guild-chip:has-text('Club ${uniq}')`).waitFor();
+  step("guild list and page show members, leader and ranks; the player page links the guild");
+
+  // Organizers change the leader (e.g. a lost account) and raise the size.
+  const gAdminCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const gAdmin = await gAdminCtx.newPage();
+  gAdmin.on("pageerror", (e) => problems.push(`pageerror: ${e.message} @ ${gAdmin.url()}`));
+  await gAdmin.goto(base + LOGIN);
+  await gAdmin.fill('input[name="password"]', PASSWORD);
+  await gAdmin.click("button:has-text('เข้าสู่ระบบ')");
+  await gAdmin.waitForURL(base + "/admin");
+  await gAdmin.click('.side-nav a[href="/admin/guilds"]');
+  await gAdmin.locator(`tr:has-text('Club ${uniq}') a:has-text('แก้ไข')`).click();
+  await gAdmin.locator(`h1:has-text('Club ${uniq}')`).waitFor();
+  await gAdmin.locator('select[name="leaderId"]').selectOption({ label: `Mate-${uniq}` });
+  await gAdmin.fill('input[name="capacity"]', "1");
+  await gAdmin.click("button:has-text('บันทึกการแก้ไข')");
+  if (await gAdmin.locator('input[name="capacity"]:invalid').count() === 0) throw new Error("capacity below member count allowed");
+  await gAdmin.fill('input[name="capacity"]', "300");
+  await gAdmin.click("button:has-text('บันทึกการแก้ไข')");
+  await gAdmin.locator(".success:has-text('บันทึกแล้ว')").waitFor();
+  await gAdmin.screenshot({ path: OUT + "/guild-admin.png", fullPage: true });
+  await gAdminCtx.close();
+  await mate.reload();
+  await mateGuild.locator(".pill:has-text('คุณเป็นหัวหน้ากิลด์')").waitFor();
+  await mateGuild.locator("text=2 / 300 คน").waitFor();
+  // The new leader kicks the old one, who is back to no guild.
+  mate.once("dialog", (d) => d.accept());
+  // The old leader shows by the nickname they set.
+  await mateGuild.locator(`li:has-text('Nick ${uniq}') button:has-text('เตะออก')`).click();
+  await mateGuild.locator(`li:has-text('Nick ${uniq}')`).waitFor({ state: "detached" });
+  await page.goto(base + "/me");
+  await disc.locator(".guild-panel .guild-create").waitFor();
+  step("organizer made the friend leader and raised the size to 300; the new leader kicked a member");
   await ctx2.close();
   discordUser = DISCORD_USER;
   step("captain handed the team to the teammate; 👑 shows on the team page");

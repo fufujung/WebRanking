@@ -36,6 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/rankings">Ranking ทีม</Link>
               <Link href="/tournaments">ทัวร์นาเมนต์</Link>
               <Link href="/teams">ทีม</Link>
+              <Link href="/guilds">กิลด์</Link>
               <Link href="/players">ผู้เล่น</Link>
               <Link href="/matches">ผลการแข่ง</Link>
               {admin && <Link href="/admin">จัดการข้อมูล</Link>}
@@ -69,9 +70,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <footer className="footer">
           <div className="container row between">
             <span>Tournament Ranking</span>
-            <a href={`${process.env.PUBLIC_API_URL ?? process.env.API_URL ?? "http://localhost:4000"}/docs`} target="_blank" rel="noreferrer">
-              เอกสาร API สำหรับเชื่อมเว็บอื่น
-            </a>
+            {/* Only organizers need the API docs; visitors don't see the link. */}
+            {admin && (
+              <a href={`${process.env.PUBLIC_API_URL ?? process.env.API_URL ?? "http://localhost:4000"}/docs`} target="_blank" rel="noreferrer">
+                เอกสาร API สำหรับเชื่อมเว็บอื่น
+              </a>
+            )}
           </div>
         </footer>
       </body>
