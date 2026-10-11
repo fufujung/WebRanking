@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { discordId } from "../lib/members.js";
+import { notFound } from "../lib/errors.js";
 import { leaveSolo, signUp } from "../lib/solo.js";
+import { acceptInvite, cancelInvite, createGuild, declineInvite, editGuild, inviteToGuild, kickFromGuild, leaveGuild, passLeader } from "../lib/guilds.js";
 import { createTeam, inviteInfo, joinTeam, kickMember, leaveTeam, makeCaptain, memberView, resetInvite } from "../lib/teamSelf.js";
 
 /**
@@ -44,4 +46,22 @@ members.post("/:discordId/solo/:tournamentId", async (req, res) => {
 });
 members.delete("/:discordId/solo/:tournamentId", async (req, res) => {
   res.json(await leaveSolo(who(req.params.discordId), String(req.params.tournamentId)));
+});
+
+/** Guilds: anyone starts one; the leader invites by UID, edits, kicks and hands over; invited players accept or decline. */
+const guildActions = {
+  create: createGuild,
+  edit: editGuild,
+  invite: inviteToGuild,
+  "cancel-invite": cancelInvite,
+  accept: acceptInvite,
+  decline: declineInvite,
+  leave: leaveGuild,
+  kick: kickFromGuild,
+  leader: passLeader,
+} as const;
+members.post("/:discordId/guild/:action", async (req, res) => {
+  const action = guildActions[String(req.params.action) as keyof typeof guildActions];
+  if (!action) throw notFound("Guild action");
+  res.status(req.params.action === "create" ? 201 : 200).json(await action(who(req.params.discordId), req.body));
 });

@@ -36,6 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/rankings">Ranking ทีม</Link>
               <Link href="/tournaments">ทัวร์นาเมนต์</Link>
               <Link href="/teams">ทีม</Link>
+              <Link href="/guilds">กิลด์</Link>
               <Link href="/players">ผู้เล่น</Link>
               <Link href="/matches">ผลการแข่ง</Link>
               {admin && <Link href="/admin">จัดการข้อมูล</Link>}

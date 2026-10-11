@@ -37,7 +37,12 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
             )}
           </div>
         </div>
-        <div>{p.team ? <TeamLink team={p.team} /> : <span className="muted">ไม่มีสังกัด</span>}</div>
+        <div className="stack" style={{ gap: 6, alignItems: "flex-end" }}>
+          {p.team ? <TeamLink team={p.team} /> : <span className="muted">ไม่มีทีม</span>}
+          {p.guild && (
+            <Link href={`/guilds/${p.guild.id}`} className="chip guild-chip" title="กิลด์">🛡 {p.guild.name}{p.guild.tag ? ` [${p.guild.tag}]` : ""}</Link>
+          )}
+        </div>
       </div>
 
       <section className="mmr-card" style={{ ["--tier" as string]: p.tier.color }}>

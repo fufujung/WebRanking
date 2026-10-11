@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { remove } from "@/app/admin/actions";
 
-export function DeleteButton({ kind, id, label }: { kind: "teams" | "players" | "tournaments" | "matches" | "ads"; id: string; label: string }) {
+export function DeleteButton({ kind, id, label }: { kind: "teams" | "players" | "tournaments" | "matches" | "ads" | "guilds"; id: string; label: string }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   return (

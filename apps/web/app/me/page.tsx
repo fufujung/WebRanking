@@ -9,6 +9,7 @@ import { Avatar } from "@/components/ui";
 import { TierBadge } from "@/components/Tier";
 import { ClaimForm, EditMyPlayer } from "./MeForms";
 import { TeamPanel } from "./TeamPanel";
+import { GuildPanel } from "./GuildPanel";
 import { memberLogout } from "./actions";
 import { DiscordMark } from "@/components/DiscordMark";
 
@@ -91,6 +92,8 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
               <RankLine p={p} />
               <h3 className="me-sub">ทีม</h3>
               <TeamPanel me={p} inviteBase={origin} />
+              <h3 className="me-sub">กิลด์{p.guildInvites.length > 0 && !p.guild ? <span className="pill pill-warn" style={{ marginLeft: 8 }}>มีคำเชิญ {p.guildInvites.length}</span> : null}</h3>
+              <GuildPanel me={p} />
               <h3 className="me-sub">แก้ไขโปรไฟล์</h3>
               <EditMyPlayer player={{ ...p, team: null }} />
             </div>

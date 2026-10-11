@@ -676,7 +676,7 @@ h4 { font-size: 15px; font-weight: 700; }
 .invite-box .row { flex-wrap: wrap; }
 .invite-code { letter-spacing: 2px; font-family: ui-monospace, monospace; }
 .team-start { gap: 16px; }
-.team-create, .team-join { padding: 12px; border: 1px solid var(--border); border-radius: 10px; align-content: start; }
+.team-create, .team-join, .guild-create-form { padding: 12px; border: 1px solid var(--border); border-radius: 10px; align-content: start; }
 .join-card { max-width: 560px; margin: 0 auto; text-align: center; display: flex; flex-direction: column; gap: 14px; align-items: center; }
 .join-card form { width: 100%; text-align: left; }
 .game-chip { background: var(--accent-soft); border-color: var(--accent); }
@@ -704,3 +704,20 @@ h4 { font-size: 15px; font-weight: 700; }
 @media (max-width: 640px) { .rank-editor-row { grid-template-columns: 28px 1fr; } }
 .rank-field { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; }
 .rank-field legend { font-size: 14px; font-weight: 600; margin-bottom: 6px; padding: 0; }
+
+/* Guilds */
+.guild-chip { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+.guild-card { display: flex; flex-direction: column; gap: 10px; }
+.guild-card-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+.guild-about { margin: 0 0 16px; white-space: pre-line; color: var(--muted); }
+.guild-top { display: flex; align-items: center; gap: 16px; border-color: var(--tier); background: linear-gradient(120deg, color-mix(in srgb, var(--tier) 16%, transparent), transparent 70%); }
+.guild-top > .grow { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.guild-top-name { font-size: 22px; overflow-wrap: anywhere; }
+.row-top td { background: color-mix(in srgb, #f5c542 10%, transparent); }
+.guild-leader-tools { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.guild-leader-tools > * { align-self: stretch; }
+.guild-leader-tools > .btn { align-self: flex-start; }
+.guild-invite .row { flex-wrap: wrap; }
+.guild-members summary, .guild-create summary { cursor: pointer; }
+.guild-create summary { list-style: none; display: inline-flex; }
+.guild-create summary::-webkit-details-marker { display: none; }

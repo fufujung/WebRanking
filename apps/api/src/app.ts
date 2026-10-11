@@ -17,6 +17,7 @@ import { players } from "./routes/players.js";
 import { rankings } from "./routes/rankings.js";
 import { stats } from "./routes/stats.js";
 import { teams } from "./routes/teams.js";
+import { guilds } from "./routes/guilds.js";
 import { tournaments } from "./routes/tournaments.js";
 import { uploads } from "./routes/uploads.js";
 
@@ -57,6 +58,7 @@ export function createApp() {
   v1.use("/keys", keys);
   v1.use("/ads", ads);
   v1.use("/games", games);
+  v1.use("/guilds", guilds);
   v1.use("/members", members);
   v1.use(uploads);
   app.use("/api/v1", v1);

@@ -125,3 +125,54 @@ export async function memberLogout() {
   await endMemberSession();
   redirect("/");
 }
+
+// Guilds. Only the leader invites (by UID); the invited player accepts here.
+async function guildCall(action: string, body: Record<string, unknown>, ok: string): Promise<MeState> {
+  return teamCall(`guild/${action}`, body, ok);
+}
+
+export async function createMyGuild(playerId: string, _: MeState, form: FormData): Promise<MeState> {
+  const name = text(form, "name");
+  return guildCall(
+    "create",
+    { playerId, name, tag: text(form, "tag") || null, logoUrl: text(form, "logoUrl") || null, description: text(form, "description") || null },
+    `สร้างกิลด์ ${name} แล้ว คุณเป็นหัวหน้ากิลด์`,
+  );
+}
+
+export async function editMyGuild(playerId: string, _: MeState, form: FormData): Promise<MeState> {
+  return guildCall(
+    "edit",
+    { playerId, name: text(form, "name"), tag: text(form, "tag") || null, logoUrl: text(form, "logoUrl") || null, description: text(form, "description") || null },
+    "บันทึกข้อมูลกิลด์แล้ว",
+  );
+}
+
+export async function inviteToGuild(playerId: string, _: MeState, form: FormData): Promise<MeState> {
+  const uid = text(form, "uid");
+  return guildCall("invite", { playerId, uid, server: text(form, "server") || undefined }, `ส่งคำเชิญถึง UID ${uid} แล้ว รอเจ้าตัวกดรับที่หน้าโปรไฟล์ของเขา`);
+}
+
+export async function cancelGuildInvite(playerId: string, inviteId: string) {
+  return guildCall("cancel-invite", { playerId, inviteId }, "ยกเลิกคำเชิญแล้ว");
+}
+
+export async function acceptGuildInvite(playerId: string, inviteId: string) {
+  return guildCall("accept", { playerId, inviteId }, "เข้าร่วมกิลด์แล้ว ยินดีต้อนรับ!");
+}
+
+export async function declineGuildInvite(playerId: string, inviteId: string) {
+  return guildCall("decline", { playerId, inviteId }, "ปฏิเสธคำเชิญแล้ว");
+}
+
+export async function leaveMyGuild(playerId: string) {
+  return guildCall("leave", { playerId }, "ออกจากกิลด์แล้ว");
+}
+
+export async function kickFromGuild(playerId: string, memberId: string) {
+  return guildCall("kick", { playerId, memberId }, "นำสมาชิกออกจากกิลด์แล้ว");
+}
+
+export async function passGuildLeader(playerId: string, memberId: string) {
+  return guildCall("leader", { playerId, memberId }, "เปลี่ยนหัวหน้ากิลด์แล้ว");
+}

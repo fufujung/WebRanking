@@ -120,6 +120,8 @@ export async function mergePlayers(intoId: string, fromId: string) {
     }
     if (normaliseName(from.name) !== normaliseName(into.name)) await rememberName(tx, into.id, from.name);
 
+    const guildId = into.guildId ?? from.guildId;
+    if (guildId) await tx.guild.updateMany({ where: { id: guildId, leaderId: from.id }, data: { leaderId: into.id } });
     await tx.player.delete({ where: { id: from.id } });
     await tx.player.update({
       where: { id: into.id },
@@ -129,6 +131,7 @@ export async function mergePlayers(intoId: string, fromId: string) {
         nickname: into.nickname ?? from.nickname,
         avatarUrl: into.avatarUrl ?? from.avatarUrl,
         teamId: into.teamId ?? from.teamId,
+        guildId,
         role: into.role ?? from.role,
         country: into.country ?? from.country,
         discordId: into.discordId ?? from.discordId,

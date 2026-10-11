@@ -355,9 +355,41 @@ export async function teamInvite(teamId: string, fresh: boolean): Promise<{ code
   }
 }
 
+// Guilds: organizers fix the leader, raise the size, and remove members.
+export async function saveGuild(id: string, _: FormState, form: FormData): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/guilds/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      json: {
+        name: text(form, "name"),
+        tag: orNull(text(form, "tag")),
+        description: orNull(text(form, "description")),
+        logoUrl: orNull(text(form, "logoUrl")),
+        capacity: Number(text(form, "capacity")),
+        ...(text(form, "leaderId") ? { leaderId: text(form, "leaderId") } : {}),
+      },
+    });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: "บันทึกแล้ว" };
+}
+
+export async function removeGuildMember(guildId: string, playerId: string): Promise<FormState> {
+  let closed = false;
+  const result = await run(async () => {
+    ({ closed } = await api<{ closed: boolean }>(`/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(playerId)}`, { method: "DELETE" }));
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  // The last member left: the guild is closed.
+  if (closed) redirect("/admin/guilds?deleted=1");
+  return { ok: "นำออกจากกิลด์แล้ว" };
+}
+
 // Deletes
 // After a delete, go back to the list the item was in.
-const deletable = { teams: "/admin/teams", players: "/admin/players", tournaments: "/admin/tournaments", matches: "/admin/matches", ads: "/admin/ads" } as const;
+const deletable = { guilds: "/admin/guilds", teams: "/admin/teams", players: "/admin/players", tournaments: "/admin/tournaments", matches: "/admin/matches", ads: "/admin/ads" } as const;
 
 export async function remove(kind: keyof typeof deletable, id: string): Promise<FormState> {
   const result = await run(async () => {
