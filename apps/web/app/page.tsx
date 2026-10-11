@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { api } from "@/lib/api";
-import type { Overview } from "@/lib/types";
+import type { GuildListItem, Overview, Page } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
-import { Empty, MatchCard, PlayerLink, StatTile, StatusBadge, TeamLink } from "@/components/ui";
-import { RankMove, TierBadge } from "@/components/Tier";
+import { Avatar, Empty, MatchCard, PlayerLink, StatTile, StatusBadge, TeamLink } from "@/components/ui";
+import { RankMove, TierBadge, TierEmblem } from "@/components/Tier";
 import { AdCards } from "@/components/ads/Ads";
 
 export default async function Home() {
-  const o = await api<Overview>("/stats/overview");
+  const [o, guilds] = await Promise.all([api<Overview>("/stats/overview"), api<Page<GuildListItem>>("/guilds?limit=1")]);
+  const topGuild = guilds.data[0]?.rank === 1 ? guilds.data[0] : null;
   return (
     <>
       <section className="hero">
@@ -25,6 +26,8 @@ export default async function Home() {
         <StatTile label="ทัวร์นาเมนต์" value={o.totals.tournaments} />
         <StatTile label="แมตช์" value={o.totals.matches} />
       </div>
+
+      <TopGuild guild={topGuild} />
 
       <AdCards />
 
@@ -112,5 +115,43 @@ export default async function Home() {
         </section>
       </div>
     </>
+  );
+}
+
+/** The number 1 guild, always on the home page, with the best player inside it. */
+function TopGuild({ guild: g }: { guild: GuildListItem | null }) {
+  return (
+    <section className="mt">
+      <div className="row between">
+        <h2>🏆 กิลด์อันดับ 1</h2>
+        <Link href="/guilds" className="small muted">ดูอันดับกิลด์ทั้งหมด →</Link>
+      </div>
+      {!g ? (
+        <Empty>ยังไม่มีกิลด์ที่สมาชิกลงแข่ง สร้างกิลด์ได้ที่หน้าโปรไฟล์ของฉัน</Empty>
+      ) : (
+        <div className="home-guild card">
+          <Link href={`/guilds/${g.id}`} className="home-guild-main">
+            <Avatar src={g.logoUrl} name={g.tag || g.name} size="lg" />
+            <span>
+              <strong className="home-guild-name">{g.name}</strong> {g.tag && <span className="muted">[{g.tag}]</span>}
+              <br />
+              <span className="muted small">คะแนนกิลด์ <strong className="home-guild-score">{g.score}</strong> · {g.memberCount} สมาชิก</span>
+            </span>
+          </Link>
+          {g.top && (
+            <Link href={`/players/${g.top.id}`} className="home-guild-top" style={{ ["--tier" as string]: g.top.tier.color }}>
+              <TierEmblem tier={g.top.tier} size={48} />
+              <span>
+                <span className="muted small">🥇 อันดับ 1 ของกิลด์</span>
+                <br />
+                <strong>{g.top.nickname || g.top.name}</strong>
+                <br />
+                <span className="small">{g.top.mmr} MMR · <span style={{ color: g.top.tier.color }}>{g.top.tier.name}</span></span>
+              </span>
+            </Link>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

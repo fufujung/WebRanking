@@ -211,4 +211,20 @@ describe("guilds", () => {
     assert.equal((await call("DELETE", `/guilds/${g.id}`)).status, 204);
     assert.equal((await prisma.player.findUnique({ where: { id: ids.amy } }))!.guildId, null);
   });
+
+  test("guilds rank by the average MMR of their best players who have played", async () => {
+    const a = await ok("POST", `/members/${D.lead}/guild/create`, { playerId: ids.lead, name: "Alpha Guild" });
+    const b = await ok("POST", `/members/${D.amy}/guild/create`, { playerId: ids.amy, name: "Beta Guild" });
+    await ok("POST", `/members/${D.amy}/guild/invite`, { playerId: ids.amy, uid: "Ubob" });
+    const inv = (await ok("GET", `/members/${D.bob}`)).data[0].guildInvites[0];
+    await ok("POST", `/members/${D.bob}/guild/accept`, { playerId: ids.bob, inviteId: inv.id });
+    // bob hasn't played: Beta's score is amy's 1600 alone, above Alpha's 1500.
+    const list = await ok("GET", "/guilds");
+    assert.deepEqual(list.data.map((g: { name: string; rank: number; score: number }) => [g.name, g.rank, g.score]), [["Beta Guild", 1, 1600], ["Alpha Guild", 2, 1500]]);
+    assert.equal(list.data[0].top.name, "P-amy");
+    const searched = await ok("GET", "/guilds?search=alpha");
+    assert.equal(searched.data[0].rank, 2, "a search keeps the real rank");
+    assert.equal((await ok("GET", `/guilds/${a.id}`)).rank, 2);
+    assert.equal((await ok("GET", `/guilds/${b.id}`)).score, 1600);
+  });
 });

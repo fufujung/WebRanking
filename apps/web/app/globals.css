@@ -721,3 +721,11 @@ h4 { font-size: 15px; font-weight: 700; }
 .guild-members summary, .guild-create summary { cursor: pointer; }
 .guild-create summary { list-style: none; display: inline-flex; }
 .guild-create summary::-webkit-details-marker { display: none; }
+.guild-card > .row { width: 100%; }
+.guild-card > .row > span:nth-child(2) { flex: 1; min-width: 0; }
+.guild-rank { font-weight: 800; font-size: 18px; }
+.home-guild { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; border-color: color-mix(in srgb, #f5c542 55%, var(--border)); background: linear-gradient(120deg, color-mix(in srgb, #f5c542 12%, transparent), transparent 65%); }
+.home-guild-main, .home-guild-top { display: flex; align-items: center; gap: 14px; color: inherit; text-decoration: none; min-width: 0; }
+.home-guild-name { font-size: 22px; overflow-wrap: anywhere; }
+.home-guild-score { color: var(--text); font-size: 16px; }
+.home-guild-top { padding: 10px 14px; border-radius: 12px; border: 1px solid var(--tier); background: color-mix(in srgb, var(--tier) 10%, transparent); }

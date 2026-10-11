@@ -14,13 +14,14 @@ export default async function GuildsPage({ searchParams }: { searchParams: Promi
   return (
     <>
       <div className="page-head">
-        <h1>กิลด์ทั้งหมด</h1>
+        <h1>อันดับกิลด์</h1>
         <span className="muted">{page.total} กิลด์ · สร้างหรือรับคำเชิญได้ที่ <Link href="/me">โปรไฟล์ของฉัน</Link></span>
       </div>
       <form className="filters" role="search">
         <input className="grow" name="q" defaultValue={sp.q} placeholder="ค้นหาชื่อกิลด์หรือตัวย่อ" aria-label="ค้นหากิลด์" />
         <button className="btn btn-primary" type="submit" style={{ minWidth: 0 }}>ค้นหา</button>
       </form>
+      <p className="muted small" style={{ marginTop: 0 }}>เรียงตามคะแนนกิลด์ = MMR เฉลี่ยของสมาชิก 5 คนที่เก่งที่สุดที่ลงแข่งแล้ว</p>
       {page.data.length === 0 ? (
         <Empty>{sp.q ? `ไม่พบกิลด์ “${sp.q}”` : "ยังไม่มีกิลด์ ผู้เล่นสร้างกิลด์ได้ที่หน้าโปรไฟล์ของฉัน"}</Empty>
       ) : (
@@ -34,7 +35,9 @@ export default async function GuildsPage({ searchParams }: { searchParams: Promi
                   <br />
                   <span className="muted small">{g.memberCount} / {g.capacity} คน{g.game ? ` · ${g.game.name}` : ""}</span>
                 </span>
+                <span className={`guild-rank rank rank-${g.rank ?? 0}`} title="อันดับกิลด์">{g.rank ? `#${g.rank}` : "-"}</span>
               </span>
+              {g.score !== null && <span className="small">คะแนนกิลด์ <strong>{g.score}</strong></span>}
               <span className="guild-card-top small">
                 {g.top ? (
                   <>🥇 อันดับ 1: <strong>{g.top.nickname || g.top.name}</strong> <TierBadge tier={g.top.tier} size={16} /> {g.top.mmr} MMR</>

@@ -450,7 +450,7 @@ paths:
   /api/v1/guilds:
     get:
       tags: [Guilds]
-      summary: Guilds, biggest first, each with its leader and its number 1 player
+      summary: Guilds ranked by score (average MMR of their best 5 members who have played), each with rank, score, leader and number 1 player
       parameters:
         - { name: search, in: query, schema: { type: string } }
         - { name: gameId, in: query, schema: { type: string } }
@@ -463,7 +463,7 @@ paths:
       - { name: id, in: path, required: true, schema: { type: string } }
     get:
       tags: [Guilds]
-      summary: A guild with its members ranked inside the guild by MMR (guildRank; null until they have played)
+      summary: A guild with its rank and score among all guilds, and its members ranked inside the guild by MMR (guildRank; null until they have played)
       responses:
         "200": { description: "Guild with leader, top, memberCount, capacity, full and members[]" }
         "404": { description: Not found }

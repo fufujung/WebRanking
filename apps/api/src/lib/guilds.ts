@@ -269,34 +269,48 @@ export const guildQuery = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
-/** Guilds, biggest first, each with its leader and its #1 player. */
+/** A guild's score is the average MMR of its best SCORE_TOP members who have played. */
+export const SCORE_TOP = 5;
+
+function guildScore(members: MemberRow[]) {
+  const best = members.filter((m) => m._count.mmrLog > 0).map((m) => m.mmr).sort((a, b) => b - a).slice(0, SCORE_TOP);
+  return best.length ? Math.round(best.reduce((n, x) => n + x, 0) / best.length) : null;
+}
+
+/**
+ * Every guild of a game ranked by score (ties share a rank); guilds where nobody has played yet
+ * follow, unranked. Ranks are across all guilds, so a search keeps each guild's real place.
+ */
+async function rankedGuilds(gameId?: string) {
+  const rows = await prisma.guild.findMany({
+    where: gameId ? { gameId } : {},
+    include: { game: { select: { id: true, name: true } }, members: { select: memberSelect } },
+  });
+  const scored = rows.map((g) => ({ g, score: guildScore(g.members) }));
+  scored.sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || b.g.members.length - a.g.members.length || a.g.name.localeCompare(b.g.name));
+  const withScore = withRanks(scored.filter((x) => x.score !== null), (x) => x.score!);
+  const rank = new Map(withScore.map((x) => [x.g.id, x.rank]));
+  return scored.map(({ g, score }) => ({ g, score, rank: rank.get(g.id) ?? null }));
+}
+
+/** Guilds in ranking order, each with its score, rank, leader and its #1 player. */
 export async function listGuilds(query: unknown) {
   const q = guildQuery.parse(query);
-  const where = {
-    ...(q.search ? { OR: [{ name: { contains: q.search } }, { tag: { contains: q.search } }] } : {}),
-    ...(q.gameId ? { gameId: q.gameId } : {}),
-  };
-  const [rows, total] = await Promise.all([
-    prisma.guild.findMany({
-      where,
-      include: { game: { select: { id: true, name: true } }, members: { select: memberSelect } },
-      orderBy: [{ members: { _count: "desc" } }, { name: "asc" }],
-      take: q.limit,
-      skip: q.offset,
-    }),
-    prisma.guild.count({ where }),
-  ]);
-  const data = rows.map(({ members, ...g }) => {
+  const needle = q.search?.toLowerCase();
+  const all = (await rankedGuilds(q.gameId)).filter(({ g }) => !needle || g.name.toLowerCase().includes(needle) || (g.tag ?? "").toLowerCase().includes(needle));
+  const data = all.slice(q.offset, q.offset + q.limit).map(({ g: { members, ...g }, score, rank }) => {
     const ranked = rankMembers(members, g.leaderId);
     const short = (m: (typeof ranked)[number] | undefined) => (m ? { id: m.id, name: m.name, nickname: m.nickname, avatarUrl: m.avatarUrl, mmr: m.mmr, tier: m.tier } : null);
     return {
       ...g,
+      score,
+      rank,
       memberCount: members.length,
       leader: short(ranked.find((m) => m.leader)),
       top: short(ranked.find((m) => m.guildRank === 1)),
     };
   });
-  return { data, total, limit: q.limit, offset: q.offset };
+  return { data, total: all.length, limit: q.limit, offset: q.offset };
 }
 
 /** A guild page: its members ranked inside the guild, with their place on the whole game's board. */
@@ -306,7 +320,8 @@ export async function guildDetail(id: string) {
     include: { game: { select: { id: true, name: true } }, members: { select: { ...memberSelect, team: { select: { id: true, name: true, tag: true, logoUrl: true } } } } },
   });
   if (!guild) throw notFound("Guild");
-  const board = await playerBoard(guild.gameId);
+  const [board, standings] = await Promise.all([playerBoard(guild.gameId), rankedGuilds(guild.gameId ?? undefined)]);
+  const standing = standings.find((x) => x.g.id === guild.id);
   const boardRank = new Map(board.ranked.map((r) => [r.id, r.rank]));
   const team = new Map(guild.members.map((m) => [m.id, m.team]));
   const { members, ...rest } = guild;
@@ -314,6 +329,9 @@ export async function guildDetail(id: string) {
   return {
     ...rest,
     memberCount: members.length,
+    score: standing?.score ?? null,
+    rank: standing?.rank ?? null,
+    guilds: standings.length,
     full: full(members.length, guild.capacity),
     leader: ranked.find((m) => m.leader) ?? null,
     top: ranked.find((m) => m.guildRank === 1) ?? null,

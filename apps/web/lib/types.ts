@@ -456,12 +456,20 @@ export interface Guild extends GuildSummary {
   createdAt: string;
 }
 
-export interface GuildListItem extends Guild {
+/** Guilds rank by score: the average MMR of their best 5 members who have played (null until someone plays). */
+export interface GuildStanding {
+  score: number | null;
+  rank: number | null;
+}
+
+export interface GuildListItem extends Guild, GuildStanding {
   leader: Pick<GuildMember, "id" | "name" | "nickname" | "avatarUrl" | "mmr" | "tier"> | null;
   top: Pick<GuildMember, "id" | "name" | "nickname" | "avatarUrl" | "mmr" | "tier"> | null;
 }
 
-export interface GuildDetail extends Guild {
+export interface GuildDetail extends Guild, GuildStanding {
+  /** How many guilds the rank is out of. */
+  guilds: number;
   full: boolean;
   leader: (GuildMember & { team: TeamSummary | null; mmrRank: number | null }) | null;
   top: (GuildMember & { team: TeamSummary | null; mmrRank: number | null }) | null;

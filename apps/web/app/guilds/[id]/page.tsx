@@ -17,7 +17,6 @@ export default async function GuildPage({ params }: { params: Promise<{ id: stri
   const g = await apiOrNull<GuildDetail>(`/guilds/${encodeURIComponent((await params).id)}`);
   if (!g) notFound();
   const played = g.members.filter((m) => m.guildRank !== null);
-  const avg = played.length ? Math.round(played.reduce((n, m) => n + m.mmr, 0) / played.length) : null;
   return (
     <>
       <div className="page-head">
@@ -31,7 +30,10 @@ export default async function GuildPage({ params }: { params: Promise<{ id: stri
             </span>
           </div>
         </div>
-        <span className={`pill ${g.full ? "pill-warn" : ""}`}>{g.memberCount} / {g.capacity} คน{g.full ? " · เต็ม" : ""}</span>
+        <div className="stack" style={{ gap: 6, alignItems: "flex-end" }}>
+          {g.rank && <span className={`badge ${g.rank === 1 ? "badge-accent" : ""}`}>กิลด์อันดับ #{g.rank} จาก {g.guilds}</span>}
+          <span className={`pill ${g.full ? "pill-warn" : ""}`}>{g.memberCount} / {g.capacity} คน{g.full ? " · เต็ม" : ""}</span>
+        </div>
       </div>
       {g.description && <p className="guild-about">{g.description}</p>}
 
@@ -52,7 +54,7 @@ export default async function GuildPage({ params }: { params: Promise<{ id: stri
       <div className="grid grid-3 mt">
         <StatTile label="สมาชิก" value={`${g.memberCount} / ${g.capacity}`} />
         <StatTile label="ลงแข่งแล้ว" value={`${played.length} คน`} />
-        <StatTile label="MMR เฉลี่ย" value={avg ?? "-"} />
+        <StatTile label="คะแนนกิลด์ (MMR เฉลี่ย 5 คนที่เก่งที่สุด)" value={g.score ?? "-"} />
       </div>
 
       <h2 className="mt">สมาชิก ({g.memberCount})</h2>

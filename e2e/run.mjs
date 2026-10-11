@@ -84,6 +84,8 @@ for (const p of paths) {
   console.log(p, "→", h1);
 }
 await page.goto(base + "/");
+if (await page.locator('footer a[href$="/docs"]').count()) throw new Error("visitors see the API docs link");
+await page.locator("h2:has-text('กิลด์อันดับ 1')").waitFor();
 await page.screenshot({ path: OUT + "/home.png", fullPage: true });
 // follow a team, player, tournament, match link
 for (const sel of ['a[href^="/teams/"]', 'a[href^="/tournaments/"]', 'a[href^="/matches/"]']) {
@@ -167,7 +169,8 @@ await page.fill('input[name="password"]', PASSWORD);
 await page.click("button:has-text('เข้าสู่ระบบ')");
 await page.waitForURL(base + "/admin");
 if (!(await page.locator('.nav a[href="/admin"]').count())) throw new Error("admin link missing from the menu after login");
-step("logged in");
+if (!(await page.locator('footer a[href$="/docs"]').count())) throw new Error("API docs link missing for the organizer");
+step("logged in; the API docs link shows only to organizers");
 
 // Tournament
 await page.goto(base + "/admin/tournaments/new");
