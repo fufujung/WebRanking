@@ -338,6 +338,28 @@ describe("tournament flow", () => {
     assert.deepEqual(res.body.totals, { teams: 3, players: 5, tournaments: 1, matches: 2, ongoingTournaments: 0 });
   });
 
+  test("admin dashboard: activity per day and a to-do list, admin keys only", async () => {
+    assert.equal((await call("GET", "/api/v1/stats/admin", undefined, reader)).status, 403);
+    assert.equal((await call("GET", "/api/v1/stats/admin?days=3")).status, 400);
+    const res = await call("GET", "/api/v1/stats/admin");
+    assert.equal(res.status, 200);
+    const b = res.body;
+    assert.equal(b.days.length, 14);
+    assert.match(b.days[13].date, /^\d{4}-\d{2}-\d{2}$/);
+    assert.equal(b.totals.teams, 3);
+    assert.equal(b.totals.matches, 2);
+    // Everything here was created during this run; the two matches were played back in May.
+    assert.equal(b.days.at(-1).newPlayers, 5);
+    assert.equal(b.days.at(-1).newTeams, 3);
+    assert.equal(b.days.reduce((n: number, d: any) => n + d.matches, 0), 0);
+    assert.deepEqual(b.week, { matches: 0, prevMatches: 0, newPlayers: 5, newTeams: 3, matchesToday: 0 });
+    assert.equal(b.tiers.length, 7);
+    assert.equal(b.todo.teamsWithoutLogo, 3);
+    assert.equal(b.todo.playersWithoutUid, 5);
+    assert.deepEqual(b.todo.readyMatches, []);
+    assert.deepEqual(b.todo.disputes, []);
+  });
+
   test("deleting matches resets ratings", async () => {
     assert.equal((await call("DELETE", `/api/v1/matches/${ids.m1}`)).status, 204);
     assert.equal((await call("DELETE", `/api/v1/matches/${ids.m1}`)).status, 404);
