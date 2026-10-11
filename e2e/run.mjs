@@ -15,6 +15,9 @@ const fromEnvFile = (k) => new RegExp(`^${k}=(.*)$`, "m").exec(envFile)?.[1]?.tr
 const base = process.env.BASE_URL ?? "http://localhost:3000";
 const API = process.env.API_URL ?? fromEnvFile("API_URL") ?? "http://localhost:4000";
 const PASSWORD = process.env.ADMIN_PASSWORD ?? fromEnvFile("ADMIN_PASSWORD");
+// Secret login address; empty = the old /admin/login page.
+const ADMIN_PATH = process.env.ADMIN_PATH ?? fromEnvFile("ADMIN_PATH") ?? "";
+const LOGIN = ADMIN_PATH ? `/${ADMIN_PATH}` : "/admin/login";
 const LOGO = path.join(here, "fixture-logo.png");
 const SHOT = path.join(here, "fixture-result.png");
 const SELF = fileURLToPath(import.meta.url);
@@ -40,7 +43,7 @@ const step = (s) => console.log("✓", s);
 const uniq = Date.now().toString().slice(-5);
 
 console.log("— Public pages");
-const paths = ["/", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=ppg", "/rankings/stats", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", "/admin/login"];
+const paths = ["/", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=ppg", "/rankings/stats", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", LOGIN];
 for (const p of paths) {
   await page.goto(base + p);
   await page.waitForLoadState("networkidle");
@@ -106,8 +109,19 @@ step("theme toggle: dark by default, light kept after reload, back to dark");
 console.log("— Admin flows");
 await page.setViewportSize({ width: 1280, height: 900 });
 // Logged-out protection
-await page.goto(base + "/admin");
-if (!page.url().includes("/admin/login")) throw new Error("admin not protected");
+if (await page.locator('.nav a[href="/admin"]').count()) throw new Error("public menu shows the admin link to visitors");
+if (ADMIN_PATH) {
+  // Without the secret address the back office looks like it does not exist.
+  for (const p of ["/admin", "/admin/login", "/admin/teams", "/admin-wrong-guess"]) {
+    const r = await page.request.get(base + p, { maxRedirects: 0 });
+    if (r.status() !== 404) throw new Error(`${p} should be "not found" when logged out, got ${r.status()}`);
+  }
+  await page.goto(base + LOGIN);
+  step("back office hidden: /admin is 404 and the login page only opens at the secret address");
+} else {
+  await page.goto(base + "/admin");
+  if (!page.url().includes("/admin/login")) throw new Error("admin not protected");
+}
 const upl = await page.request.post(base + "/api/upload", { multipart: { image: { name: "a.png", mimeType: "image/png", buffer: fs.readFileSync(LOGO) } } });
 if (upl.status() !== 401) throw new Error("upload not protected: " + upl.status());
 step("admin pages and upload are protected when logged out");
@@ -119,6 +133,7 @@ step("wrong password rejected: " + (await page.textContent(".error")));
 await page.fill('input[name="password"]', PASSWORD);
 await page.click("button:has-text('เข้าสู่ระบบ')");
 await page.waitForURL(base + "/admin");
+if (!(await page.locator('.nav a[href="/admin"]').count())) throw new Error("admin link missing from the menu after login");
 step("logged in");
 
 // Tournament
@@ -536,8 +551,13 @@ step("roster saved for Night Owls, with UID and server");
 // Logout
 await page.click("button:has-text('ออกจากระบบ')");
 await page.waitForURL(base + "/");
-await page.goto(base + "/admin/matches/new");
-if (!page.url().includes("/admin/login")) throw new Error("still logged in");
+if (await page.locator('.nav a[href="/admin"]').count()) throw new Error("admin link still in the menu after logout");
+if (ADMIN_PATH) {
+  if ((await page.request.get(base + "/admin/matches/new", { maxRedirects: 0 })).status() !== 404) throw new Error("still logged in");
+} else {
+  await page.goto(base + "/admin/matches/new");
+  if (!page.url().includes("/admin/login")) throw new Error("still logged in");
+}
 step("logged out");
 
 

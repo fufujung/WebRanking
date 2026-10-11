@@ -1,16 +1,12 @@
-import { redirect } from "next/navigation";
-import { isAdmin } from "@/lib/auth";
-import { LoginForm } from "./LoginForm";
+import { notFound, redirect } from "next/navigation";
+import { adminPath, isAdmin } from "@/lib/auth";
+import { LoginCard } from "./LoginCard";
 
 export const metadata = { title: "เข้าสู่ระบบ" };
 
 export default async function LoginPage() {
   if (await isAdmin()) redirect("/admin");
-  return (
-    <div className="card" style={{ maxWidth: 400, margin: "40px auto" }}>
-      <h1>เข้าสู่ระบบผู้ดูแล</h1>
-      <p className="muted small">สำหรับบันทึกผลการแข่งและจัดการข้อมูล</p>
-      <LoginForm />
-    </div>
-  );
+  // With a secret address set, the login page lives only there.
+  if (adminPath()) notFound();
+  return <LoginCard />;
 }
