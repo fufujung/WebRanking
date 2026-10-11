@@ -11,6 +11,7 @@ import {
   ChannelType,
   FileUploadBuilder,
   LabelBuilder,
+  MessageFlags,
   ModalBuilder,
   PermissionFlagsBits,
   TextInputBuilder,
@@ -23,6 +24,9 @@ import {
   type Client,
   type Guild,
   type ModalSubmitInteraction,
+  type AnySelectMenuInteraction,
+  type StringSelectMenuInteraction,
+  type UserSelectMenuInteraction,
   type OverwriteResolvable,
   type User,
 } from "discord.js";
@@ -33,14 +37,11 @@ import {
   championEmbed,
   draftEmbed,
   overviewEmbed,
-  parseRosterText,
   parseThaiTime,
   registrationPanel,
-  ROSTER_FORMAT,
   resultLine,
   roomEmbed,
   rosterLines,
-  rosterText,
   teamMemberIds,
   when,
 } from "./tourFormat.js";
@@ -123,7 +124,8 @@ export function roomButtons(tid: string, m: BracketMatch, disabled = false) {
 export function resultModal(tid: string, b: Bracket, m: BracketMatch) {
   const a = m.teamA!.name;
   const bb = m.teamB!.name;
-  const need = Math.ceil(b.bestOf / 2);
+  const bestOf = m.bestOf ?? b.bestOf;
+  const need = Math.ceil(bestOf / 2);
   return new ModalBuilder()
     .setCustomId(`tr:tsm:${tid}:${m.id}`)
     .setTitle(`ส่งผล M${m.number}`.slice(0, 45))
@@ -139,8 +141,8 @@ export function resultModal(tid: string, b: Bracket, m: BracketMatch) {
             .addOptions({ label: a.slice(0, 100), value: "A", emoji: "🔵" }, { label: bb.slice(0, 100), value: "B", emoji: "🔴" }),
         ),
       new LabelBuilder()
-        .setLabel(`สกอร์ ${a} - ${bb}`.slice(0, 45))
-        .setDescription(`Bo${b.bestOf}: ทีมที่ชนะต้องได้ ${need} เช่น ${need}-${Math.max(0, need - 1)} (ใส่สกอร์ ${a} ก่อน)`.slice(0, 100))
+        .setLabel("สกอร์ (ทีมที่ชนะ - ทีมที่แพ้)")
+        .setDescription(`Bo${bestOf}: ทีมที่ชนะต้องได้ ${need} เกม เช่น ${need}-${Math.max(0, need - 1)}`.slice(0, 100))
         .setTextInputComponent(new TextInputBuilder().setCustomId("score").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(7).setPlaceholder(`${need}-${Math.max(0, need - 1)}`)),
       new LabelBuilder()
         .setLabel("รูปสกอร์บอร์ด (ทุกเกม)")
@@ -149,17 +151,19 @@ export function resultModal(tid: string, b: Bracket, m: BracketMatch) {
     );
 }
 
-/** Reads the result form's score ("2-1", "2 : 1") for a best-of series. Returns the problem in Thai when it doesn't add up. */
+/**
+ * Reads the result form's score ("2-1", "0-2", "2 : 1") for a best-of series. The higher number always goes to the
+ * team picked as the winner, whichever order it was typed in. Returns the problem in Thai when it doesn't add up.
+ */
 export function parseSeriesScore(text: string, winner: "A" | "B", bestOf: number, names: { A: string; B: string }): { scoreA: number; scoreB: number } | { error: string } {
   const m = /^\s*(\d{1,2})\s*[-–:]\s*(\d{1,2})\s*$/.exec(text);
-  if (!m) return { error: `อ่านสกอร์ "${text.slice(0, 20)}" ไม่ออก ใส่แบบ 2-1 (สกอร์ ${names.A} ก่อน)` };
-  const scoreA = Number(m[1]);
-  const scoreB = Number(m[2]);
+  if (!m) return { error: `อ่านสกอร์ "${text.slice(0, 20)}" ไม่ออก ใส่แบบ 2-1` };
+  const w = Math.max(Number(m[1]), Number(m[2]));
+  const l = Math.min(Number(m[1]), Number(m[2]));
   const need = Math.ceil(bestOf / 2);
-  const [w, l] = winner === "A" ? [scoreA, scoreB] : [scoreB, scoreA];
-  if (w <= l) return { error: `เลือก ${names[winner]} ชนะ แต่สกอร์ ${scoreA}-${scoreB} ไม่ได้ให้ ${names[winner]} ชนะ (ใส่สกอร์ ${names.A} ก่อน)` };
-  if (w !== need || l >= need) return { error: `Bo${bestOf} ทีมที่ชนะต้องได้ ${need} เกม (ส่งมา ${scoreA}-${scoreB})` };
-  return { scoreA, scoreB };
+  if (w === l) return { error: `สกอร์ ${w}-${l} เสมอกัน ทีมที่ชนะต้องได้ ${need} เกม` };
+  if (w !== need) return { error: `Bo${bestOf} ทีมที่ชนะ (${names[winner]}) ต้องได้ ${need} เกม (ส่งมา ${w}-${l})` };
+  return winner === "A" ? { scoreA: w, scoreB: l } : { scoreA: l, scoreB: w };
 }
 
 function organizerButtons(tid: string, m: BracketMatch, force = false) {
@@ -251,48 +255,103 @@ function retryReply(problem: string, button: string) {
   };
 }
 
-const withValue = (input: TextInputBuilder, value?: string) => (value ? input.setValue(value) : input);
 
-interface Draft {
-  team?: string;
-  tag?: string;
-  players: string;
+/** One player as typed into the sign-up form's separate boxes. */
+export interface PlayerInput {
+  name: string;
+  uid: string;
+  server: string;
 }
 
-function rosterModal(tid: string, b: Bracket, team: Entry | null, draft?: Draft) {
-  const players = new TextInputBuilder()
-    .setCustomId("players")
-    .setStyle(TextInputStyle.Paragraph)
-    .setRequired(true)
-    .setMaxLength(2000)
-    .setPlaceholder(`Bank, 812345678, Asia\nFuFu, 812345679, Asia`);
-  const text = draft?.players ?? (team ? rosterText(team) : "");
-  if (text) players.setValue(text.slice(0, 2000));
-  const mates = new UserSelectMenuBuilder().setCustomId("members").setRequired(false).setMinValues(0).setMaxValues(10);
-  const current = team ? teamMemberIds(team).filter((id) => id !== team.captainDiscordId) : [];
-  if (current.length) mates.setDefaultUsers(current.slice(0, 10));
-  const modal = new ModalBuilder()
-    .setCustomId(team ? `tr:tem:${tid}:${team.id}` : `tr:trm:${tid}`)
-    .setTitle((team ? `แก้รายชื่อ ${team.name}` : `สมัครทีม ${b.name}`).slice(0, 45));
-  if (!team) {
-    modal.addLabelComponents(
-      new LabelBuilder().setLabel("ชื่อทีม").setTextInputComponent(withValue(new TextInputBuilder().setCustomId("team").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100), draft?.team)),
-      new LabelBuilder()
-        .setLabel("ชื่อย่อทีม (ไม่บังคับ)")
-        .setTextInputComponent(withValue(new TextInputBuilder().setCustomId("tag").setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(12).setPlaceholder("เช่น THK"), draft?.tag)),
+/**
+ * A team being put together one player at a time (sign-up, or a captain changing the roster).
+ * Kept in memory until it is sent; a restart of the bot means starting the form again.
+ */
+interface Builder {
+  team: string;
+  tag: string;
+  players: PlayerInput[];
+  members: string[];
+  /** What was last typed for a player that was turned down, to fill the box again. */
+  typed?: Partial<PlayerInput>;
+}
+
+/** Checks one player's boxes. Returns the cleaned player, or the problem in Thai. */
+export function checkPlayer(p: PlayerInput): PlayerInput | { error: string } {
+  const clean = { name: p.name.trim(), uid: p.uid.trim(), server: p.server.trim() };
+  if (!clean.name || !clean.uid || !clean.server) return { error: "กรอกให้ครบทั้ง ชื่อตัวละคร, UID และ Server" };
+  if (clean.name.length > 100) return { error: "ชื่อตัวละครยาวเกิน 100 ตัวอักษร" };
+  if (clean.uid.length > 40 || clean.server.length > 40) return { error: "UID หรือ Server ยาวเกิน 40 ตัวอักษร" };
+  return clean;
+}
+
+const textBox = (id: string, required: boolean, max: number, value?: string, placeholder?: string) => {
+  const box = new TextInputBuilder().setCustomId(id).setStyle(TextInputStyle.Short).setRequired(required).setMaxLength(max);
+  if (placeholder) box.setPlaceholder(placeholder);
+  return value ? box.setValue(value.slice(0, max)) : box;
+};
+
+/** The three boxes of one player: character name, UID and server. */
+function playerLabels(prefix: string, p?: Partial<PlayerInput>) {
+  return [
+    new LabelBuilder().setLabel(`${prefix}ชื่อตัวละคร`.slice(0, 45)).setDescription("ต้องตรงกับชื่อในสกอร์บอร์ด").setTextInputComponent(textBox("name", true, 100, p?.name, "เช่น Bank")),
+    new LabelBuilder().setLabel("UID").setTextInputComponent(textBox("uid", true, 40, p?.uid, "เช่น 812345678")),
+    new LabelBuilder().setLabel("Server").setTextInputComponent(textBox("server", true, 40, p?.server, "เช่น Asia")),
+  ];
+}
+
+/** Sign-up, step 1: the team's name and tag, and the first player while the team has none yet. */
+function teamModal(tid: string, b: Bracket, d?: Builder) {
+  const modal = new ModalBuilder().setCustomId(`tr:trm:${tid}`).setTitle(`สมัครทีม ${b.name}`.slice(0, 45));
+  modal.addLabelComponents(
+    new LabelBuilder().setLabel("ชื่อทีม").setTextInputComponent(textBox("team", true, 100, d?.team)),
+    new LabelBuilder().setLabel("ชื่อย่อทีม (ไม่บังคับ)").setTextInputComponent(textBox("tag", false, 12, d?.tag, "เช่น THK")),
+  );
+  if (!d?.players.length) modal.addLabelComponents(...playerLabels("ผู้เล่นคนที่ 1: ", d?.typed));
+  return modal;
+}
+
+/** Adding (index "n") or changing one player of the team being put together. */
+function playerModal(tid: string, key: string, index: number | "n", p?: Partial<PlayerInput>) {
+  const title = index === "n" ? "เพิ่มผู้เล่น" : `แก้ผู้เล่นคนที่ ${index + 1}`;
+  return new ModalBuilder().setCustomId(`tr:tbm:${tid}:${key}:${index}`).setTitle(title).addLabelComponents(...playerLabels("", p));
+}
+
+/** The message a captain builds the team in: the players so far, and buttons to add, change, remove and send. */
+function builderView(tid: string, key: string, b: Bracket, d: Builder, note = "") {
+  const isNew = key === "new";
+  const n = d.players.length;
+  const lines = d.players.map((p, i) => `${i + 1}. **${p.name}** · UID ${p.uid} · ${p.server}`);
+  const need = n < b.rosterMin ? `เพิ่มผู้เล่นอีกอย่างน้อย ${b.rosterMin - n} คน แล้วกด ✅ ${isNew ? "ส่งใบสมัคร" : "บันทึกรายชื่อ"}` : `ครบแล้ว กด ✅ ${isNew ? "ส่งใบสมัคร" : "บันทึกรายชื่อ"} (เพิ่มได้ถึง ${b.rosterMax} คน)`;
+  const content = [
+    note,
+    `**${isNew ? "สมัครทีม" : "แก้รายชื่อ"} ${d.team}**${d.tag ? ` (${d.tag})` : ""} · ผู้เล่น ${n}/${b.rosterMin}-${b.rosterMax} คน`,
+    lines.join("\n") || "ยังไม่มีผู้เล่น",
+    d.members.length ? `👥 เพื่อนร่วมทีมใน Discord: ${d.members.map((id) => `<@${id}>`).join(" ")}` : "",
+    "",
+    need,
+  ]
+    .filter((x, i) => x || i > 0)
+    .join("\n")
+    .trim();
+  const id = (action: string) => `tr:${action}:${tid}:${key}`;
+  const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(id("tba")).setLabel("เพิ่มผู้เล่น").setEmoji("➕").setStyle(ButtonStyle.Primary).setDisabled(n >= b.rosterMax),
+    new ButtonBuilder().setCustomId(id("tbs")).setLabel(isNew ? "ส่งใบสมัคร" : "บันทึกรายชื่อ").setEmoji("✅").setStyle(ButtonStyle.Success).setDisabled(n < b.rosterMin),
+  );
+  if (isNew) buttons.addComponents(new ButtonBuilder().setCustomId(`tr:treg:${tid}`).setLabel("แก้ชื่อทีม").setEmoji("✏️").setStyle(ButtonStyle.Secondary));
+  const rows: ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder | UserSelectMenuBuilder>[] = [];
+  if (n) {
+    const options = d.players.map((p, i) => ({ label: `${i + 1}. ${p.name}`.slice(0, 100), description: `UID ${p.uid} · ${p.server}`.slice(0, 100), value: String(i) }));
+    rows.push(
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId(id("tbe")).setPlaceholder("✏️ แก้ข้อมูลผู้เล่น…").addOptions(options)),
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId(id("tbr")).setPlaceholder("🗑️ ลบผู้เล่น…").addOptions(options)),
     );
   }
-  modal.addLabelComponents(
-    new LabelBuilder()
-      .setLabel(`รายชื่อผู้เล่น ${b.rosterMin}-${b.rosterMax} คน (บรรทัดละคน)`)
-      .setDescription(`พิมพ์ ${ROSTER_FORMAT} คั่นด้วยจุลภาค`)
-      .setTextInputComponent(players),
-    new LabelBuilder()
-      .setLabel("เพื่อนร่วมทีมใน Discord (ไม่บังคับ)")
-      .setDescription("คนที่เลือกจะเข้าห้องแข่งของทีมได้ ส่วนหัวหน้าทีมเข้าได้อยู่แล้ว")
-      .setUserSelectMenuComponent(mates),
-  );
-  return modal;
+  const mates = new UserSelectMenuBuilder().setCustomId(id("tbu")).setPlaceholder("👥 เพื่อนร่วมทีมใน Discord (ไม่บังคับ) เข้าห้องแข่งได้").setMinValues(0).setMaxValues(10);
+  if (d.members.length) mates.setDefaultUsers(d.members.slice(0, 10));
+  rows.push(new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(mates), buttons);
+  return { content: content.slice(0, 1900), components: rows, allowedMentions: { parse: [] as [] } };
 }
 
 export interface TourOptions {
@@ -309,8 +368,8 @@ export class TourManager {
   private siteUrl?: string;
   private log: (...args: unknown[]) => void;
   private now: () => Date;
-  /** What a captain last typed into a form that was turned down, to fill the form again on retry. */
-  private drafts = new Map<string, Draft>();
+  /** Teams being put together, by "user:tournament:new" (sign-up) or "user:tournament:teamId" (roster change). */
+  private builders = new Map<string, Builder>();
   /** The last reason each match room could not be made, so the same problem is reported once. */
   private roomFailures = new Map<string, string>();
   /** Tournaments being synced right now, so overlapping ticks don't create a room twice. */
@@ -496,6 +555,7 @@ export class TourManager {
       startDate: start.toISOString(),
       format: i.options.getString("format", true) as Format,
       bestOf: i.options.getInteger("best_of") ?? 3,
+      finalBestOf: i.options.getInteger("final_best_of"),
       lateMinutes: i.options.getInteger("late") ?? 15,
       rosterMin,
       rosterMax,
@@ -693,6 +753,7 @@ export class TourManager {
     const organizer = this.isOrganizer(tour, i.user.id, info);
     try {
       if (action === "treg" || action === "tmy" || action === "ted" || action === "tcp" || action === "twd") return await this.teamButton(i, tour, action, ref, extra, organizer);
+      if (action === "tba" || action === "tbs") return await this.onBuilder(i, action, tid, ref);
       if (action === "tls") {
         const b = await this.bracket(tid);
         const text = b.teams.map((t) => `**${t.name}**\n${rosterLines(t)}`).join("\n\n") || "ยังไม่มีทีมสมัคร";
@@ -789,7 +850,8 @@ export class TourManager {
 
   async onModal(i: ModalSubmitInteraction) {
     const [, action, tid, ref] = i.customId.split(":");
-    if (action === "trm" || action === "tem" || action === "tcm") return this.teamModal(i, action, tid, ref);
+    if (action === "trm" || action === "tcm") return this.teamModal(i, action, tid, ref);
+    if (action === "tbm") return this.onBuilder(i, action, tid, ref, i.customId.split(":")[4]);
     if (action !== "tdm") return;
     const tour = this.tours.get(tid);
     if (!tour) return void (await i.reply({ ephemeral: true, content: "ไม่พบทัวร์นาเมนต์นี้" }));
@@ -828,7 +890,7 @@ export class TourManager {
         }));
       }
       if (b.maxTeams && b.teams.length >= b.maxTeams) return void (await i.reply({ ephemeral: true, content: `ทีมเต็มแล้ว (${b.maxTeams} ทีม)` }));
-      return void (await i.showModal(rosterModal(tid, b, null, this.drafts.get(`${i.user.id}:${tid}:new`))));
+      return void (await i.showModal(teamModal(tid, b, this.builders.get(`${i.user.id}:${tid}:new`))));
     }
     if (action === "tmy") {
       if (!mine) {
@@ -851,7 +913,16 @@ export class TourManager {
     if (team.captainDiscordId !== i.user.id) return void (await i.reply({ ephemeral: true, content: "ปุ่มนี้สำหรับหัวหน้าทีมเท่านั้น" }));
     if (action === "ted") {
       if (b.rosterLocked) return void (await i.reply({ ephemeral: true, content: "🔒 ล็อกรายชื่อแล้ว ติดต่อผู้จัดถ้าต้องเปลี่ยน" }));
-      return void (await i.showModal(rosterModal(tid, b, team, this.drafts.get(`${i.user.id}:${tid}:${team.id}`))));
+      // Start from the team as it is now, unless a change is already in progress.
+      const key = `${i.user.id}:${tid}:${team.id}`;
+      const d = this.builders.get(key) ?? {
+        team: team.name,
+        tag: team.tag ?? "",
+        players: team.roster.map((r) => ({ name: r.name, uid: r.uid ?? "", server: r.server ?? "" })),
+        members: teamMemberIds(team).filter((id) => id !== team.captainDiscordId),
+      };
+      this.builders.set(key, d);
+      return void (await i.reply({ ephemeral: true, ...builderView(tid, team.id, b, d) }));
     }
     if (action === "tcp") {
       if (b.rosterLocked) return void (await i.reply({ ephemeral: true, content: "🔒 ล็อกรายชื่อแล้ว ติดต่อผู้จัดถ้าต้องเปลี่ยน" }));
@@ -889,7 +960,6 @@ export class TourManager {
   private async teamModal(i: ModalSubmitInteraction, action: string, tid: string, teamId: string | undefined) {
     const tour = this.tours.get(tid);
     if (!tour) return void (await i.reply({ ephemeral: true, content: "ไม่พบทัวร์นาเมนต์นี้" }));
-    let retry: { key: string; button: string } | null = null;
     try {
       if (action === "tcm") {
         const user = i.fields.getSelectedUsers("captain", true).first();
@@ -910,54 +980,120 @@ export class TourManager {
         return void (await i.editReply({ content: `👑 โอนหัวหน้าทีม **${updated.name}** ให้ <@${user.id}> แล้ว`, allowedMentions: { parse: [] } }));
       }
 
-      const draftKey = `${i.user.id}:${tid}:${action === "trm" ? "new" : teamId}`;
-      const draft: Draft = { players: i.fields.getTextInputValue("players") };
-      if (action === "trm") Object.assign(draft, { team: i.fields.getTextInputValue("team"), tag: i.fields.getTextInputValue("tag") });
-      this.drafts.set(draftKey, draft);
-      retry = { key: draftKey, button: action === "trm" ? `tr:treg:${tid}` : `tr:ted:${tid}:${teamId}` };
-      const parsed = parseRosterText(draft.players);
-      if ("error" in parsed) return void (await i.reply(retryReply(parsed.error, retry.button)));
-      const selected = [...(i.fields.getSelectedUsers("members") ?? new Map()).values()];
-      const bots = selected.filter((u) => u.bot);
-      if (bots.length) return void (await i.reply(retryReply(`${bots.map((u) => u.username).join(", ")} เป็นบอท เลือกเฉพาะคน`, retry.button)));
-      const memberDiscordIds = selected.map((u) => u.id).filter((id) => id !== i.user.id);
-      const players = parsed.players.map((p) => ({ ...p, discordId: null }));
-      await i.deferReply({ ephemeral: true });
+      // trm: sign-up step 1, the team's name (and the first player).
+      const key = `${i.user.id}:${tid}:new`;
+      const d: Builder = this.builders.get(key) ?? { team: "", tag: "", players: [], members: [] };
+      d.team = i.fields.getTextInputValue("team").trim();
+      d.tag = i.fields.getTextInputValue("tag").trim();
+      this.builders.set(key, d);
+      if (!d.players.length) {
+        const typed = { name: i.fields.getTextInputValue("name"), uid: i.fields.getTextInputValue("uid"), server: i.fields.getTextInputValue("server") };
+        const p = checkPlayer(typed);
+        if ("error" in p) {
+          d.typed = typed;
+          return void (await i.reply(retryReply(p.error, `tr:treg:${tid}`)));
+        }
+        d.typed = undefined;
+        d.players.push(p);
+      }
+      const b = await this.bracket(tid);
+      return void (await this.showBuilder(i, b, tid, "new", d));
+    } catch (e) {
+      this.log("team form failed:", e instanceof Error ? e.message : e);
+      if (i.deferred || i.replied) await i.editReply({ content: `❌ ${thaiError(e)}` }).catch(() => null);
+      else await i.reply({ ephemeral: true, content: `❌ ${thaiError(e)}` }).catch(() => null);
+    }
+  }
 
-      if (action === "trm") {
+  // ---------- Putting a team together one player at a time ----------
+
+  /** Shows the team being built: in place when the form was opened from it, otherwise as a new private message. */
+  private async showBuilder(i: ModalSubmitInteraction | ButtonInteraction | AnySelectMenuInteraction, b: Bracket, tid: string, key: string, d: Builder, note = "") {
+    const view = builderView(tid, key, b, d, note);
+    // Only the private builder message is replaced; a form opened from the public sign-up post answers privately.
+    const source = i.isModalSubmit() ? (i.isFromMessage() ? i.message : null) : i.message;
+    if (source?.flags?.has(MessageFlags.Ephemeral)) return void (await (i as ButtonInteraction).update(view));
+    await i.reply({ ephemeral: true, ...view });
+  }
+
+  /** Buttons, menus and forms of the team builder: tba (add), tbe (change), tbr (remove), tbu (Discord teammates), tbm (a player's form), tbs (send). */
+  async onBuilder(i: ButtonInteraction | AnySelectMenuInteraction | ModalSubmitInteraction, action: string, tid: string, key: string, index?: string) {
+    const tour = this.tours.get(tid);
+    if (!tour) return void (await i.reply({ ephemeral: true, content: "ไม่พบทัวร์นาเมนต์นี้" }));
+    const d = this.builders.get(`${i.user.id}:${tid}:${key}`);
+    if (!d) {
+      const again = key === "new" ? "กด 📝 สมัครทีม ใหม่อีกครั้ง" : "กด ⚙️ จัดการทีมของฉัน → แก้รายชื่อ ใหม่อีกครั้ง";
+      return void (await i.reply({ ephemeral: true, content: `ฟอร์มนี้หมดอายุแล้ว (บอทอาจรีสตาร์ท) ${again}` }));
+    }
+    try {
+      const b = await this.bracket(tid);
+      if (action === "tba") {
+        if (d.players.length >= b.rosterMax) return void (await i.reply({ ephemeral: true, content: `ทีมละไม่เกิน ${b.rosterMax} คน` }));
+        return void (await (i as ButtonInteraction).showModal(playerModal(tid, key, "n", d.typed ?? { server: d.players.at(-1)?.server })));
+      }
+      if (action === "tbe" || action === "tbr") {
+        const at = Number((i as StringSelectMenuInteraction).values[0]);
+        const p = d.players[at];
+        if (!p) return void (await this.showBuilder(i, b, tid, key, d));
+        if (action === "tbe") return void (await (i as StringSelectMenuInteraction).showModal(playerModal(tid, key, at, p)));
+        d.players.splice(at, 1);
+        return void (await this.showBuilder(i, b, tid, key, d, `🗑️ ลบ ${p.name} แล้ว`));
+      }
+      if (action === "tbu") {
+        const picked = [...(i as UserSelectMenuInteraction).users.values()];
+        const bots = picked.filter((u) => u.bot);
+        d.members = picked.filter((u) => !u.bot && u.id !== i.user.id).map((u) => u.id);
+        return void (await this.showBuilder(i, b, tid, key, d, bots.length ? `⚠️ ${bots.map((u) => u.username).join(", ")} เป็นบอท ไม่ได้ใส่ให้` : ""));
+      }
+      if (action === "tbm") {
+        const m = i as ModalSubmitInteraction;
+        const typed = { name: m.fields.getTextInputValue("name"), uid: m.fields.getTextInputValue("uid"), server: m.fields.getTextInputValue("server") };
+        const at = index === "n" ? d.players.length : Number(index);
+        const p = checkPlayer(typed);
+        const clash = "error" in p ? null : d.players.find((x, n) => n !== at && x.uid === p.uid && x.server.toLowerCase() === p.server.toLowerCase());
+        if ("error" in p || clash) {
+          if (index === "n") d.typed = typed;
+          const problem = "error" in p ? p.error : `UID ${clash!.uid} (${clash!.server}) ใส่ไว้แล้วเป็น ${clash!.name}`;
+          return void (await this.showBuilder(i, b, tid, key, d, `❌ ${problem} กด ➕ เพิ่มผู้เล่น อีกครั้ง (ข้อมูลที่กรอกไว้ยังอยู่)`));
+        }
+        if (index === "n" && d.players.length >= b.rosterMax) return void (await this.showBuilder(i, b, tid, key, d, `❌ ทีมละไม่เกิน ${b.rosterMax} คน`));
+        d.typed = undefined;
+        d.players[at] = p;
+        return void (await this.showBuilder(i, b, tid, key, d, `${index === "n" ? "➕ เพิ่ม" : "✏️ แก้"} ${p.name} แล้ว`));
+      }
+      // tbs: send.
+      const players = d.players.map((p) => ({ name: p.name, uid: p.uid || null, server: p.server || null, discordId: null }));
+      if (key === "new") {
+        if (!b.registrationOpen || b.status === "LIVE" || b.status === "DONE") return void (await i.reply({ ephemeral: true, content: "🔒 ปิดรับสมัครแล้ว" }));
         const entry = await this.api.post<Entry>(`/tournaments/${tid}/registrations`, {
-          teamName: i.fields.getTextInputValue("team"),
-          tag: i.fields.getTextInputValue("tag") || null,
+          teamName: d.team,
+          tag: d.tag || null,
           captainDiscordId: i.user.id,
-          memberDiscordIds,
+          memberDiscordIds: d.members,
           players,
         });
-        this.drafts.delete(draftKey);
-        await this.refreshPanel(i.client, tour);
-        const b = await this.bracket(tid);
-        await i.editReply({
+        this.builders.delete(`${i.user.id}:${tid}:${key}`);
+        await (i as ButtonInteraction).update({
           content: `✅ สมัครทีม **${entry.name}** แล้ว คุณเป็นหัวหน้าทีม\n${rosterLines(entry)}\n\nแก้รายชื่อได้จากปุ่มด้านล่าง หรือปุ่ม ⚙️ จัดการทีมของฉัน ในประกาศรับสมัคร (ก่อนแมตช์แรกเริ่ม)`.slice(0, 1900),
-          components: captainButtons(tid, entry, b),
+          components: captainButtons(tid, entry, await this.bracket(tid)),
           allowedMentions: { parse: [] },
         });
+        await this.refreshPanel(i.client, tour);
         await this.announceSignup(i.client, tour, entry);
         return;
       }
-
-      // tem: the captain changes the roster.
-      const b = await this.bracket(tid);
-      const team = b.teams.find((t) => t.id === teamId);
-      if (!team || team.captainDiscordId !== i.user.id) return void (await i.editReply("เฉพาะหัวหน้าทีมเท่านั้น"));
-      const updated = await this.api.put<Entry>(`/tournaments/${tid}/entries/${team.id}/roster`, { players, memberDiscordIds });
-      this.drafts.delete(draftKey);
+      const team = b.teams.find((t) => t.id === key);
+      if (!team || team.captainDiscordId !== i.user.id) return void (await i.reply({ ephemeral: true, content: "เฉพาะหัวหน้าทีมเท่านั้น" }));
+      const updated = await this.api.put<Entry>(`/tournaments/${tid}/entries/${team.id}/roster`, { players, memberDiscordIds: d.members });
+      this.builders.delete(`${i.user.id}:${tid}:${key}`);
+      await (i as ButtonInteraction).update({ content: `✅ อัปเดตทีม **${updated.name}** แล้ว\n${rosterLines(updated)}`.slice(0, 1900), components: [], allowedMentions: { parse: [] } });
       await this.refreshTeamRooms(i.client, tour);
       await this.refreshPanel(i.client, tour);
-      await i.editReply({ content: `✅ อัปเดตทีม **${updated.name}** แล้ว\n${rosterLines(updated)}`.slice(0, 1900), allowedMentions: { parse: [] } });
     } catch (e) {
-      this.log("team form failed:", e instanceof Error ? e.message : e);
-      const reply = retry ? retryReply(thaiError(e), retry.button) : { ephemeral: true, content: `❌ ${thaiError(e)}`, components: [] };
-      if (i.deferred || i.replied) await i.editReply({ content: reply.content, components: reply.components }).catch(() => null);
-      else await i.reply(reply).catch(() => null);
+      this.log("team builder failed:", e instanceof Error ? e.message : e);
+      const content = `❌ ${thaiError(e)}\nแก้ในฟอร์มด้านบนแล้วกดส่งใหม่ได้เลย`;
+      if (i.deferred || i.replied) await i.followUp({ ephemeral: true, content }).catch(() => null);
+      else await i.reply({ ephemeral: true, content }).catch(() => null);
     }
   }
 

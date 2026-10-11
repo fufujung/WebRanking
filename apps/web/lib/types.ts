@@ -130,6 +130,7 @@ export interface Tournament {
   matchCount?: number;
   format: Format | null;
   bestOf: number;
+  finalBestOf: number | null;
   lateMinutes: number;
   rosterMin: number;
   rosterMax: number;
@@ -162,6 +163,7 @@ export interface BracketSlot {
   round: number;
   position: number;
   label: string;
+  bestOf: number;
   teamA: Entry | null;
   teamB: Entry | null;
   byeA: boolean;
@@ -192,6 +194,7 @@ export interface Bracket {
   format: Format | null;
   status: BracketStatus;
   bestOf: number;
+  finalBestOf: number | null;
   lateMinutes: number;
   rosterMin: number;
   rosterMax: number;

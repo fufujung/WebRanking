@@ -16,6 +16,7 @@ import {
   buildBracket,
   complete,
   firstRoundPositions,
+  isFinal,
   isFinished,
   placements,
   positionsProblem,
@@ -483,6 +484,9 @@ async function liveContext(tournamentId: string, ref: string, allowDone = false)
 }
 
 const wins = (bestOf: number) => Math.ceil(bestOf / 2);
+/** A match's best of: the final can be set longer (or shorter) than the other rounds. */
+const bestOfFor = (t: { format: string | null; bestOf: number; finalBestOf: number | null }, s: Pick<Slot, "stage" | "round">, slots: Pick<Slot, "stage" | "round">[]) =>
+  t.format && isFinal(t.format as Format, s, slots) ? (t.finalBestOf ?? t.bestOf) : t.bestOf;
 
 /** Undoes results and deletes the series behind them (other than `keep`). */
 async function undo(slots: Slot[], rows: BracketMatch[], code: string, keep?: string | null) {
@@ -595,7 +599,7 @@ export function walkover(tournamentId: string, ref: string, body: unknown) {
     }
 
     const doomed = row.status === "DONE" ? await undo(slots, rows, row.code) : [];
-    const w = wins(t.bestOf);
+    const w = wins(bestOfFor(t, slots.find((s) => s.code === row.code)!, slots));
     complete(slots, row.code, { winnerId: input.teamId, scoreA: side === "A" ? w : 0, scoreB: side === "B" ? w : 0, outcome: "WALKOVER" });
     await prisma.$transaction(async (tx) => {
       const note = input.note ?? (input.mode === "claim" ? "อีกทีมมาไม่ทันเวลา" : "ผู้จัดตัดสิน");
@@ -695,6 +699,7 @@ function shapeSlot(t: Tournament, r: BracketMatch, rows: BracketMatch[], teams: 
     round: r.round,
     position: r.position,
     label: roundLabel(t.format as Format, r as unknown as Slot, slots),
+    bestOf: bestOfFor(t, r as unknown as Slot, slots),
     teamA: team(r.teamAId),
     teamB: team(r.teamBId),
     byeA: r.byeA,
@@ -732,6 +737,7 @@ export async function bracketView(tournamentId: string) {
     format: t.format,
     status: t.bracketStatus,
     bestOf: t.bestOf,
+    finalBestOf: t.finalBestOf,
     lateMinutes: t.lateMinutes,
     rosterMin: t.rosterMin,
     rosterMax: t.rosterMax,

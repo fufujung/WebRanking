@@ -119,6 +119,8 @@ export interface BracketMatch {
   stage: "W" | "L" | "GF" | "P3" | "RR";
   round: number;
   label: string;
+  /** This match's best of (the final may differ from the other rounds). */
+  bestOf?: number;
   teamA: Entry | null;
   teamB: Entry | null;
   byeA: boolean;
@@ -146,6 +148,8 @@ export interface Bracket {
   format: Format | null;
   status: "NONE" | "DRAFT" | "LIVE" | "DONE";
   bestOf: number;
+  /** The final's best of; null = the same as the other rounds. */
+  finalBestOf?: number | null;
   lateMinutes: number;
   rosterMin: number;
   rosterMax: number;

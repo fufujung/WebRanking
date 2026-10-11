@@ -69,7 +69,7 @@ function Stage({ slots, onSelect, selectedId }: { slots: BracketSlot[]; onSelect
         const inRound = slots.filter((s) => s.round === r).sort((a, b) => a.position - b.position);
         return (
           <div key={r} className="bracket-col">
-            <div className="bracket-round">{inRound[0].label}</div>
+            <div className="bracket-round">{inRound[0].label}{inRound[0].bestOf ? ` · BO${inRound[0].bestOf}` : ""}</div>
             <div className="bracket-matches">
               {inRound.map((s) => <MatchBox key={s.id} slot={s} onSelect={onSelect} selected={s.id === selectedId} />)}
             </div>

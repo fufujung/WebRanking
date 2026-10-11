@@ -71,6 +71,8 @@ export const tournamentInput = z.object({
   /** null = no bracket: results are recorded freely. */
   format: z.enum(FORMATS).nullish().transform((v) => v ?? null),
   bestOf: z.coerce.number().int().min(1).max(9).refine((n) => n % 2 === 1, { message: "Best of must be an odd number" }).default(3),
+  /** The final's (grand final's) best of; null = the same as every other round. */
+  finalBestOf: z.coerce.number().int().min(1).max(9).refine((n) => n % 2 === 1, { message: "Best of must be an odd number" }).nullish().transform((v) => v ?? null),
   lateMinutes: z.coerce.number().int().min(0).max(240).default(15),
   rosterMin: z.coerce.number().int().min(1).max(10).default(3),
   rosterMax: z.coerce.number().int().min(1).max(10).default(5),

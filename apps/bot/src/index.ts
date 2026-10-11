@@ -67,6 +67,7 @@ client.on(Events.InteractionCreate, async (i) => {
     else if (i.isAutocomplete()) await bot.onAutocomplete(i);
     else if (i.isButton()) await bot.onButton(i);
     else if (i.isModalSubmit()) await bot.onModal(i);
+    else if (i.isAnySelectMenu()) await bot.onSelect(i);
     else if (i.isMessageContextMenuCommand() && i.commandName === READ_POST_COMMAND) await bot.onReadPostCommand(i);
   } catch (e) {
     console.error("[bot] interaction:", e);

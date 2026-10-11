@@ -487,6 +487,13 @@ export function placements(format: Format, slots: Slot[], teamIds: string[]): Ma
   return result;
 }
 
+/** The match that decides the champion: the last round of single elimination, or the grand final(s) of double elimination. */
+export function isFinal(format: Format, s: Pick<Slot, "stage" | "round">, slots: Pick<Slot, "stage" | "round">[]) {
+  if (format === "DOUBLE_ELIMINATION") return s.stage === "GF";
+  if (format === "SINGLE_ELIMINATION") return s.stage === "W" && s.round === Math.max(0, ...slots.filter((x) => x.stage === "W").map((x) => x.round));
+  return false;
+}
+
 /** Thai name of a slot's round, e.g. "รอบรองชนะเลิศ" or "สายล่าง รอบ 3". */
 export function roundLabel(format: Format, s: Pick<Slot, "stage" | "round">, slots: Pick<Slot, "stage" | "round">[]): string {
   const last = (stage: Stage) => Math.max(0, ...slots.filter((x) => x.stage === stage).map((x) => x.round));

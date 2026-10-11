@@ -139,6 +139,7 @@ function bracketSettings(form: FormData) {
   if (form.has("format")) out.format = orNull(text(form, "format"));
   for (const k of ["bestOf", "lateMinutes", "rosterMin", "rosterMax"]) if (n(k) !== undefined) out[k] = n(k);
   if (form.has("maxTeams")) out.maxTeams = n("maxTeams") ?? null;
+  if (form.has("finalBestOf")) out.finalBestOf = n("finalBestOf") ?? null;
   // Checkboxes: a hidden "present" marker tells unchecked apart from locked.
   for (const k of ["registrationOpen", "thirdPlaceMatch", "grandFinalReset"]) if (form.has(`${k}Present`)) out[k] = form.get(k) === "on";
   return out;
