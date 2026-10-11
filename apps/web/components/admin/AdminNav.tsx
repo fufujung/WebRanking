@@ -11,6 +11,7 @@ const MAIN: { href: string; label: string; icon: IconName }[] = [
   { href: "/admin/tournaments", label: "ทัวร์นาเมนต์", icon: "tournaments" },
   { href: "/admin/teams", label: "ทีม", icon: "teams" },
   { href: "/admin/players", label: "ผู้เล่น", icon: "players" },
+  { href: "/admin/ads", label: "โฆษณาร้าน", icon: "megaphone" },
 ];
 
 const MORE: { href: string; label: string; icon: IconName }[] = [

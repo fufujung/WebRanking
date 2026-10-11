@@ -17,6 +17,7 @@ const PATHS = {
   image: "M4 5h16v14H4zM4 16l5-5 4 4 2-2 5 5M15 9h.01",
   flag: "M5 21V4M5 4h12l-2 4 2 4H5",
   menu: "M4 6h16M4 12h16M4 18h16",
+  megaphone: "M3 10v4a1 1 0 0 0 1 1h3l6 4V5L7 9H4a1 1 0 0 0-1 1zM17 8a5 5 0 0 1 0 8M7 15l1 5h3l-1-4",
 } as const;
 
 export type IconName = keyof typeof PATHS;

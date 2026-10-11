@@ -4,6 +4,7 @@ import type { Overview } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
 import { Empty, MatchCard, PlayerLink, StatTile, StatusBadge, TeamLink } from "@/components/ui";
 import { RankMove, TierBadge } from "@/components/Tier";
+import { AdCards } from "@/components/ads/Ads";
 
 export default async function Home() {
   const o = await api<Overview>("/stats/overview");
@@ -24,6 +25,8 @@ export default async function Home() {
         <StatTile label="ทัวร์นาเมนต์" value={o.totals.tournaments} />
         <StatTile label="แมตช์" value={o.totals.matches} />
       </div>
+
+      <AdCards />
 
       <div className="grid grid-2 mt">
         <section>

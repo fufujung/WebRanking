@@ -33,6 +33,7 @@ tags:
   - name: Stats
   - name: Images
   - name: API keys
+  - name: Ads
 paths:
   /api/v1/rankings/teams:
     get:
@@ -707,6 +708,56 @@ paths:
       summary: Revoke an API key (admin)
       responses:
         "204": { description: Revoked }
+  /api/v1/ads:
+    get:
+      tags: [Ads]
+      summary: List shop ads
+      parameters:
+        - { name: placement, in: query, schema: { type: string, enum: [banner, card, popup] } }
+        - { name: live, in: query, schema: { type: string, enum: ["1", "0"] }, description: "1 = only ads switched on and inside their start/end dates" }
+      responses:
+        "200":
+          description: Ads, newest first
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Ad" } } } }
+    post:
+      tags: [Ads]
+      summary: Create an ad (admin)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Ad" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/ads/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [Ads]
+      summary: Get an ad
+      responses:
+        "200": { description: The ad, content: { application/json: { schema: { $ref: "#/components/schemas/Ad" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Ads]
+      summary: Replace an ad's settings (admin)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AdInput" } } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Ad" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Ads]
+      summary: Delete an ad (admin)
+      responses:
+        "204": { description: Deleted }
+  /api/v1/ads/{id}/click:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Ads]
+      summary: Count a click (admin key) and get the link to send the visitor to
+      responses:
+        "200": { description: Counted, content: { application/json: { schema: { type: object, properties: { linkUrl: { type: string }, clicks: { type: integer } } } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
 components:
   securitySchemes:
     ApiKey:
@@ -724,6 +775,31 @@ components:
     Forbidden: { description: Read-only key used for a write, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    Ad:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        placement: { type: string, enum: [banner, card, popup] }
+        imageUrl: { type: string }
+        mobileImageUrl: { type: string, nullable: true }
+        linkUrl: { type: string }
+        active: { type: boolean }
+        startsAt: { type: string, format: date-time, nullable: true }
+        endsAt: { type: string, format: date-time, nullable: true }
+        clicks: { type: integer }
+    AdInput:
+      type: object
+      required: [title, placement, imageUrl, linkUrl]
+      properties:
+        title: { type: string, maxLength: 100 }
+        placement: { type: string, enum: [banner, card, popup], description: "banner = strip under the menu, card = home page card, popup = once-a-day popup" }
+        imageUrl: { type: string, description: http(s) URL or /uploads/... path }
+        mobileImageUrl: { type: string, nullable: true, description: Narrower banner image for phones }
+        linkUrl: { type: string, description: http(s) URL }
+        active: { type: boolean, default: true }
+        startsAt: { type: string, format: date-time, nullable: true }
+        endsAt: { type: string, format: date-time, nullable: true }
     Error:
       type: object
       properties:

@@ -346,3 +346,19 @@ export interface AdminDashboard {
     openRegistration: { id: string; name: string; teams: number; maxTeams: number | null }[];
   };
 }
+
+export type AdPlacement = "banner" | "card" | "popup";
+
+export interface Ad {
+  id: string;
+  title: string;
+  placement: AdPlacement;
+  imageUrl: string;
+  mobileImageUrl: string | null;
+  linkUrl: string;
+  active: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+  clicks: number;
+  createdAt: string;
+}
