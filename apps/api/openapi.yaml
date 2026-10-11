@@ -264,6 +264,47 @@ paths:
       responses:
         "200": { description: Player detail }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/players/discord/{discordId}:
+    get:
+      tags: [Players]
+      summary: Players a Discord account plays as (admin)
+      description: Used by "Log in with Discord" on the website. Players the bot put on a roster with this account are linked on the way.
+      parameters:
+        - { name: discordId, in: path, required: true, schema: { type: string, pattern: "^[0-9]{5,25}$" } }
+      responses:
+        "200": { description: "{ data: Player[] }" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/players/discord/{discordId}/claim:
+    post:
+      tags: [Players]
+      summary: Link the player with this UID to a Discord account, or create them (admin)
+      parameters:
+        - { name: discordId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uid]
+              properties:
+                uid: { type: string }
+                server: { type: string }
+                name: { type: string, description: Needed only when no player has this UID yet }
+      responses:
+        "200": { description: Existing player linked }
+        "201": { description: New player created and linked }
+        "400": { description: "No player has this UID and no name was sent (details.needsName: true)" }
+        "409": { description: The player is linked to another Discord account }
+  /api/v1/players/{id}/discord:
+    delete:
+      tags: [Players]
+      summary: Remove a player's Discord link (admin)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: The player, now without discordId }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/players/{id}/merge:
     parameters: [{ $ref: "#/components/parameters/id" }]
     post:

@@ -7,6 +7,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { isAdmin } from "@/lib/auth";
+import { getMember } from "@/lib/member";
+import { discordEnabled } from "@/lib/discord";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 export const metadata: Metadata = {
@@ -16,6 +18,7 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const admin = await isAdmin();
+  const member = await getMember();
   const theme = (await cookies()).get("theme")?.value === "light" ? "light" : "dark";
   return (
     <html lang="th" data-theme={theme === "light" ? "light" : undefined}>
@@ -34,6 +37,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/players">ผู้เล่น</Link>
               <Link href="/matches">ผลการแข่ง</Link>
               {admin && <Link href="/admin">จัดการข้อมูล</Link>}
+              {member ? (
+                <Link href="/me" className="nav-me" title="โปรไฟล์ของฉัน">
+                  {member.avatar ? <img src={member.avatar} alt="" /> : null}
+                  {member.name}
+                </Link>
+              ) : discordEnabled() ? (
+                <Link href="/me">เข้าสู่ระบบ</Link>
+              ) : null}
             </nav>
             <div className="header-tools">
             <form action="/search" className="header-search" role="search">

@@ -71,6 +71,8 @@ export interface Player {
   /** In-game UID: the same player whatever name they use. */
   uid?: string | null;
   server?: string | null;
+  /** Discord account that logged in on the website as this player. */
+  discordId?: string | null;
   mmr?: number;
   peakMmr?: number;
   team?: TeamSummary | null;

@@ -6,6 +6,7 @@ import type { Player, PlayerDetail, Team } from "@/lib/types";
 import { PlayerForm } from "@/components/admin/PlayerForm";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { MergePlayer } from "@/components/admin/MergePlayer";
+import { UnlinkDiscord } from "@/components/admin/UnlinkDiscord";
 
 export const metadata = { title: "แก้ไขผู้เล่น" };
 
@@ -28,6 +29,7 @@ export default async function EditPlayer({ params }: { params: Promise<{ id: str
           <DeleteButton kind="players" id={player.id} label={`ผู้เล่น ${player.name} (สถิติรายแมตช์จะถูกลบด้วย)`} />
         </div>
       </div>
+      {player.discordId && <div style={{ marginBottom: 16 }}><UnlinkDiscord playerId={player.id} discordId={player.discordId} /></div>}
       <PlayerForm key={`${player.name}-${player.uid}`} player={player} teams={teams} />
       {player.names.length > 0 && (
         <p className="muted small" style={{ marginTop: 10 }}>เคยใช้ชื่อ: {player.names.map((n) => n.name).join(", ")}</p>
