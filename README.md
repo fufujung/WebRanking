@@ -30,7 +30,9 @@ npm run dev     # เปิด API เว็บ และบอทพร้อ�
 ## ใช้งานอะไรได้บ้าง
 
 **หน้าสาธารณะ**
-- Ranking ทีม (Elo rating เริ่มที่ 1000 คำนวณใหม่ทุกครั้งที่มีผลการแข่ง) และ Ranking ผู้เล่น (เรียงตามแต้ม, แต้มเฉลี่ย, เรตติ้ง, MVP, รีบาวด์, แอสซิสต์ ฯลฯ)
+- **Ranking ผู้เล่นแบบ MMR** (`/rankings/players`): ทุกคนเริ่มที่ 1000 ชนะขึ้น แพ้ลง ชนะทีมที่เก่งกว่าได้มากกว่า (K 32, สามแมตช์แรกเป็นแมตช์จัดอันดับ K 48) โบนัส MVP +2 / SVP +1 ต่อเกม มีโพเดียม Top 3 แรงค์ 7 ระดับ (Bronze, Silver, Gold, Platinum, Diamond, Master, Legend) ฟอร์ม 5 แมตช์ และ ▲▼ อันดับที่ขยับใน 7 วัน
+- Ranking ทีม (MMR ทีมแบบ Elo เริ่มที่ 1000) และหน้าสถิติผู้เล่น (`/rankings/stats` เรียงตามแต้ม, แต้มเฉลี่ย, เรตติ้ง, MVP ฯลฯ)
+- **UID คือตัวตนของผู้เล่น**: เปลี่ยนชื่อในเกมได้ ถ้า UID (+ Server) เดิม สถิติและ MMR ยังเป็นของคนเดิม ชื่อเก่าเก็บไว้ในประวัติ สกอร์บอร์ดเก่าที่ใช้ชื่อเก่าก็ยังนับให้ถูกคน ถ้ามีคนเดียวกันถูกบันทึกเป็นสองคน ใช้ "รวมผู้เล่นที่ซ้ำ" ในหน้าแก้ไขผู้เล่น
 - หน้าทีม ผู้เล่น ทัวร์นาเมนต์ (ตารางคะแนน ชนะ 3 เสมอ 1) และผลการแข่งแต่ละซีรีส์ พร้อมสกอร์บอร์ดทุกเกม (PTS REB BLK STL AST LBR, เรตติ้ง, MVP/SVP)
 - ช่องค้นหาพร้อมปุ่มค้นหาทุกหน้า และ dropdown เลือกทีมที่พิมพ์ค้นหาได้
 
@@ -95,7 +97,7 @@ const res = await fetch("https://api.your-domain.com/api/v1/rankings/teams?limit
 const { data } = await res.json(); // [{ rank, name, rating, stats: { wins, losses, ... } }, ...]
 ```
 
-endpoint หลัก: `/api/v1/rankings/teams`, `/api/v1/rankings/players`, `/api/v1/teams`, `/api/v1/players`, `/api/v1/tournaments`, `/api/v1/matches`, `/api/v1/stats/overview`, `/api/v1/stats/search` ดูทั้งหมดพร้อมทดลองยิงได้ที่ `/docs` (ไฟล์ spec: `apps/api/openapi.yaml`)
+endpoint หลัก: `/api/v1/rankings/mmr`, `/api/v1/rankings/teams`, `/api/v1/rankings/players`, `/api/v1/players/uid/{uid}`, `/api/v1/teams`, `/api/v1/players`, `/api/v1/tournaments`, `/api/v1/matches`, `/api/v1/stats/overview`, `/api/v1/stats/search` ดูทั้งหมดพร้อมทดลองยิงได้ที่ `/docs` (ไฟล์ spec: `apps/api/openapi.yaml`)
 
 - key แบบ `read` ใช้ได้เฉพาะ GET ส่วน `admin` เพิ่ม/แก้/ลบได้
 - ถ้าจะเรียกจากเบราว์เซอร์โดยตรง ให้ใส่โดเมนเว็บนั้นใน `CORS_ORIGINS` ของ `apps/api/.env`
@@ -128,7 +130,7 @@ endpoint หลัก: `/api/v1/rankings/teams`, `/api/v1/rankings/players`, `/a
 ## ทดสอบ
 
 ```bash
-npm test            # เทส API 88 เคส และบอท Discord 47 เคส (ใช้ Discord และ AI แบบจำลอง)
+npm test            # เทส API 105 เคส และบอท Discord 47 เคส (ใช้ Discord และ AI แบบจำลอง)
 npm run typecheck   # ตรวจ TypeScript ทั้ง API เว็บ และบอท
 npm run test:e2e    # เปิดเบราว์เซอร์จริงทดสอบทุกหน้าและทุกฟอร์ม (ต้องรัน npm run dev ไว้ก่อน)
 ```

@@ -68,7 +68,53 @@ export interface Player {
   role: string | null;
   avatarUrl: string | null;
   teamId: string | null;
+  /** In-game UID: the same player whatever name they use. */
+  uid?: string | null;
+  server?: string | null;
+  mmr?: number;
+  peakMmr?: number;
   team?: TeamSummary | null;
+}
+
+/** An MMR tier, e.g. Gold: 975 up to (not including) next. */
+export interface Tier {
+  key: string;
+  name: string;
+  nameTh: string;
+  color: string;
+  min: number;
+  next: number | null;
+}
+
+export type SeriesResult = "W" | "L" | "D";
+
+/** Tier, recent form and rank movement for a player or team on a ladder. */
+export interface Movement {
+  tier: Tier;
+  /** 0-100 % of the way to the next tier. */
+  tierProgress: number;
+  toNextTier: number;
+  /** Last five series, newest first. */
+  form: SeriesResult[];
+  lastDelta: number | null;
+  /** Places gained (+) or lost (-) this week; null = new on the ladder. */
+  rankChange: number | null;
+}
+
+export interface LadderPlayer extends Player, Movement {
+  rank: number;
+  mmr: number;
+  peakMmr: number;
+  /** Series played, won and lost. */
+  series: number;
+  wins: number;
+  losses: number;
+}
+
+export interface MmrLadder extends Page<LadderPlayer> {
+  placing: (Player & { mmr: number; series: number; seriesToPlace: number; tier: Tier })[];
+  tiers: (Tier & { players: number })[];
+  rules: { start: number; k: number; placementK: number; placementSeries: number; mvpBonus: number; svpBonus: number; movementDays: number };
 }
 
 export interface Tournament {
@@ -216,15 +262,31 @@ export interface MatchDetail extends Match {
   players: SeriesTotals[];
 }
 
-export interface TeamDetail extends Team {
+export interface TeamDetail extends Team, Movement {
   rank: number;
   stats: TeamStats;
-  players: (Player & { stats: PlayerStats })[];
+  players: (Player & { mmr: number; tier: Tier; stats: PlayerStats })[];
   tournaments: { placement: number | null; tournament: Tournament }[];
   recentMatches: Match[];
 }
 
 export interface PlayerDetail extends Player {
+  mmr: number;
+  peakMmr: number;
+  tier: Tier;
+  tierProgress: number;
+  toNextTier: number;
+  series: number;
+  placed: boolean;
+  seriesToPlace: number;
+  /** Place on the MMR ladder; null while placing. */
+  mmrRank: number | null;
+  rankedPlayers: number;
+  rankChange: number | null;
+  /** Names used before, newest first. */
+  names: { name: string; firstSeen: string; lastSeen: string }[];
+  /** Oldest first, one point per series. */
+  mmrHistory: { match: Match; before: number; delta: number; after: number; result: SeriesResult }[];
   stats: PlayerStats;
   recentGames: ({ match: Match; game: { number: number; scoreA: number; scoreB: number }; team: TeamSummary; rating: number | null; award: Award | null } & Record<StatKey, number>)[];
 }
@@ -247,6 +309,7 @@ export interface TournamentDetail extends Tournament {
 export interface Overview {
   totals: { teams: number; players: number; tournaments: number; matches: number; ongoingTournaments: number };
   topTeams: Team[];
+  topPlayers: LadderPlayer[];
   recentMatches: Match[];
   upcomingTournaments: Tournament[];
 }

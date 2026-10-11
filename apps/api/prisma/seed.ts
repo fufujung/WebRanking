@@ -60,13 +60,14 @@ const teamDefs = [
   { name: "Red Tigers", tag: "RTG", country: "Thailand", players: ["Pike", "Quill", "Raven", "Storm"] },
 ];
 const teams = [];
+let uid = 81000100;
 for (const def of teamDefs) {
   const team = await prisma.team.create({
     data: {
       name: def.name,
       tag: def.tag,
       country: def.country,
-      players: { create: def.players.map((n) => ({ name: n, country: def.country })) },
+      players: { create: def.players.map((n) => ({ name: n, country: def.country, uid: String(uid++), server: "Asia" })) },
     },
     include: { players: true },
   });
@@ -138,12 +139,15 @@ for (const [i, [tournamentId, a, b, gameScores]] of fixtures.entries()) {
     imageUrl: null,
     source: null,
     sourceRef: null,
-    playedAt: new Date((tournamentId === cup.id ? now - 39 * day : now - 9 * day) + i * 3600_000),
+    // The last league weeks are recent, so the ranking shows who moved up or down this week.
+    playedAt: new Date((tournamentId === cup.id ? now - 39 * day : i < 6 ? now - 9 * day : now - 2 * day) + i * 3600_000),
     games,
   });
 }
 await prisma.tournamentEntry.updateMany({ where: { tournamentId: cup.id, teamId: teams[0].id }, data: { placement: 1 } });
 await prisma.tournamentEntry.updateMany({ where: { tournamentId: cup.id, teamId: teams[3].id }, data: { placement: 2 } });
 await prisma.tournamentEntry.updateMany({ where: { tournamentId: cup.id, teamId: teams[1].id }, data: { placement: 3 } });
+// A player who changed their in-game name: same UID, stats carried over, old name kept.
+await prisma.playerName.create({ data: { playerId: teams[0].players[0].id, name: "AceTH", firstSeen: new Date(now - 60 * day), lastSeen: new Date(now - 30 * day) } });
 console.log("Seeded demo teams, players, tournaments and matches.");
 await prisma.$disconnect();

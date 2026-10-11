@@ -48,6 +48,14 @@ export const playerInput = z.object({
   role: optionalText(60),
   avatarUrl: imageUrl,
   teamId: optionalId,
+  /** In-game UID: the same player across name changes. */
+  uid: optionalText(40),
+  server: optionalText(40),
+});
+
+export const mergeInput = z.object({
+  /** The duplicate player: their stats move onto this player and they are deleted. */
+  fromId: z.string().trim().min(1),
 });
 
 export const tournamentStatus = z.enum(["UPCOMING", "ONGOING", "COMPLETED"]);

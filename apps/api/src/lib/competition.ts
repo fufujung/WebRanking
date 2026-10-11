@@ -9,6 +9,7 @@ import { z } from "zod";
 import { prisma } from "./db.js";
 import { fail, notFound } from "./errors.js";
 import { recomputeRatings } from "./elo.js";
+import { differentUid, findByUid, renamePlayer } from "./players.js";
 import { getMatch, saveMatch } from "./matchWrite.js";
 import {
   affectedBy,
@@ -187,27 +188,34 @@ async function rosterClash(tx: Tx, tournamentId: string, entryId: string | null,
 
 type RosterRow = { playerId: string; discordId: string | null; uid: string | null; server: string | null };
 
-/** Finds or creates each roster player, preferring the same character (UID), then the same Discord account, then the same name on this team. */
+/**
+ * Finds or creates each roster player, preferring the same character (UID), then the same
+ * Discord account, then the same name on this team. A known player who now uses another
+ * name is renamed and keeps the old name in their history, so their stats carry on.
+ */
 async function resolveRoster(tx: Tx, teamId: string, players: RosterIn["players"]) {
   const out: RosterRow[] = [];
   for (const p of players) {
     const key = normaliseName(p.name);
     let playerId: string | null = null;
-    const known =
-      (p.uid ? await tx.rosterPlayer.findFirst({ where: { uid: p.uid, server: p.server }, orderBy: { id: "desc" }, include: { player: true } }) : null) ??
-      (p.discordId ? await tx.rosterPlayer.findFirst({ where: { discordId: p.discordId }, orderBy: { id: "desc" }, include: { player: true } }) : null);
+    const byUid = await findByUid(tx, p.uid, p.server);
+    const legacy = byUid
+      ? null
+      : ((p.uid ? await tx.rosterPlayer.findFirst({ where: { uid: p.uid, server: p.server }, orderBy: { id: "desc" }, include: { player: true } }) : null) ??
+        (p.discordId ? await tx.rosterPlayer.findFirst({ where: { discordId: p.discordId }, orderBy: { id: "desc" }, include: { player: true } }) : null));
+    // A Discord account can play another character: a known UID on it that differs is someone else.
+    const known = byUid ?? (legacy && !differentUid(legacy.player.uid, p.uid) ? legacy.player : null);
     if (known) {
-      playerId = known.playerId;
-      const pl = known.player;
-      const sameName = normaliseName(pl.name) === key || (pl.nickname !== null && normaliseName(pl.nickname) === key);
-      await tx.player.update({
-        where: { id: pl.id },
-        data: { teamId, ...(sameName ? {} : { name: p.name, nickname: pl.nickname ?? pl.name }) },
-      });
+      playerId = known.id;
+      const sameName = normaliseName(known.name) === key || (known.nickname !== null && normaliseName(known.nickname) === key);
+      if (!sameName) await renamePlayer(tx, known, p.name);
+      await tx.player.update({ where: { id: known.id }, data: { teamId } });
     }
     if (!playerId) {
-      const candidates = await tx.player.findMany({ where: { OR: [{ teamId }, { teamId: null }] }, select: { id: true, name: true, nickname: true, teamId: true } });
-      const same = (x: (typeof candidates)[number]) => normaliseName(x.name) === key || (x.nickname !== null && normaliseName(x.nickname) === key);
+      const candidates = await tx.player.findMany({ where: { OR: [{ teamId }, { teamId: null }] }, select: { id: true, name: true, nickname: true, teamId: true, uid: true } });
+      // Same name but another UID is another character.
+      const same = (x: (typeof candidates)[number]) =>
+        (normaliseName(x.name) === key || (x.nickname !== null && normaliseName(x.nickname) === key)) && !differentUid(x.uid, p.uid);
       const found = candidates.find((x) => x.teamId === teamId && same(x)) ?? candidates.find(same);
       if (found) {
         playerId = found.id;
@@ -217,6 +225,13 @@ async function resolveRoster(tx: Tx, teamId: string, players: RosterIn["players"
       }
     }
     if (out.some((o) => o.playerId === playerId)) throw fail(400, "A player is listed twice", "มีผู้เล่นซ้ำในรายชื่อ");
+    // The player now carries the UID, unless another player already owns it.
+    if (p.uid) {
+      const pl = await tx.player.findUnique({ where: { id: playerId }, select: { uid: true } });
+      if (pl && !pl.uid && !(await findByUid(tx, p.uid, p.server, playerId))) {
+        await tx.player.update({ where: { id: playerId }, data: { uid: p.uid, server: p.server } });
+      }
+    }
     out.push({ playerId, discordId: p.discordId, uid: p.uid, server: p.server });
   }
   return out;

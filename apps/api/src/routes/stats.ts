@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { prisma } from "../lib/db.js";
 import { matchInclude, matchOrder } from "../lib/selects.js";
+import { playerSearch } from "../lib/players.js";
+import { playerBoard } from "../lib/leaderboard.js";
 
 export const stats = Router();
 
 stats.get("/overview", async (_req, res) => {
-  const [teams, players, tournaments, matches, ongoing, topTeams, recentMatches, upcoming] = await Promise.all([
+  const [teams, players, tournaments, matches, ongoing, topTeams, recentMatches, upcoming, board] = await Promise.all([
     prisma.team.count(),
     prisma.player.count(),
     prisma.tournament.count(),
@@ -14,10 +16,13 @@ stats.get("/overview", async (_req, res) => {
     prisma.team.findMany({ orderBy: [{ rating: "desc" }, { name: "asc" }], take: 5 }),
     prisma.match.findMany({ orderBy: matchOrder, take: 8, include: matchInclude }),
     prisma.tournament.findMany({ where: { status: { in: ["UPCOMING", "ONGOING"] } }, orderBy: { startDate: "asc" }, take: 5 }),
+    playerBoard(),
   ]);
   res.json({
     totals: { teams, players, tournaments, matches, ongoingTournaments: ongoing },
     topTeams,
+    /** Top of the MMR ladder (ranked players only). */
+    topPlayers: board.ranked.slice(0, 5),
     recentMatches,
     upcomingTournaments: upcoming,
   });
@@ -33,7 +38,7 @@ stats.get("/search", async (req, res) => {
   const [teams, players, tournaments] = await Promise.all([
     prisma.team.findMany({ where: { OR: [{ name: { contains: q } }, { tag: { contains: q } }] }, take: 10, orderBy: { rating: "desc" } }),
     prisma.player.findMany({
-      where: { OR: [{ name: { contains: q } }, { nickname: { contains: q } }] },
+      where: playerSearch(q),
       take: 10,
       include: { team: { select: { id: true, name: true } } },
     }),

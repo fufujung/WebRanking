@@ -34,7 +34,7 @@ const notFound: Record<string, string> = { Team: "ทีม", Tournament: "ท�
 const fieldNames: Record<string, string> = {
   name: "ชื่อ", tag: "ตัวย่อ", startDate: "วันเริ่ม", endDate: "วันจบ", logoUrl: "โลโก้", avatarUrl: "รูปโปรไฟล์",
   scoreA: "ผลซีรีส์", scoreB: "ผลซีรีส์", teamBId: "ทีม B", teamAId: "ทีม A", games: "สกอร์บอร์ด",
-  imageUrl: "รูปผลการแข่ง", placement: "อันดับ", round: "รอบ", notes: "หมายเหตุ",
+  imageUrl: "รูปผลการแข่ง", placement: "อันดับ", round: "รอบ", notes: "หมายเหตุ", uid: "UID", server: "Server", fromId: "ผู้เล่นที่ซ้ำ",
 };
 
 export function thai(message: string): string {

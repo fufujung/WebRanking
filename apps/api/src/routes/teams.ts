@@ -6,6 +6,7 @@ import { emptyPlayerStats, emptyTeamStats, statLineSelect, statsByPlayer, statsB
 import { searchQuery, teamInput } from "../lib/validate.js";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { matchInclude, matchOrder } from "../lib/selects.js";
+import { teamMovement, tierInfo } from "../lib/leaderboard.js";
 
 export const teams = Router();
 
@@ -41,7 +42,7 @@ teams.get("/:id", async (req, res) => {
   });
   if (!team) throw notFound("Team");
 
-  const [matches, lines, higher] = await Promise.all([
+  const [matches, lines, higher, movement] = await Promise.all([
     prisma.match.findMany({
       where: { OR: [{ teamAId: team.id }, { teamBId: team.id }] },
       orderBy: matchOrder,
@@ -52,19 +53,25 @@ teams.get("/:id", async (req, res) => {
       select: statLineSelect,
     }),
     prisma.team.count({ where: { rating: { gt: team.rating } } }),
+    teamMovement(),
   ]);
   const playerStats = statsByPlayer(lines);
   const { entries, players, ...rest } = team;
   res.json({
     ...rest,
     rank: higher + 1,
+    ...tierInfo(team.rating),
+    form: movement.get(team.id)?.form ?? [],
+    rankChange: movement.get(team.id)?.rankChange ?? null,
     stats: {
       ...(statsByTeam(matches).get(team.id) ?? emptyTeamStats()),
       tournaments: entries.length,
       titles: entries.filter((e) => e.placement === 1).length,
       podiums: entries.filter((e) => e.placement !== null && e.placement <= 3).length,
     },
-    players: players.map((p) => ({ ...p, stats: playerStats.get(p.id) ?? emptyPlayerStats() })),
+    players: players
+      .map((p) => ({ ...p, ...tierInfo(p.mmr), stats: playerStats.get(p.id) ?? emptyPlayerStats() }))
+      .sort((a, b) => b.mmr - a.mmr || a.name.localeCompare(b.name)),
     tournaments: entries.map((e) => ({ placement: e.placement, tournament: e.tournament })),
     recentMatches: matches.slice(0, 20),
   });

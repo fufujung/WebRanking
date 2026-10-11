@@ -26,6 +26,7 @@ model Team {
   statLines  MatchPlayerStat[]
 }
 
+/// A player. The in-game UID (+ server) identifies the same person across name changes.
 model Player {
   id        String   @id @default(cuid())
   name      String
@@ -34,14 +35,50 @@ model Player {
   role      String?
   avatarUrl String?
   teamId    String?
+  uid       String? // in-game UID; one player per UID + server
+  server    String? // in-game server
+  mmr       Int      @default(1000) // personal rating, replayed from every series the player appeared in
+  peakMmr   Int      @default(1000)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   team      Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
   statLines MatchPlayerStat[]
   rosters   RosterPlayer[]
+  names     PlayerName[]
+  mmrLog    PlayerMmrChange[]
 
   @@index([teamId])
+  @@index([uid])
+}
+
+/// A name a player has used before, so old scoreboards and searches still find them.
+model PlayerName {
+  id        String   @id @default(cuid())
+  playerId  String
+  name      String
+  firstSeen DateTime @default(now())
+  lastSeen  DateTime @default(now())
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, name])
+}
+
+/// How one series moved one player's MMR. Rewritten whenever ratings are replayed.
+model PlayerMmrChange {
+  id       String @id @default(cuid())
+  playerId String
+  matchId  String
+  before   Int
+  delta    Int
+  result   String // W | L | D for this player's side
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  match  Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, matchId])
+  @@index([matchId])
 }
 
 model Tournament {
@@ -174,6 +211,7 @@ model Match {
   games       MatchGame[]
   playerStats MatchPlayerStat[]
   bracketSlot BracketMatch?
+  mmrChanges  PlayerMmrChange[]
 
   @@index([playedAt])
 }

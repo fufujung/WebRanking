@@ -85,6 +85,8 @@ export async function savePlayer(id: string | null, _: FormState, form: FormData
       country: orNull(text(form, "country")),
       avatarUrl: orNull(text(form, "avatarUrl")),
       teamId: orNull(text(form, "teamId")),
+      uid: orNull(text(form, "uid")),
+      server: orNull(text(form, "server")),
     };
     const player = await api<{ id: string }>(id ? `/players/${id}` : "/players", { method: id ? "PATCH" : "POST", json: body });
     savedId = player.id;
@@ -93,6 +95,18 @@ export async function savePlayer(id: string | null, _: FormState, form: FormData
   revalidatePath("/", "layout");
   if (!id && form.get("another") === "1") redirect(`/admin/players/new?teamId=${encodeURIComponent(text(form, "teamId"))}&added=1`);
   redirect(`/players/${savedId}`);
+}
+
+/** Moves a duplicate player's stats onto this player and deletes the duplicate. */
+export async function mergePlayer(intoId: string, _: FormState, form: FormData): Promise<FormState> {
+  const fromId = text(form, "fromId");
+  if (!fromId) return { error: "เลือกผู้เล่นที่ซ้ำก่อน" };
+  const result = await run(async () => {
+    await api(`/players/${encodeURIComponent(intoId)}/merge`, { method: "POST", json: { fromId } });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: "รวมผู้เล่นแล้ว สถิติและ MMR นับเป็นคนเดียวกัน" };
 }
 
 // Tournaments

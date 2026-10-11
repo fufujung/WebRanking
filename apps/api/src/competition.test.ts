@@ -145,7 +145,7 @@ describe("registration", () => {
     assert.equal(again.roster[0].playerId, first.roster[0].playerId);
     const player = await ok("GET", `/players/${first.roster[0].playerId}`);
     assert.equal(player.name, "Renamed");
-    assert.equal(player.nickname, "Old Team P1", "old in-game name kept as nickname so old screenshots still match");
+    assert.deepEqual(player.names.map((n: any) => n.name), ["Old Team P1"], "old in-game name kept in the name history so old screenshots still match");
     assert.equal(player.team.name, "New Team");
   });
 

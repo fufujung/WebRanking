@@ -1,4 +1,5 @@
 import { prisma } from "./db.js";
+import { scoreSeries, seriesPlayers, START_MMR } from "./mmr.js";
 
 export const START_RATING = 1000;
 export const K_FACTOR = 32;
@@ -31,12 +32,24 @@ export function recomputeRatings(): Promise<void> {
 }
 
 async function replayAllMatches() {
-  const [teams, matches] = await Promise.all([
-    prisma.team.findMany({ select: { id: true } }),
-    prisma.match.findMany({ orderBy: [{ playedAt: "asc" }, { createdAt: "asc" }] }),
+  const [teams, players, matches, oldChanges] = await Promise.all([
+    prisma.team.findMany({ select: { id: true, rating: true } }),
+    prisma.player.findMany({ select: { id: true, mmr: true, peakMmr: true } }),
+    prisma.match.findMany({
+      orderBy: [{ playedAt: "asc" }, { createdAt: "asc" }],
+      select: {
+        id: true, teamAId: true, teamBId: true, winnerId: true, ratingDeltaA: true, ratingDeltaB: true,
+        playerStats: { select: { playerId: true, teamId: true, award: true } },
+      },
+    }),
+    prisma.playerMmrChange.findMany({ select: { id: true, playerId: true, matchId: true, before: true, delta: true, result: true } }),
   ]);
   const ratings = new Map(teams.map((t) => [t.id, START_RATING]));
+  const stored = new Map(teams.map((t) => [t.id, t.rating]));
+  const mmr = new Map<string, { mmr: number; series: number }>();
+  const peak = new Map<string, number>();
   const matchUpdates = [];
+  const changes: { playerId: string; matchId: string; before: number; delta: number; result: string }[] = [];
 
   for (const m of matches) {
     const ra = ratings.get(m.teamAId) ?? START_RATING;
@@ -50,12 +63,40 @@ async function replayAllMatches() {
         prisma.match.update({ where: { id: m.id }, data: { ratingDeltaA: da, ratingDeltaB: db } }),
       );
     }
+
+    const winner = m.winnerId === null ? null : m.winnerId === m.teamAId ? "A" : "B";
+    for (const c of scoreSeries(seriesPlayers(m), winner, mmr, { A: ra, B: rb })) {
+      changes.push({ ...c, matchId: m.id });
+      peak.set(c.playerId, Math.max(peak.get(c.playerId) ?? START_MMR, c.before + c.delta));
+    }
   }
+
+  // Only write what changed: most replays move a handful of rows.
+  const old = new Map(oldChanges.map((c) => [`${c.playerId}:${c.matchId}`, c]));
+  const changeWrites = [];
+  const fresh = [];
+  for (const c of changes) {
+    const key = `${c.playerId}:${c.matchId}`;
+    const was = old.get(key);
+    old.delete(key);
+    if (!was) fresh.push(c);
+    else if (was.before !== c.before || was.delta !== c.delta || was.result !== c.result) {
+      changeWrites.push(prisma.playerMmrChange.update({ where: { id: was.id }, data: { before: c.before, delta: c.delta, result: c.result } }));
+    }
+  }
+  if (old.size) changeWrites.push(prisma.playerMmrChange.deleteMany({ where: { id: { in: [...old.values()].map((c) => c.id) } } }));
+  if (fresh.length) changeWrites.push(prisma.playerMmrChange.createMany({ data: fresh }));
+
+  const playerWrites = players
+    .map((p) => ({ id: p.id, mmr: mmr.get(p.id)?.mmr ?? START_MMR, peakMmr: peak.get(p.id) ?? START_MMR, was: p }))
+    .filter((p) => p.mmr !== p.was.mmr || p.peakMmr !== p.was.peakMmr)
+    .map((p) => prisma.player.update({ where: { id: p.id }, data: { mmr: p.mmr, peakMmr: p.peakMmr } }));
 
   await prisma.$transaction([
     ...matchUpdates,
-    ...[...ratings].map(([id, rating]) =>
-      prisma.team.update({ where: { id }, data: { rating } }),
-    ),
+    ...[...ratings].filter(([id, rating]) => stored.get(id) !== rating)
+      .map(([id, rating]) => prisma.team.update({ where: { id }, data: { rating } })),
+    ...changeWrites,
+    ...playerWrites,
   ]);
 }

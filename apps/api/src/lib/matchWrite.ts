@@ -5,6 +5,7 @@ import { HttpError, notFound } from "./errors.js";
 import { recomputeRatings, winnerOf } from "./elo.js";
 import { matchInput, normaliseName } from "./validate.js";
 import { announceMatch } from "./announce.js";
+import { knownNames } from "./players.js";
 
 export type MatchInput = z.infer<typeof matchInput>;
 type Tx = Prisma.TransactionClient;
@@ -25,23 +26,27 @@ async function resolveTeam(tx: Tx, id: string | undefined, name: string | undefi
 
 /**
  * Turns each scoreboard row into a player id. A name is matched against the side's own
- * roster first, then against everyone (a substitute); an unknown name becomes a new
- * player on that side's team.
+ * players first, then against everyone (a substitute), then against names players used
+ * before (an old screenshot after a rename); an unknown name becomes a new player on that
+ * side's team.
  */
 async function resolvePlayers(tx: Tx, input: MatchInput, teamIds: { A: string; B: string }) {
   const ids = input.games.flatMap((g) => g.players.map((p) => p.playerId).filter((x): x is string => Boolean(x)));
   const named = input.games.some((g) => g.players.some((p) => !p.playerId));
   const [byIdList, everyone] = await Promise.all([
     tx.player.findMany({ where: { id: { in: ids } }, select: { id: true } }),
-    named ? tx.player.findMany({ select: { id: true, name: true, nickname: true, teamId: true } }) : Promise.resolve([]),
+    named ? knownNames(tx) : Promise.resolve([]),
   ]);
   const known = new Set(byIdList.map((p) => p.id));
   const created = new Map<string, string>(); // `${teamId}:${normalisedName}` -> player id
 
   const find = async (name: string, teamId: string) => {
     const key = normaliseName(name);
-    const sameName = (p: (typeof everyone)[number]) => normaliseName(p.name) === key || (p.nickname && normaliseName(p.nickname) === key);
-    const existing = everyone.find((p) => p.teamId === teamId && sameName(p)) ?? everyone.find(sameName);
+    const now = (p: (typeof everyone)[number]) => p.current.includes(key);
+    const before = (p: (typeof everyone)[number]) => p.past.includes(key);
+    const existing =
+      everyone.find((p) => p.teamId === teamId && now(p)) ?? everyone.find(now) ??
+      everyone.find((p) => p.teamId === teamId && before(p)) ?? everyone.find(before);
     if (existing) return existing.id;
     const cacheKey = `${teamId}:${key}`;
     let id = created.get(cacheKey);
