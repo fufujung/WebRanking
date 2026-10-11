@@ -59,6 +59,7 @@ model Tournament {
   /// Bracket settings. format null = a free-form event where results are recorded without a bracket.
   format           String? // SINGLE_ELIMINATION | DOUBLE_ELIMINATION | ROUND_ROBIN
   bestOf           Int     @default(3)
+  finalBestOf      Int? // best of for the final (grand final in double elimination); null = same as bestOf
   lateMinutes      Int     @default(15) // how late a team may check in before the other team can claim a walkover
   rosterMin        Int     @default(3)
   rosterMax        Int     @default(5)

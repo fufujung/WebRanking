@@ -14,6 +14,7 @@ import {
   type MessageContextMenuCommandInteraction,
   type MessageReaction,
   type ModalSubmitInteraction,
+  type AnySelectMenuInteraction,
   type PartialMessageReaction,
   type PartialUser,
   type User,
@@ -55,7 +56,7 @@ import type { BracketMatch, Draft, Match, MatchDetail, Page, PlayerDetail, Ranke
 
 const SAVE = "✅";
 /** Button actions handled by the tournament manager. */
-const TOUR_ACTIONS = new Set(["tci", "tsr", "two", "tdp", "tad", "taw", "tro", "trs", "tsd", "tst", "tls", "treg", "tmy", "ted", "tcp", "twd", "tep", "ten"]);
+const TOUR_ACTIONS = new Set(["tci", "tsr", "two", "tdp", "tad", "taw", "tro", "trs", "tsd", "tst", "tls", "treg", "tmy", "ted", "tcp", "twd", "tep", "ten", "tba", "tbs"]);
 const WEEK = 7 * 24 * 3600_000;
 
 type MemberLike = Pick<GuildMember, "permissions" | "roles"> | { permissions: unknown; roles: string[] | unknown } | null;
@@ -330,6 +331,12 @@ export class TournamentBot {
     return Boolean(team && slot && (team.id === slot.teamA?.id || team.id === slot.teamB?.id));
   }
 
+  /** Menus inside the bot's private messages (the team builder). */
+  async onSelect(i: AnySelectMenuInteraction) {
+    const [prefix, action, tid, key] = i.customId.split(":");
+    if (prefix === "tr" && (action === "tbe" || action === "tbr" || action === "tbu") && tid && key) await this.tour.onBuilder(i, action, tid, key);
+  }
+
   async onModal(i: ModalSubmitInteraction) {
     if (i.customId.startsWith("tr:tsm:")) return this.submitRoomResult(i);
     await this.tour.onModal(i);
@@ -353,7 +360,7 @@ export class TournamentBot {
       if (!inMatch && !this.tour.isOrganizer(tour, i.user.id, info)) return void (await i.reply({ ephemeral: true, content: "ส่งผลได้เฉพาะผู้เล่นของสองทีมนี้หรือผู้จัด" }));
 
       const winner = i.fields.getStringSelectValues("winner")[0] === "B" ? "B" : "A";
-      const score = parseSeriesScore(i.fields.getTextInputValue("score"), winner, b.bestOf, { A: m.teamA.name, B: m.teamB.name });
+      const score = parseSeriesScore(i.fields.getTextInputValue("score"), winner, m.bestOf ?? b.bestOf, { A: m.teamA.name, B: m.teamB.name });
       if ("error" in score) return void (await i.reply({ ephemeral: true, content: `❌ ${score.error}\nกด 📸 ส่งผลการแข่ง ใหม่อีกครั้ง` }));
       const shots = imageAttachments([...(i.fields.getUploadedFiles("shots") ?? new Map()).values()].map((a) => ({ url: a.url, name: a.name, contentType: a.contentType, size: a.size })));
       if (!shots.length) return void (await i.reply({ ephemeral: true, content: "❌ แนบรูปสกอร์บอร์ดอย่างน้อย 1 รูป (png, jpg, webp)" }));

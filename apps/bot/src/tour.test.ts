@@ -12,7 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
-import { ChannelType, PermissionFlagsBits } from "discord.js";
+import { ChannelType, MessageFlags, PermissionFlagsBits } from "discord.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tr-tour-test-"));
 const apiDir = path.resolve(import.meta.dirname, "../../api");
@@ -29,7 +29,7 @@ const { imageReader } = await import("../../api/src/lib/extract.js");
 const { createApi } = await import("./api.js");
 const { TournamentBot } = await import("./bot.js");
 const { parseThaiTime } = await import("./tourFormat.js");
-const { channelSlug } = await import("./tour.js");
+const { channelSlug, parseSeriesScore } = await import("./tour.js");
 
 const PNG = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
 const GUILD = "900000000000000001";
@@ -63,6 +63,9 @@ class FakeMessage {
   attachments: Map<string, any>;
   reactions = { cache: new Map<string, any>() };
   client = fakeClient;
+  /** A reply only the user sees (the bot's private messages). */
+  ephemeral = false;
+  flags = { has: (f: unknown) => f === MessageFlags.Ephemeral && this.ephemeral };
   constructor(public channelId: string, content: string, images = 0, payload?: any, authorId = "bot-user") {
     this.content = content;
     this.author = { id: authorId, bot: authorId === "bot-user" };
@@ -232,8 +235,36 @@ function baseInteraction(userId: string, channelId: string) {
     async showModal(modal: any) {
       this.modal = modal.toJSON();
     },
+    isModalSubmit: () => false,
   };
 }
+
+/** The private message a reply became, so its buttons and menus can be used. */
+function privateMessage(payload: any) {
+  const m = new FakeMessage("private", "", 0, payload);
+  m.ephemeral = true;
+  return m;
+}
+
+/** Picking from a menu in a message: values for a text menu, user ids for a user menu. */
+function choose(customId: string, userId: string, message: FakeMessage, values: string[], users: string[] = []) {
+  const i: any = press(customId, userId, message);
+  i.values = values;
+  i.users = new Map(users.map((u) => [u, { id: u, username: members.get(u)?.name ?? "u", bot: u === "bot-user" }]));
+  return i;
+}
+
+/** A form opened from a message's button or menu, so the answer replaces that message. */
+function submitFrom(message: FakeMessage, customId: string, userId: string, values: Record<string, string>) {
+  const i: any = submitForm(customId, userId, message.channelId, values);
+  i.message = message;
+  i.isFromMessage = () => true;
+  i.update = async (p: any) => message.edit(p);
+  return i;
+}
+
+/** Custom ids of a message's buttons and menus, row by row. */
+const controls = (m: FakeMessage) => m.components.map((row: any) => row.components.map((c: any) => c.custom_id));
 
 /** A slash command: name, subcommand and options. Users are given by id. */
 function command(name: string, sub: string | null, options: Record<string, unknown>, userId = OWNER, channelId = ANNOUNCE) {
@@ -276,6 +307,8 @@ function submitForm(customId: string, userId: string, channelId: string, values:
   const i: any = {
     ...baseInteraction(userId, channelId),
     customId,
+    isModalSubmit: () => true,
+    isFromMessage: () => false,
     fields: {
       getTextInputValue: (id: string) => {
         if (!(id in values)) throw new Error(`no field ${id}`);
@@ -386,6 +419,16 @@ describe("time and names", () => {
     for (const bad of ["31/2 10:00", "25:00", "tomorrow", "", "10/13 10:00"]) assert.equal(parseThaiTime(bad, now), null, bad);
   });
 
+  test("the result score goes to the team picked as the winner, whichever way round it is typed", () => {
+    const names = { A: "CallmeMu", B: "test" };
+    assert.deepEqual(parseSeriesScore("2-0", "B", 3, names), { scoreA: 0, scoreB: 2 });
+    assert.deepEqual(parseSeriesScore("0-2", "B", 3, names), { scoreA: 0, scoreB: 2 });
+    assert.deepEqual(parseSeriesScore("2 : 1", "A", 3, names), { scoreA: 2, scoreB: 1 });
+    assert.deepEqual(parseSeriesScore("1-3", "A", 5, names), { scoreA: 3, scoreB: 1 });
+    assert.match((parseSeriesScore("1-1", "A", 3, names) as { error: string }).error, /เสมอ/);
+    assert.match((parseSeriesScore("3-0", "A", 3, names) as { error: string }).error, /Bo3/);
+  });
+
   test("channel names keep Thai letters", () => {
     assert.equal(channelSlug("มาช้าแต่ทันไหม"), "มาช้าแต่ทันไหม");
     assert.equal(channelSlug("EGOIST <1>"), "egoist-1");
@@ -475,39 +518,77 @@ describe("a whole tournament from Discord", () => {
     assert.match(text(last(already.replies)), /คุณอยู่ในทีม \*\*Red\*\* แล้ว \(หัวหน้าทีม\)/);
     assert.equal(already.modal, null);
 
+    // Step 1: the team's name and the first player, each in its own box.
     const open = press(`tr:treg:${tid}`, PINK, panel);
     await bot.onButton(open);
     const form = formFields(open.modal);
-    assert.deepEqual(Object.keys(form), ["team", "tag", "players", "members"]);
-    assert.match(form.players.label, /3-4 คน/);
-    assert.equal(form.members.type, 5, "a user picker for teammates on Discord");
+    assert.deepEqual(Object.keys(form), ["team", "tag", "name", "uid", "server"]);
+    assert.match(form.name.label, /ผู้เล่นคนที่ 1/);
 
-    // A wrong line: told which, and the retry opens the form with what was typed.
-    const typed = { team: "Pink", tag: "PNK", players: "Pinky, 812345678, Asia\nMage 2" };
-    const bad = submitForm(`tr:trm:${tid}`, PINK, ANNOUNCE, typed);
-    await bot.onModal(bad);
-    assert.match(text(last(bad.replies)), /บรรทัดที่ 2 "Mage 2" ใส่ไม่ครบ/);
-    assert.equal(last<any>(bad.replies).components[0].components[0].data.custom_id, `tr:treg:${tid}`);
+    // A box left empty: told so, and the retry opens the form with what was typed.
+    const half = submitForm(`tr:trm:${tid}`, PINK, ANNOUNCE, { team: "Pink", tag: "PNK", name: "Pinky", uid: "812345678", server: " " });
+    await bot.onModal(half);
+    assert.match(text(last(half.replies)), /กรอกให้ครบ/);
+    assert.equal(last<any>(half.replies).components[0].components[0].data.custom_id, `tr:treg:${tid}`);
     const again = press(`tr:treg:${tid}`, PINK, panel);
     await bot.onButton(again);
-    assert.deepEqual([formFields(again.modal).team.value, formFields(again.modal).tag.value, formFields(again.modal).players.value], ["Pink", "PNK", typed.players]);
+    assert.deepEqual(["team", "tag", "name", "uid"].map((k) => formFields(again.modal)[k].value), ["Pink", "PNK", "Pinky", "812345678"]);
 
-    const short = submitForm(`tr:trm:${tid}`, PINK, ANNOUNCE, { ...typed, players: "Pinky, 812345678, Asia" });
-    await bot.onModal(short);
-    assert.match(text(last(short.replies)), /3-4 คน/, "the API's rules come back the same way");
+    const first = submitForm(`tr:trm:${tid}`, PINK, ANNOUNCE, { team: "Pink", tag: "PNK", name: "Pinky", uid: "812345678", server: "Asia" });
+    await bot.onModal(first);
+    assert.equal(panel.embeds.length, 1, "the public sign-up post is left alone");
+    const builder = privateMessage(last<any>(first.replies));
+    assert.match(builder.content!, /สมัครทีม Pink\*\* \(PNK\) · ผู้เล่น 1\/3-4 คน/);
+    assert.match(builder.content!, /1\. \*\*Pinky\*\* · UID 812345678 · Asia/);
+    assert.deepEqual(controls(builder), [[`tr:tbe:${tid}:new`], [`tr:tbr:${tid}:new`], [`tr:tbu:${tid}:new`], [`tr:tba:${tid}:new`, `tr:tbs:${tid}:new`, `tr:treg:${tid}`]]);
+    assert.equal(builder.components[3].components[1].disabled, true, "too few players to send");
 
-    const good = submitForm(`tr:trm:${tid}`, PINK, ANNOUNCE, { ...typed, players: "1. Pinky, 812345678, Asia\n- Mage, Two, 812345679, Asia\nTank | 812345680 | EU" }, { members: [MATE, PINK] });
-    await bot.onModal(good);
-    const done = last<any>(good.replies);
-    assert.match(done.content, /สมัครทีม \*\*Pink\*\* แล้ว คุณเป็นหัวหน้าทีม/);
-    assert.match(done.content, /Mage, Two \(UID 812345679 · Asia\)/);
-    assert.deepEqual(done.components[0].components.map((b: any) => b.data.custom_id.split(":")[1]), ["ted", "tcp", "twd"]);
+    // Step 2: one player at a time. The server is filled in from the last player.
+    const add = async (name: string, uid: string, server: string) => {
+      const b = press(`tr:tba:${tid}:new`, PINK, builder);
+      await bot.onButton(b);
+      assert.deepEqual(Object.keys(formFields(b.modal)), ["name", "uid", "server"]);
+      const sent = submitFrom(builder, b.modal.custom_id, PINK, { name, uid, server });
+      await bot.onModal(sent);
+      return { form: formFields(b.modal), sent };
+    };
+    const second = await add("Mage, Two", "812345679", "Asia");
+    assert.equal(second.form.server.value, "Asia");
+    const dup = await add("Copy", "812345679", "asia");
+    assert.match(builder.content!, /UID 812345679 \(Asia\) ใส่ไว้แล้วเป็น Mage, Two/);
+    await add("Tank", "812345680", "EU");
+    assert.equal(dup.form.server.value, "Asia");
+    assert.match(builder.content!, /เพิ่ม Tank แล้ว[\s\S]*ผู้เล่น 3\/3-4 คน/);
+    assert.equal(builder.components[3].components[1].disabled, false, "enough players to send");
+
+    // Changing a player opens their boxes filled in; removing takes them off.
+    const pick = choose(`tr:tbe:${tid}:new`, PINK, builder, ["2"]);
+    await bot.onSelect(pick);
+    assert.deepEqual(Object.values(formFields(pick.modal)).map((f) => f.value), ["Tank", "812345680", "EU"]);
+    await bot.onModal(submitFrom(builder, pick.modal.custom_id, PINK, { name: "Tank", uid: "812345680", server: "EU West" }));
+    assert.match(builder.content!, /3\. \*\*Tank\*\* · UID 812345680 · EU West/);
+    await add("Extra", "812345690", "Asia");
+    await bot.onSelect(choose(`tr:tbr:${tid}:new`, PINK, builder, ["3"]));
+    assert.match(builder.content!, /ลบ Extra แล้ว[\s\S]*ผู้เล่น 3\/3-4 คน/);
+
+    // Discord teammates come from the menu; the captain is not listed twice.
+    await bot.onSelect(choose(`tr:tbu:${tid}:new`, PINK, builder, [], [MATE, PINK]));
+    assert.match(builder.content!, new RegExp(`เพื่อนร่วมทีมใน Discord: <@${MATE}>$`, "m"));
+
+    const send = press(`tr:tbs:${tid}:new`, PINK, builder);
+    await bot.onButton(send);
+    assert.match(builder.content!, /สมัครทีม \*\*Pink\*\* แล้ว คุณเป็นหัวหน้าทีม/);
+    assert.match(builder.content!, /Mage, Two \(UID 812345679 · Asia\)/);
+    assert.deepEqual(controls(builder)[0].map((id: string) => id.split(":")[1]), ["ted", "tcp", "twd"]);
     let pink = (await bracket()).teams.find((t: any) => t.name === "Pink");
     assert.equal(pink.captainDiscordId, PINK);
     assert.equal(pink.tag, "PNK");
-    assert.deepEqual(pink.memberDiscordIds, [MATE], "the captain is not listed twice");
-    assert.deepEqual(pink.roster.map((r: any) => [r.name, r.uid, r.server]), [["Pinky", "812345678", "Asia"], ["Mage, Two", "812345679", "Asia"], ["Tank", "812345680", "EU"]]);
+    assert.deepEqual(pink.memberDiscordIds, [MATE]);
+    assert.deepEqual(pink.roster.map((r: any) => [r.name, r.uid, r.server]), [["Pinky", "812345678", "Asia"], ["Mage, Two", "812345679", "Asia"], ["Tank", "812345680", "EU West"]]);
     assert.ok(announce().texts.some((t) => /ทีม \*\*Pink\*\* สมัครแล้ว/.test(t)));
+    const stale = press(`tr:tbs:${tid}:new`, PINK, builder);
+    await bot.onButton(stale);
+    assert.match(text(last(stale.replies)), /หมดอายุ/, "a sent form can't be sent twice");
 
     // A teammate sees the team but no buttons; the captain's buttons refuse them.
     const mate = press(`tr:tmy:${tid}`, MATE, panel);
@@ -517,27 +598,39 @@ describe("a whole tournament from Discord", () => {
     const sneaky = press(`tr:ted:${tid}:${pink.id}`, MATE, panel);
     await bot.onButton(sneaky);
     assert.match(text(last(sneaky.replies)), /สำหรับหัวหน้าทีมเท่านั้น/);
-    assert.equal(sneaky.modal, null);
     const stranger = press(`tr:tmy:${tid}`, person(95), panel);
     await bot.onButton(stranger);
     assert.match(text(last(stranger.replies)), /ยังไม่ได้อยู่ในทีมไหน/);
+    const notMine = press(`tr:tba:${tid}:${pink.id}`, MATE, panel);
+    await bot.onButton(notMine);
+    assert.match(text(last(notMine.replies)), /หมดอายุ/, "nobody else can use the captain's form");
 
-    // The captain changes the roster from the filled-in form.
+    // The captain changes the roster in the same kind of form, starting from the team as it is.
     const mine = press(`tr:tmy:${tid}`, PINK, panel);
     await bot.onButton(mine);
     assert.match(text(last(mine.replies)), /คุณเป็นหัวหน้าทีม/);
     const edit = press(`tr:ted:${tid}:${pink.id}`, PINK, panel);
     await bot.onButton(edit);
-    const ef = formFields(edit.modal);
-    assert.deepEqual(Object.keys(ef), ["players", "members"]);
-    assert.equal(ef.players.value, "Pinky, 812345678, Asia\nMage, Two, 812345679, Asia\nTank, 812345680, EU");
-    assert.deepEqual(ef.members.users, [MATE]);
-    const taken = submitForm(`tr:tem:${tid}:${pink.id}`, PINK, ANNOUNCE, { players: `${ef.players.value}\nThief, 812345678, EU` }, { members: [roster(1)[1]] });
-    await bot.onModal(taken);
+    const editor = privateMessage(last<any>(edit.replies));
+    assert.match(editor.content!, /แก้รายชื่อ Pink\*\* \(PNK\) · ผู้เล่น 3\/3-4 คน/);
+    assert.equal(editor.components[2].components[0].default_values[0].id, MATE);
+    assert.deepEqual(controls(editor)[3], [`tr:tba:${tid}:${pink.id}`, `tr:tbs:${tid}:${pink.id}`]);
+    const thief = press(`tr:tba:${tid}:${pink.id}`, PINK, editor);
+    await bot.onButton(thief);
+    await bot.onModal(submitFrom(editor, thief.modal.custom_id, PINK, { name: "Thief", uid: roster(1)[1], server: "EU" }));
+    await bot.onSelect(choose(`tr:tbu:${tid}:${pink.id}`, PINK, editor, [], [roster(1)[1]]));
+    const taken = press(`tr:tbs:${tid}:${pink.id}`, PINK, editor);
+    await bot.onButton(taken);
     assert.match(text(last(taken.replies)), /อยู่ในทีม Blue แล้ว/, "a Blue player cannot join Pink");
-    const edited = submitForm(`tr:tem:${tid}:${pink.id}`, PINK, ANNOUNCE, { players: `${ef.players.value}\nHealer, 812345681, Asia` }, {});
-    await bot.onModal(edited);
-    assert.match(text(last(edited.replies)), /อัปเดตทีม \*\*Pink\*\*[\s\S]*Healer/);
+    assert.match(editor.content!, /Thief/, "the form stays to fix");
+    await bot.onSelect(choose(`tr:tbr:${tid}:${pink.id}`, PINK, editor, ["3"]));
+    await bot.onSelect(choose(`tr:tbu:${tid}:${pink.id}`, PINK, editor, [], []));
+    const healer = press(`tr:tba:${tid}:${pink.id}`, PINK, editor);
+    await bot.onButton(healer);
+    await bot.onModal(submitFrom(editor, healer.modal.custom_id, PINK, { name: "Healer", uid: "812345681", server: "Asia" }));
+    assert.equal(editor.components[3].components[0].disabled, true, "four is the most");
+    await bot.onButton(press(`tr:tbs:${tid}:${pink.id}`, PINK, editor));
+    assert.match(editor.content!, /อัปเดตทีม \*\*Pink\*\*[\s\S]*Healer/);
     pink = (await bracket()).teams.find((t: any) => t.name === "Pink");
     assert.equal(pink.roster.length, 4);
     assert.deepEqual(pink.memberDiscordIds, [], "teammates unpicked are taken off");
@@ -988,7 +1081,7 @@ describe("the result form in a match room", () => {
     const id = open.modal.custom_id;
     const tries: [string, "A" | "B" | null, string, any[], RegExp][] = [
       [memberOf(a), "A", "3-0", [png("g1.png")], /Bo3/],
-      [memberOf(a), "A", "1-2", [png("g1.png")], /ชนะ/],
+      [memberOf(a), "A", "1-1", [png("g1.png")], /เสมอ/],
       [memberOf(a), "A", "สองหนึ่ง", [png("g1.png")], /สกอร์/],
       [memberOf(a), "A", "2-1", [], /แนบรูป/],
       [memberOf(a), "A", "2-1", [{ name: "notes.txt", contentType: "text/plain" }], /แนบรูป/],
