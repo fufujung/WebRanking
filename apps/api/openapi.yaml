@@ -566,6 +566,20 @@ paths:
       summary: Totals, top teams, recent matches and upcoming tournaments
       responses:
         "200": { description: Overview }
+  /api/v1/stats/admin:
+    get:
+      tags: [Stats]
+      summary: Admin dashboard data (admin)
+      description: >
+        Totals, matches and new players/teams per day, the MMR tier spread, the top 5 players
+        and a to-do list (players without a UID, teams without a logo, bracket matches ready to
+        play, disputes, tournaments open for registration).
+      parameters:
+        - { name: days, in: query, schema: { type: integer, minimum: 7, maximum: 90, default: 14 } }
+        - { name: tz, in: query, description: Minutes ahead of UTC used to split days (Thailand is 420), schema: { type: integer, default: 420 } }
+      responses:
+        "200": { description: Dashboard data }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /api/v1/stats/search:
     get:
       tags: [Stats]

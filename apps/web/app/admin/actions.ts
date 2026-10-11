@@ -276,7 +276,8 @@ export async function saveRoster(tournamentId: string, teamId: string, players: 
 }
 
 // Deletes
-const deletable = { teams: "/admin", players: "/admin", tournaments: "/admin", matches: "/admin" } as const;
+// After a delete, go back to the list the item was in.
+const deletable = { teams: "/admin/teams", players: "/admin/players", tournaments: "/admin/tournaments", matches: "/admin/matches" } as const;
 
 export async function remove(kind: keyof typeof deletable, id: string): Promise<FormState> {
   const result = await run(async () => {

@@ -223,6 +223,8 @@ export interface Match {
   ratingDeltaB: number;
   imageUrl: string | null;
   notes: string | null;
+  /** Where the result came from, e.g. "discord"; null when typed in on the website. */
+  source?: string | null;
   playedAt: string;
   teamA: TeamSummary;
   teamB: TeamSummary;
@@ -259,7 +261,6 @@ export interface SeriesTotals extends Record<StatKey, number> {
 export interface MatchDetail extends Match {
   /** The bracket match this series decides, if any. */
   bracketSlot: { id: string; code: string; number: number } | null;
-  source: string | null;
   sourceRef: string | null;
   games: MatchGame[];
   players: SeriesTotals[];
@@ -325,4 +326,21 @@ export interface ApiKeyInfo {
   createdAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
+}
+
+/** GET /stats/admin: everything the admin dashboard shows. */
+export interface AdminDashboard {
+  totals: { teams: number; players: number; tournaments: number; matches: number; ongoingTournaments: number; rankedPlayers: number; placingPlayers: number };
+  week: { matches: number; prevMatches: number | null; newPlayers: number; newTeams: number; matchesToday: number };
+  days: { date: string; matches: number; games: number; newPlayers: number; newTeams: number }[];
+  tiers: (Tier & { players: number })[];
+  topPlayers: LadderPlayer[];
+  todo: {
+    playersWithoutUid: number;
+    teamsWithoutLogo: number;
+    playersWithoutTeam: number;
+    readyMatches: { tournamentId: string; name: string; count: number }[];
+    disputes: { id: string; number: number; tournamentId: string; name: string }[];
+    openRegistration: { id: string; name: string; teams: number; maxTeams: number | null }[];
+  };
 }

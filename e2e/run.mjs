@@ -384,6 +384,29 @@ await page.click("button:has-text('เอาออก') >> nth=0");
 await page.waitForSelector(".error");
 step("placement saved; removing a team with matches blocked: " + (await page.locator(".error").first().textContent()));
 
+// Admin dashboard and list pages
+await page.goto(base + "/admin");
+if ((await page.locator(".dash-card").count()) !== 4) throw new Error("dashboard should show 4 stat cards");
+if ((await page.locator(".day-bar").count()) !== 14) throw new Error("matches-per-day chart should have 14 days");
+await page.locator(".side-health:has-text('ออนไลน์')").waitFor();
+await page.click(".side-link:has-text('ทีม')");
+await page.waitForURL(base + "/admin/teams");
+await page.locator(".side-link-active:has-text('ทีม')").waitFor();
+await page.fill('.list-search input[name="q"]', teamNames[0]);
+await page.click(".list-search button");
+await page.waitForURL(/\/admin\/teams\?q=/);
+if ((await page.locator(".admin-table tbody tr").count()) < 1) throw new Error("team search in admin list found nothing");
+await page.goto(base + "/admin/players?show=nouid");
+const noUid = await page.locator(".admin-table tbody tr").count();
+const tabCount = Number(await page.locator(".tab-active .tab-count").textContent());
+if (noUid !== Math.min(tabCount, 50)) throw new Error(`"no UID" tab says ${tabCount} but lists ${noUid}`);
+await page.goto(base + "/admin/tournaments?status=ONGOING");
+for (const b of await page.locator(".admin-table .badge").allTextContents()) if (b !== "กำลังแข่ง") throw new Error("status filter let through " + b);
+await page.goto(base + "/admin/matches");
+if ((await page.locator(".admin-table tbody tr").count()) < 1) throw new Error("admin match list is empty");
+await page.screenshot({ path: path.join(OUT, "admin-matches.png"), fullPage: true });
+step(`admin dashboard, menu and lists work (${noUid} players without UID)`);
+
 // Admin search
 await page.goto(base + "/admin");
 await page.fill('input[aria-label="ค้นหาข้อมูลเพื่อแก้ไข"]', uniq);
@@ -410,7 +433,7 @@ step("API key created, works with the API, then revoked");
 await page.goto(matchUrl.replace("/matches/", "/admin/matches/"));
 page.once("dialog", (d) => d.accept());
 await page.click(".page-head button:has-text('ลบ')");
-await page.waitForURL(/\/admin\?deleted=1/);
+await page.waitForURL(/\/admin\/matches\?deleted=1/);
 const gone = await page.request.get(matchUrl);
 if (gone.status() !== 404) throw new Error("deleted match still visible: " + gone.status());
 step("match deleted, page now 404");
