@@ -38,6 +38,13 @@ async function resolvePlayers(tx: Tx, input: MatchInput, teamIds: { A: string; B
     named ? knownNames(tx) : Promise.resolve([]),
   ]);
   const known = new Set(byIdList.map((p) => p.id));
+  // Who each team registered for this tournament: a drawn SOLO team's players belong to other teams.
+  const rostered = named
+    ? new Map(
+        (await tx.rosterPlayer.findMany({ where: { entry: { tournamentId: input.tournamentId, teamId: { in: [teamIds.A, teamIds.B] } } }, select: { playerId: true, entry: { select: { teamId: true } } } }))
+          .map((r) => [r.playerId, r.entry.teamId]),
+      )
+    : new Map<string, string>();
   const created = new Map<string, string>(); // `${teamId}:${normalisedName}` -> player id
 
   const find = async (name: string, teamId: string) => {
@@ -45,6 +52,7 @@ async function resolvePlayers(tx: Tx, input: MatchInput, teamIds: { A: string; B
     const now = (p: (typeof everyone)[number]) => p.current.includes(key);
     const before = (p: (typeof everyone)[number]) => p.past.includes(key);
     const existing =
+      everyone.find((p) => rostered.get(p.id) === teamId && now(p)) ??
       everyone.find((p) => p.teamId === teamId && now(p)) ?? everyone.find(now) ??
       everyone.find((p) => p.teamId === teamId && before(p)) ?? everyone.find(before);
     if (existing) return existing.id;

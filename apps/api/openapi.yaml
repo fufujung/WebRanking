@@ -60,10 +60,23 @@ paths:
         "409": { description: A game with this name exists }
   /api/v1/games/{id}:
     parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [Games]
+      summary: A game with its in-game ranks
+      responses:
+        "200": { description: Game, content: { application/json: { schema: { $ref: "#/components/schemas/GameTitle" } } } }
     patch:
       tags: [Games]
-      summary: Rename a game; its tournaments' `game` name changes too (admin)
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, maxLength: 100 } } } } } }
+      summary: Rename a game (its tournaments' `game` name changes too) and/or set its in-game ranks (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+                ranks: { type: array, maxItems: 30, description: Lowest first, items: { $ref: "#/components/schemas/GameRank" } }
       responses:
         "200": { description: Renamed }
         "409": { description: A game with this name exists }
@@ -153,6 +166,33 @@ paths:
       responses:
         "200": { description: "{ code }" }
         "403": { description: Only the captain can do this }
+  /api/v1/members/{discordId}/solo/{tournamentId}:
+    parameters:
+      - { $ref: "#/components/parameters/discordId" }
+      - { name: tournamentId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Members]
+      summary: Sign up alone for a SOLO tournament, or change position, rank or character (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [playerId, position, rank]
+              properties:
+                playerId: { type: string, description: One of this member's characters }
+                position: { type: string, enum: [GUARD, FORWARD, CENTER, ALL] }
+                rank: { type: string, description: "The name of one of the game's ranks (GET /games/{id})" }
+      responses:
+        "200": { description: The sign-up view }
+        "403": { description: Not this member's character }
+        "409": { description: Registration closed, teams already drawn, or not a SOLO tournament }
+    delete:
+      tags: [Members]
+      summary: Withdraw from a SOLO tournament before the draw (admin)
+      responses:
+        "200": { description: The sign-up view }
   /api/v1/members/invites/{code}:
     get:
       tags: [Members]
@@ -570,6 +610,49 @@ paths:
       responses:
         "200": { description: The entry with its roster }
         "409": { description: Rosters are locked }
+  /api/v1/tournaments/{id}/solo:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [Tournaments]
+      summary: SOLO tournament sign-ups (position and in-game rank), ranks and whether teams were drawn
+      responses:
+        "200": { description: "{ entryMode, teamSize, ranks, registrationOpen, drawn, signups[] }" }
+  /api/v1/tournaments/{id}/solo/draw:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Tournaments]
+      summary: Propose balanced teams from the sign-ups; nothing is saved (admin)
+      description: Every team covers Guard, Forward and Center where it can (ALL fills any), with rank totals and MMR as even as possible. The latest sign-ups are reserves when the count doesn't divide by teamSize. Each call draws again.
+      responses:
+        "200": { description: "{ teams: [{ players, rankTotal, mmrAverage, positionsOk }], reserves }" }
+        "409": { description: Fewer than two teams of players, or not a SOLO tournament }
+  /api/v1/tournaments/{id}/solo/teams:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Tournaments]
+      summary: Save drawn teams as registered teams with rosters (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [teams]
+              properties:
+                teams: { type: array, items: { type: array, items: { type: string, description: playerId } } }
+                replace: { type: boolean, default: false, description: Replace teams drawn before (no matches played yet) }
+      responses:
+        "200": { description: The sign-up view with drawn true }
+        "409": { description: "Teams were drawn already (details.needsReplace), or matches were played" }
+  /api/v1/tournaments/{id}/solo/{playerId}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: playerId, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [Tournaments]
+      summary: Remove one sign-up (admin)
+      responses:
+        "200": { description: The sign-up view }
   /api/v1/tournaments/{id}/bracket:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:
@@ -927,11 +1010,18 @@ components:
     Forbidden: { description: Read-only key used for a write, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    GameRank:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 30 }
+        iconUrl: { type: string, nullable: true, description: http(s) URL or /uploads/... path }
     GameTitle:
       type: object
       properties:
         id: { type: string }
         name: { type: string }
+        ranks: { type: array, items: { $ref: "#/components/schemas/GameRank" }, description: Lowest first }
         players: { type: integer }
         teams: { type: integer }
         tournaments: { type: integer }
@@ -1102,6 +1192,8 @@ components:
         registrationOpen: { type: boolean, default: false }
         thirdPlaceMatch: { type: boolean, default: false, description: Single elimination only }
         grandFinalReset: { type: boolean, default: true, description: "Double elimination: a second final if the losers-bracket team wins the first" }
+        entryMode: { type: string, enum: [TEAM, SOLO], default: TEAM, description: "SOLO = players sign up alone and are drawn into teams" }
+        teamSize: { type: integer, default: 3, description: Players per drawn team (SOLO) }
     RosterInput:
       type: object
       required: [players]

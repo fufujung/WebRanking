@@ -9,6 +9,7 @@ import { datesInOrder, entryInput, rosterSizeOk, searchQuery, tournamentInput, t
 import * as comp from "../lib/competition.js";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { matchInclude, matchOrder } from "../lib/selects.js";
+import { confirmTeams, drawTeams, removeSignup, soloView } from "../lib/solo.js";
 
 export const tournaments = Router();
 
@@ -150,6 +151,28 @@ tournaments.put("/:id/entries/:teamId/roster", requireAdmin, async (req, res) =>
   const entry = await comp.setRoster(String(req.params.id), String(req.params.teamId), req.body);
   await adoptGame(String(req.params.id));
   res.json(entry);
+});
+
+// ---------- Solo sign-ups and the team draw ----------
+
+tournaments.get("/:id/solo", async (req, res) => {
+  res.json(await soloView(String(req.params.id)));
+});
+
+/** Proposes balanced teams from the sign-ups (nothing is saved). */
+tournaments.post("/:id/solo/draw", requireAdmin, async (req, res) => {
+  res.json(await drawTeams(String(req.params.id)));
+});
+
+/** Saves the drawn teams as registered teams with rosters. */
+tournaments.post("/:id/solo/teams", requireAdmin, async (req, res) => {
+  const view = await confirmTeams(String(req.params.id), req.body);
+  await adoptGame(String(req.params.id));
+  res.json(view);
+});
+
+tournaments.delete("/:id/solo/:playerId", requireAdmin, async (req, res) => {
+  res.json(await removeSignup(String(req.params.id), String(req.params.playerId)));
 });
 
 // ---------- Bracket ----------

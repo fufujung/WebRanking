@@ -84,6 +84,9 @@ export const tournamentInput = z.object({
   registrationOpen: z.boolean().default(false),
   thirdPlaceMatch: z.boolean().default(false),
   grandFinalReset: z.boolean().default(true),
+  /** SOLO: players sign up alone and are drawn into teams of teamSize. */
+  entryMode: z.enum(["TEAM", "SOLO"]).default("TEAM"),
+  teamSize: z.coerce.number().int().min(2).max(10).default(3),
 });
 
 export const rosterSizeOk = (t: { rosterMin?: number; rosterMax?: number }) => t.rosterMin === undefined || t.rosterMax === undefined || t.rosterMin <= t.rosterMax;

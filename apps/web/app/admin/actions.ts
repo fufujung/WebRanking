@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import { endSession, passwordMatches, requireAdmin, startSession } from "@/lib/auth";
 import { explain } from "@/lib/explain";
 import { fromBangkokInput } from "@/lib/format";
+import type { SoloDraw } from "@/lib/types";
 
 export type FormState = {
   error?: string;
@@ -135,6 +136,8 @@ function bracketSettings(form: FormData) {
   for (const k of ["bestOf", "lateMinutes", "rosterMin", "rosterMax"]) if (n(k) !== undefined) out[k] = n(k);
   if (form.has("maxTeams")) out.maxTeams = n("maxTeams") ?? null;
   if (form.has("finalBestOf")) out.finalBestOf = n("finalBestOf") ?? null;
+  if (form.has("entryMode")) out.entryMode = text(form, "entryMode") === "SOLO" ? "SOLO" : "TEAM";
+  if (n("teamSize") !== undefined) out.teamSize = n("teamSize");
   // Checkboxes: a hidden "present" marker tells unchecked apart from locked.
   for (const k of ["registrationOpen", "thirdPlaceMatch", "grandFinalReset"]) if (form.has(`${k}Present`)) out[k] = form.get(k) === "on";
   return out;
@@ -270,6 +273,39 @@ export async function saveRoster(tournamentId: string, teamId: string, players: 
   );
 }
 
+// Solo tournaments
+/** Proposes balanced teams from the solo sign-ups; nothing is saved. */
+export async function drawSolo(tournamentId: string): Promise<{ draw?: SoloDraw; error?: string }> {
+  await requireAdmin();
+  try {
+    return { draw: await api<SoloDraw>(`/tournaments/${encodeURIComponent(tournamentId)}/solo/draw`, { method: "POST" }) };
+  } catch (e) {
+    return { error: explain(e) };
+  }
+}
+
+/** Saves drawn teams; replace=true swaps out teams drawn before. */
+export async function confirmSolo(tournamentId: string, teams: string[][], replace: boolean): Promise<FormState & { needsReplace?: boolean }> {
+  await requireAdmin();
+  try {
+    await api(`/tournaments/${encodeURIComponent(tournamentId)}/solo/teams`, { method: "POST", json: { teams, replace } });
+  } catch (e) {
+    const needsReplace = e instanceof ApiError && Boolean((e.details as { needsReplace?: boolean } | undefined)?.needsReplace);
+    return { error: explain(e), needsReplace };
+  }
+  revalidatePath("/", "layout");
+  return { ok: `บันทึก ${teams.length} ทีมแล้ว จัดสายแข่งต่อได้เลย` };
+}
+
+export async function removeSoloSignup(tournamentId: string, playerId: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/tournaments/${encodeURIComponent(tournamentId)}/solo/${encodeURIComponent(playerId)}`, { method: "DELETE" });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: "เอาออกแล้ว" };
+}
+
 // Games
 export async function addGame(_: FormState, form: FormData): Promise<FormState> {
   const name = text(form, "name");
@@ -288,6 +324,16 @@ export async function renameGame(id: string, _: FormState, form: FormData): Prom
   if (result) return result;
   revalidatePath("/", "layout");
   return { ok: "บันทึกชื่อแล้ว" };
+}
+
+/** Replaces a game's in-game ranks (lowest first), each with an optional icon. */
+export async function saveGameRanks(id: string, ranks: { name: string; iconUrl: string | null }[]): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/games/${encodeURIComponent(id)}`, { method: "PATCH", json: { ranks } });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: "บันทึกแรงค์แล้ว" };
 }
 
 export async function deleteGame(id: string): Promise<FormState> {

@@ -2,13 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiOrNull } from "@/lib/api";
 import { fetchAll } from "@/lib/fetchAll";
-import type { Bracket, Team, TournamentDetail } from "@/lib/types";
+import type { Bracket, SoloView, Team, TournamentDetail } from "@/lib/types";
 import { TournamentForm } from "@/components/admin/TournamentForm";
 import { EntryManager } from "@/components/admin/EntryManager";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { BracketAdmin } from "@/components/admin/BracketAdmin";
 import { RosterManager } from "@/components/admin/RosterManager";
 import { allGames } from "@/lib/games";
+import { SoloAdmin } from "@/components/admin/SoloAdmin";
 
 export const metadata = { title: "แก้ไขทัวร์นาเมนต์" };
 
@@ -20,7 +21,10 @@ export default async function EditTournament({ params, searchParams }: { params:
     allGames(),
   ]);
   if (!t) notFound();
-  const bracket = t.format ? await apiOrNull<Bracket>(`/tournaments/${t.id}/bracket`) : null;
+  const [bracket, solo] = await Promise.all([
+    t.format ? apiOrNull<Bracket>(`/tournaments/${t.id}/bracket`) : null,
+    t.entryMode === "SOLO" ? apiOrNull<SoloView>(`/tournaments/${t.id}/solo`) : null,
+  ]);
   return (
     <>
       <div className="page-head">
@@ -33,6 +37,12 @@ export default async function EditTournament({ params, searchParams }: { params:
       </div>
       {sp.saved && <div className="success" style={{ marginBottom: 16 }}>บันทึกแล้ว</div>}
       <TournamentForm key={t.gameId ?? ""} tournament={t} games={games} />
+      {solo && (
+        <>
+          <h2 className="mt" id="solo">ลงเดี่ยว / สุ่มทีม</h2>
+          <SoloAdmin tournamentId={t.id} view={solo} started={t.bracketStatus === "LIVE" || t.bracketStatus === "DONE"} />
+        </>
+      )}
       {t.format && (
         <>
           <h2 className="mt" id="bracket">สายการแข่งขัน</h2>
