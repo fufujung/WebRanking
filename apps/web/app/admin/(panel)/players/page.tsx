@@ -58,6 +58,7 @@ export default async function AdminPlayers({ searchParams }: { searchParams: Pro
                       <span>
                         <strong>{p.name}</strong>
                         {p.nickname && <span className="muted small"> “{p.nickname}”</span>}
+                        {p.discordId && <span className="pill pill-info" title="ผูกกับบัญชี Discord แล้ว" style={{ marginLeft: 6 }}>Discord</span>}
                       </span>
                     </Link>
                   </td>

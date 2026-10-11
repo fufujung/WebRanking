@@ -23,9 +23,10 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
           <div>
             <h1>{p.name}</h1>
             <span className="muted">{[p.nickname && `“${p.nickname}”`, p.role, p.country].filter(Boolean).join(" · ") || " "}</span>
-            {(p.uid || p.names.length > 0) && (
+            {(p.uid || p.discordId || p.names.length > 0) && (
               <div className="row small" style={{ gap: 8, marginTop: 6 }}>
                 {p.uid && <span className="chip uid-chip" title="UID ในเกม">UID {p.uid}{p.server ? ` · ${p.server}` : ""}</span>}
+                {p.discordId && <span className="chip verified-chip" title="เจ้าของโปรไฟล์ยืนยันตัวตนด้วย Discord แล้ว">✓ ยืนยันผ่าน Discord</span>}
                 {p.names.length > 0 && (
                   <span className="muted" title={p.names.map((n) => `${n.name} (ใช้ถึง ${fmtDate(n.lastSeen)})`).join("\n")}>
                     เคยใช้ชื่อ: {p.names.map((n) => n.name).join(", ")}

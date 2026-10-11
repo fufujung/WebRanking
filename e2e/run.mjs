@@ -2,7 +2,11 @@
 // Needs the API and website running with demo data (npm run setup && npm run dev), then: npm run test:e2e
 // Env: BASE_URL (default http://localhost:3000), API_URL (default http://localhost:4000),
 //      ADMIN_PASSWORD (default: read from apps/web/.env.local), CHROMIUM_PATH (optional browser binary).
+// "Log in with Discord" is tested against a stand-in Discord on DISCORD_MOCK_PORT (default 4999) when the website
+// runs with DISCORD_CLIENT_ID=e2e DISCORD_CLIENT_SECRET=e2e-secret DISCORD_API_URL=http://localhost:4999/api
+// DISCORD_AUTHORIZE_URL=http://localhost:4999/oauth2/authorize (CI does this); otherwise that part is skipped.
 import { chromium } from "playwright";
+import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,6 +44,32 @@ page.on("response", (r) => {
   if (r.status() >= 500) problems.push(`HTTP ${r.status()} ${r.url()}`);
 });
 const step = (s) => console.log("✓", s);
+
+// Stand-in for Discord's OAuth: approves at once and says the visitor is "E2E Discord".
+const DISCORD_USER = { id: "424242424242424242", username: "e2e_discord", global_name: "E2E Discord", avatar: null };
+const discordMock = http.createServer(async (req, res) => {
+  const url = new URL(req.url, "http://localhost");
+  let body = "";
+  for await (const chunk of req) body += chunk;
+  const json = (status, data) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(data));
+  if (url.pathname === "/oauth2/authorize") {
+    if (url.searchParams.get("scope") !== "identify" || !url.searchParams.get("state")) return json(400, { error: "bad authorize request" });
+    const back = new URL(url.searchParams.get("redirect_uri"));
+    back.searchParams.set("code", "e2e-code");
+    back.searchParams.set("state", url.searchParams.get("state"));
+    return res.writeHead(302, { Location: back.toString() }).end();
+  }
+  if (url.pathname === "/api/oauth2/token" && req.method === "POST") {
+    const form = new URLSearchParams(body);
+    if (form.get("code") !== "e2e-code" || form.get("client_secret") !== "e2e-secret" || !form.get("redirect_uri")?.endsWith("/api/auth/discord/callback")) return json(401, { error: "invalid_grant" });
+    return json(200, { access_token: "e2e-token", token_type: "Bearer" });
+  }
+  if (url.pathname === "/api/users/@me") {
+    return req.headers.authorization === "Bearer e2e-token" ? json(200, DISCORD_USER) : json(401, { message: "401: Unauthorized" });
+  }
+  json(404, { message: "not found" });
+});
+await new Promise((r) => discordMock.listen(Number(process.env.DISCORD_MOCK_PORT ?? 4999), r));
 const uniq = Date.now().toString().slice(-5);
 
 console.log("— Public pages");
@@ -560,8 +590,60 @@ if (ADMIN_PATH) {
 }
 step("logged out");
 
+console.log("— Players log in with Discord");
+await page.goto(base + "/me");
+if (!(await page.locator(".btn-discord").count())) {
+  step("Discord login is not configured on this website: skipped");
+} else {
+  if (!(await page.locator('.nav a[href="/me"]').count())) throw new Error("menu has no player login link");
+  // A forged return from Discord is refused.
+  await page.goto(base + "/api/auth/discord/callback?code=e2e-code&state=forged");
+  await page.locator(".error:has-text('หมดอายุ')").waitFor();
+  await page.click(".btn-discord");
+  await page.waitForURL(base + "/me");
+  await page.locator("h1:has-text('E2E Discord')").waitFor();
+  await page.locator(".nav-me:has-text('E2E Discord')").waitFor();
+  // A new UID needs a name first.
+  const newUid = `77${uniq}`;
+  await page.fill('.claim-form input[name="uid"]', newUid);
+  await page.fill('.claim-form input[name="server"]', "Asia");
+  await page.click(".claim-form button:has-text('ผูกโปรไฟล์')");
+  await page.locator(".claim-form .error:has-text('ใส่ชื่อในเกม')").waitFor();
+  await page.fill('.claim-form input[name="name"]', `Disc-${uniq}`);
+  await page.click(".claim-form button:has-text('ผูกโปรไฟล์')");
+  await page.locator(`.me-player:has-text('Disc-${uniq}')`).waitFor();
+  // An existing player (Ace from the demo data) is linked with their stats.
+  await page.fill('.claim-form input[name="uid"]', "81000100");
+  await page.fill('.claim-form input[name="server"]', "Asia");
+  await page.click(".claim-form button:has-text('ผูกโปรไฟล์')");
+  await page.locator(".me-player:has-text('Ace')").waitFor();
+  step("logged in with Discord; created a new profile by UID and linked an existing one");
+
+  const mine = page.locator(`.me-player:has-text('Disc-${uniq}')`);
+  await mine.locator('input[name="nickname"]').fill(`Nick ${uniq}`);
+  await mine.locator('input[name="role"]').fill("Center");
+  await mine.locator("button:has-text('บันทึก')").click();
+  await mine.locator(".success:has-text('บันทึกแล้ว')").waitFor();
+  const up = await page.request.post(base + "/api/upload", { multipart: { image: { name: "a.png", mimeType: "image/png", buffer: fs.readFileSync(LOGO) } } });
+  if (up.status() !== 201 && up.status() !== 200) throw new Error("logged-in player cannot upload an avatar: " + up.status());
+  await mine.locator("a.entity").click();
+  await page.locator(".verified-chip").waitFor();
+  if (!(await page.locator(`text=Nick ${uniq}`).count())) throw new Error("nickname not on the public profile");
+  step("player edited their own nickname and role; profile shows ✓ ยืนยันผ่าน Discord");
+
+  await page.goto(base + "/me");
+  page.once("dialog", (d) => d.accept());
+  await page.locator(".me-player:has-text('Ace')").locator("button:has-text('ยกเลิกการผูก')").click();
+  await page.locator(".me-player:has-text('Ace')").waitFor({ state: "detached" });
+  await page.click("button:has-text('ออกจากระบบ')");
+  await page.waitForURL(base + "/");
+  await page.locator('.nav a[href="/me"]:has-text("เข้าสู่ระบบ")').waitFor();
+  if ((await page.request.post(base + "/api/upload", { multipart: { image: { name: "a.png", mimeType: "image/png", buffer: fs.readFileSync(LOGO) } } })).status() !== 401) throw new Error("upload open after player logout");
+  step("player unlinked a profile and logged out");
+}
 
 await browser.close();
+discordMock.close();
 if (problems.length) {
   console.error("Problems found:\n" + problems.join("\n"));
   process.exit(1);

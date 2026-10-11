@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { endSession, passwordMatches, requireAdmin, startSession } from "@/lib/auth";
-import { thai, thaiField } from "@/lib/messages";
+import { explain } from "@/lib/explain";
 import { fromBangkokInput } from "@/lib/format";
 
 export type FormState = {
@@ -20,20 +20,6 @@ const text = (f: FormData, k: string) => {
   return typeof v === "string" ? v.trim() : "";
 };
 const orNull = (v: string) => (v ? v : null);
-
-/** Turns API validation errors into a readable Thai message. */
-function explain(e: unknown): string {
-  if (e instanceof ApiError) {
-    const details = e.details as { th?: string; fieldErrors?: Record<string, string[]>; formErrors?: string[] } | undefined;
-    if (details?.th) return details.th;
-    const fields = details?.fieldErrors
-      ? Object.entries(details.fieldErrors).map(([k, v]) => `${thaiField(k)}: ${v.map(thai).join(", ")}`)
-      : [];
-    const extra = [...(details?.formErrors ?? []).map(thai), ...fields].join("; ");
-    return extra ? `${thai(e.message)} (${extra})` : thai(e.message);
-  }
-  return "เกิดข้อผิดพลาด กรุณาลองใหม่";
-}
 
 async function run(fn: () => Promise<void>): Promise<FormState> {
   await requireAdmin();
@@ -306,4 +292,14 @@ export async function revokeKey(id: string): Promise<FormState> {
   });
   revalidatePath("/admin/keys");
   return result;
+}
+
+/** Removes a player's Discord login link (e.g. someone claimed the wrong UID). */
+export async function unlinkDiscord(playerId: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/players/${encodeURIComponent(playerId)}/discord`, { method: "DELETE" });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: "ยกเลิกการผูก Discord แล้ว" };
 }

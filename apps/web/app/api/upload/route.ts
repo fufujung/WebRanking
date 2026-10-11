@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/auth";
+import { getMember } from "@/lib/member";
 import { API_URL } from "@/lib/api";
 import { thai } from "@/lib/messages";
 
-/** Forwards an image upload to the API with the server-side key, for logged-in admins only. */
+/** Forwards an image upload to the API with the server-side key, for the admin and players logged in with Discord. */
 export async function POST(req: Request) {
-  if (!(await isAdmin())) return NextResponse.json({ error: "กรุณาเข้าสู่ระบบก่อน" }, { status: 401 });
+  if (!(await isAdmin()) && !(await getMember())) return NextResponse.json({ error: "กรุณาเข้าสู่ระบบก่อน" }, { status: 401 });
   let form: FormData;
   try {
     form = await req.formData();

@@ -611,3 +611,14 @@ h4 { font-size: 15px; font-weight: 700; }
   .list-search { flex: 1 1 100%; }
   .list-filters label { min-width: 0; flex: 1 1 140px; }
 }
+
+/* Players' own login (Discord) */
+.btn-discord { display: inline-flex; align-items: center; gap: 10px; background: #5865f2; border-color: #5865f2; color: #fff; padding: 11px 20px; font-size: 16px; }
+.btn-discord:hover { background: #4752c4; border-color: #4752c4; color: #fff; }
+.me-login { max-width: 480px; margin: 40px auto; text-align: center; }
+.discord-chip { display: inline-flex; align-items: center; gap: 6px; color: #8891f2; }
+.verified-chip { color: #8891f2; border-color: color-mix(in srgb, #5865f2 45%, transparent); }
+.nav-me { display: inline-flex; align-items: center; gap: 6px; }
+.nav-me img { width: 22px; height: 22px; border-radius: 50%; }
+.claim-form h2 { margin-bottom: 4px; }
+.discord-link { border-color: color-mix(in srgb, #5865f2 45%, var(--border)); }

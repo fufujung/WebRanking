@@ -233,6 +233,8 @@ async function resolveRoster(tx: Tx, teamId: string, players: RosterIn["players"
         await tx.player.update({ where: { id: playerId }, data: { uid: p.uid, server: p.server } });
       }
     }
+    // The Discord account on the roster can log in on the website as this player.
+    if (p.discordId) await tx.player.updateMany({ where: { id: playerId, discordId: null }, data: { discordId: p.discordId } });
     out.push({ playerId, discordId: p.discordId, uid: p.uid, server: p.server });
   }
   return out;

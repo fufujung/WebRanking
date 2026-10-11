@@ -37,6 +37,7 @@ model Player {
   teamId    String?
   uid       String? // in-game UID; one player per UID + server
   server    String? // in-game server
+  discordId String? // Discord account that logged in on the website as this player (one account may play several characters)
   mmr       Int      @default(1000) // personal rating, replayed from every series the player appeared in
   peakMmr   Int      @default(1000)
   createdAt DateTime @default(now())
@@ -50,6 +51,7 @@ model Player {
 
   @@index([teamId])
   @@index([uid])
+  @@index([discordId])
 }
 
 /// A name a player has used before, so old scoreboards and searches still find them.

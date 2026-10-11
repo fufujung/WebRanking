@@ -10,6 +10,7 @@ import { assertUidFree, findByUid, mergePlayers, playerSearch, renamePlayer } fr
 import { recomputeRatings } from "../lib/elo.js";
 import { playerBoard, tierInfo } from "../lib/leaderboard.js";
 import { PLACEMENT_SERIES } from "../lib/mmr.js";
+import { claimByUid, claimInput, discordId, playersOfDiscord, unlinkDiscord } from "../lib/members.js";
 
 export const players = Router();
 
@@ -41,6 +42,22 @@ players.get("/uid/:uid", async (req, res) => {
   const found = await findByUid(prisma, String(req.params.uid), server);
   if (!found) throw notFound("Player");
   res.json(await playerDetail(found.id));
+});
+
+/** Players a Discord account plays as (for "Log in with Discord" on the website). */
+players.get("/discord/:discordId", requireAdmin, async (req, res) => {
+  res.json({ data: await playersOfDiscord(discordId.parse(req.params.discordId)) });
+});
+
+/** Links the player with this UID to the Discord account, or creates the player when nobody has the UID. */
+players.post("/discord/:discordId/claim", requireAdmin, async (req, res) => {
+  const { player, created } = await claimByUid(discordId.parse(req.params.discordId), claimInput.parse(req.body));
+  res.status(created ? 201 : 200).json(player);
+});
+
+/** Removes the Discord link from a player. */
+players.delete("/:id/discord", requireAdmin, async (req, res) => {
+  res.json(await unlinkDiscord(String(req.params.id)));
 });
 
 players.get("/:id", async (req, res) => {

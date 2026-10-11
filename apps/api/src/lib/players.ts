@@ -131,6 +131,7 @@ export async function mergePlayers(intoId: string, fromId: string) {
         teamId: into.teamId ?? from.teamId,
         role: into.role ?? from.role,
         country: into.country ?? from.country,
+        discordId: into.discordId ?? from.discordId,
       },
     });
   });

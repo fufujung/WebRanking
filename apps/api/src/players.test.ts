@@ -327,3 +327,59 @@ describe("merging duplicate players", () => {
     assert.equal((await call("POST", `/players/${keep}/merge`, { fromId: "nope" })).status, 404);
   });
 });
+
+describe("Discord accounts (log in with Discord on the website)", () => {
+  const me = "111122223333444455";
+  const other = "999988887777666655";
+  const ids: Record<string, string> = {};
+
+  test("players the bot put on a roster with this Discord account belong to it", async () => {
+    const t = await ok("POST", "/tournaments", { name: "Discord Cup", startDate: "2026-11-02T12:00:00Z", format: "SINGLE_ELIMINATION", registrationOpen: true, rosterMin: 3, rosterMax: 4 });
+    const entry = await ok("POST", `/tournaments/${t.id}/registrations`, {
+      teamName: "Disc Wolves",
+      players: [{ name: "Howl", uid: "800100", server: "Asia", discordId: me }, { name: "d2" }, { name: "d3" }],
+    });
+    const mine = await ok("GET", `/players/discord/${me}`);
+    assert.deepEqual(mine.data.map((p: any) => p.name), ["Howl"]);
+    assert.equal(mine.data[0].id, entry.roster[0].playerId);
+    assert.equal(mine.data[0].discordId, me);
+    assert.deepEqual((await ok("GET", `/players/discord/${other}`)).data, []);
+    assert.equal((await call("GET", "/players/discord/not-a-snowflake")).status, 400);
+  });
+
+  test("claiming by UID links an existing player, refuses one linked to someone else, creates a new one", async () => {
+    // ShadowKing (UID 700100) has no Discord link yet.
+    ids.p = (await ok("GET", "/players/uid/700100?server=Asia")).id;
+    const claimed = await ok("POST", `/players/discord/${me}/claim`, { uid: "700100", server: "Asia" });
+    assert.equal(claimed.id, ids.p);
+    assert.equal(claimed.discordId, me);
+    const taken = await call("POST", `/players/discord/${other}/claim`, { uid: "700100", server: "Asia" });
+    assert.equal(taken.status, 409);
+    assert.match(taken.body.details.th, /ผูกกับบัญชี Discord อื่น/);
+    const unknown = await call("POST", `/players/discord/${other}/claim`, { uid: "800999" });
+    assert.equal(unknown.status, 400);
+    assert.equal(unknown.body.details.needsName, true);
+    const created = await call("POST", `/players/discord/${other}/claim`, { uid: "800999", server: "Asia", name: "Newbie" });
+    assert.equal(created.status, 201);
+    assert.deepEqual([created.body.name, created.body.uid, created.body.discordId], ["Newbie", "800999", other]);
+    // One account can play several characters.
+    assert.deepEqual((await ok("GET", `/players/discord/${me}`)).data.map((p: any) => p.name).sort(), ["Howl", claimed.name].sort());
+  });
+
+  test("the admin can unlink; a later roster does not steal a player linked to someone else", async () => {
+    const unlinked = await ok("DELETE", `/players/${ids.p}/discord`);
+    assert.equal(unlinked.discordId, null);
+    assert.equal((await call("DELETE", "/players/nope/discord")).status, 404);
+    // PATCH cannot set the link.
+    const patched = await ok("PATCH", `/players/${ids.p}`, { discordId: other, nickname: "Shady" });
+    assert.equal(patched.discordId, null);
+    const newbie = (await ok("GET", `/players/discord/${other}`)).data[0];
+    const t = await ok("POST", "/tournaments", { name: "Discord Cup 2", startDate: "2026-11-03T12:00:00Z", format: "SINGLE_ELIMINATION", registrationOpen: true, rosterMin: 3, rosterMax: 4 });
+    await ok("POST", `/tournaments/${t.id}/registrations`, {
+      teamName: "Disc Foxes",
+      players: [{ name: "Newbie", uid: "800999", server: "Asia", discordId: me }, { name: "f2" }, { name: "f3" }],
+    });
+    const stillTheirs = await ok("GET", `/players/${newbie.id}`);
+    assert.equal(stillTheirs.discordId, other, "a linked player keeps their account");
+  });
+});
