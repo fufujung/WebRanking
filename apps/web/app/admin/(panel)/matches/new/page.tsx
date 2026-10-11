@@ -36,7 +36,7 @@ export default async function NewMatch({ searchParams }: { searchParams: Promise
       ? {
           tournamentId: slot.tournament.id,
           id: slot.id,
-          title: `M${slot.number} · ${slot.label}`,
+          title: `M${slot.number} · ${slot.label} · BO${slot.bestOf}`,
           replace: slot.status === "DONE",
           teamA: { id: slot.teamA.id, name: slot.teamA.name },
           teamB: { id: slot.teamB.id, name: slot.teamB.name },

@@ -53,6 +53,11 @@ export const when = (iso: string | Date, style: "F" | "f" | "t" | "R" = "f") => 
 export const teamName = (t: Entry | null, source: string | null, bye: boolean) => (t ? t.name : bye ? "บาย" : (source ?? "รอทีม"));
 
 /** Everyone on a team, captain first; Discord ids only. */
+/** "Bo3" or, when the final is played differently, "Bo3 · รอบชิง Bo5". */
+export function bestOfText(b: Pick<Bracket, "bestOf" | "finalBestOf">) {
+  return b.finalBestOf && b.finalBestOf !== b.bestOf ? `Bo${b.bestOf} · รอบชิง Bo${b.finalBestOf}` : `Bo${b.bestOf}`;
+}
+
 export function teamMemberIds(t: Entry | null): string[] {
   if (!t) return [];
   const ids = [t.captainDiscordId, ...t.roster.map((r) => r.discordId), ...(t.memberDiscordIds ?? [])].filter((x): x is string => Boolean(x));
@@ -73,39 +78,6 @@ export function rosterLines(t: Entry) {
   return lines.join("\n") || "-";
 }
 
-export const ROSTER_FORMAT = "ชื่อตัวละคร, UID, Server";
-
-/** A roster as the captain types it: one player per line, "name, UID, server". */
-export function rosterText(t: Entry) {
-  return t.roster.map((r) => [r.name, r.uid ?? "", r.server ?? ""].join(", ")).join("\n");
-}
-
-/**
- * Reads the roster form: one player per line as "name, UID, server" (commas, | or tabs between).
- * Leading list markers ("1.", "-", "•") are ignored. Returns the players, or the first problem in Thai.
- */
-export function parseRosterText(text: string): { players: { name: string; uid: string; server: string }[] } | { error: string } {
-  const players: { name: string; uid: string; server: string }[] = [];
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  if (!lines.length) return { error: `ใส่รายชื่อผู้เล่นอย่างน้อย 1 คน บรรทัดละคน: ${ROSTER_FORMAT}` };
-  for (const [i, line] of lines.entries()) {
-    const parts = line
-      .replace(/^(\d{1,2}[.)]|[-•*])\s*/, "")
-      .split(/\s*[,，|\t]\s*/)
-      .map((x) => x.trim())
-      .filter(Boolean);
-    if (parts.length < 3) return { error: `บรรทัดที่ ${i + 1} "${line.slice(0, 60)}" ใส่ไม่ครบ ต้องเป็น ${ROSTER_FORMAT} (คั่นด้วยจุลภาค)` };
-    // A name may itself contain a comma: the last two parts are always UID and server.
-    const server = parts.pop()!;
-    const uid = parts.pop()!;
-    const name = parts.join(", ");
-    if (name.length > 100) return { error: `บรรทัดที่ ${i + 1}: ชื่อตัวละครยาวเกิน 100 ตัวอักษร` };
-    if (uid.length > 40 || server.length > 40) return { error: `บรรทัดที่ ${i + 1}: UID หรือ Server ยาวเกิน 40 ตัวอักษร` };
-    players.push({ name, uid, server });
-  }
-  return { players };
-}
-
 export function registrationPanel(b: Bracket, siteUrl?: string): APIEmbed {
   const link = siteLink(siteUrl, `/tournaments/${b.tournamentId}`);
   const teams = b.teams.map((t, i) => `${i + 1}. **${t.name}** (${t.roster.length} คน)`);
@@ -114,12 +86,11 @@ export function registrationPanel(b: Bracket, siteUrl?: string): APIEmbed {
     url: isPublicUrl(link) ? link : undefined,
     color: b.registrationOpen ? RED : GREY,
     description: [
-      `รูปแบบ: **${b.format ? FORMAT_NAMES[b.format] : "-"}** · Bo${b.bestOf}`,
+      `รูปแบบ: **${b.format ? FORMAT_NAMES[b.format] : "-"}** · ${bestOfText(b)}`,
       `เริ่มแข่ง: ${when(b.startDate, "F")}`,
       `ผู้เล่นต่อทีม: ${b.rosterMin}-${b.rosterMax} คน${b.maxTeams ? ` · รับ ${b.maxTeams} ทีม` : ""} · มาสายได้ ${b.lateMinutes} นาที`,
       "",
-      "**วิธีสมัคร** (หัวหน้าทีม): กดปุ่ม 📝 **สมัครทีม** ด้านล่าง แล้วกรอกรายชื่อบรรทัดละคน",
-      `\`${ROSTER_FORMAT}\` เช่น \`Bank, 812345678, Asia\``,
+      "**วิธีสมัคร** (หัวหน้าทีม): กดปุ่ม 📝 **สมัครทีม** ด้านล่าง ใส่ชื่อทีม แล้วเพิ่มผู้เล่นทีละคน (ชื่อตัวละคร, UID, Server แยกช่อง)",
       "ชื่อตัวละครต้องตรงกับในสกอร์บอร์ด เพื่อให้สถิติเข้าคนถูก",
       "แก้รายชื่อ: หัวหน้าทีมกด ⚙️ **จัดการทีมของฉัน** ได้จนถึงก่อนแมตช์แรกเริ่ม",
     ].join("\n"),
@@ -181,7 +152,7 @@ export function roomEmbed(b: Bracket, m: BracketMatch): APIEmbed {
   if (m.disputed) fields.unshift({ name: "⚠️ มีการแจ้งปัญหา", value: m.disputeNote || "รอผู้จัดตัดสิน" });
   const done = m.status === "DONE";
   return fitEmbed({
-    title: `M${m.number} · ${m.label} · Bo${b.bestOf}`,
+    title: `M${m.number} · ${m.label} · Bo${m.bestOf ?? b.bestOf}`,
     description: done
       ? `🏁 จบแล้ว: **${a?.name}** ${m.scoreA} - ${m.scoreB} **${bb?.name}**${m.outcome === "WALKOVER" ? " (ชนะบาย)" : ""}`
       : `**${a?.name ?? "?"}** vs **${bb?.name ?? "?"}** · ${b.name}`,
@@ -228,7 +199,7 @@ export function overviewEmbed(b: Bracket, siteUrl?: string): APIEmbed {
     title: `🏆 ${b.name}`,
     url: isPublicUrl(link) ? link : undefined,
     color: RED,
-    description: `${b.format ? FORMAT_NAMES[b.format] : ""} · Bo${b.bestOf} · ${status}${link && !isPublicUrl(link) ? `\nดูสายเต็มบนเว็บ: ${link}` : ""}`,
+    description: `${b.format ? FORMAT_NAMES[b.format] : ""} · ${bestOfText(b)} · ${status}${link && !isPublicUrl(link) ? `\nดูสายเต็มบนเว็บ: ${link}` : ""}`,
     fields,
   });
 }

@@ -41,11 +41,20 @@ export function TournamentForm({ tournament }: { tournament?: Tournament }) {
           {started && <span className="muted small">เริ่มแข่งแล้ว เปลี่ยนรูปแบบไม่ได้ (ต้องรีเซ็ตสายก่อน)</span>}
         </label>
         <label>
-          Best of
+          {format && format !== "ROUND_ROBIN" ? "Best of (ทุกรอบยกเว้นรอบชิง)" : "Best of"}
           <select name="bestOf" defaultValue={String(tournament?.bestOf ?? 3)}>
             {[1, 3, 5, 7, 9].map((n) => <option key={n} value={n}>BO{n}</option>)}
           </select>
         </label>
+        {format && format !== "ROUND_ROBIN" && (
+          <label>
+            Best of รอบชิงชนะเลิศ
+            <select name="finalBestOf" defaultValue={tournament?.finalBestOf ? String(tournament.finalBestOf) : ""}>
+              <option value="">เท่ากับรอบอื่น</option>
+              {[1, 3, 5, 7, 9].map((n) => <option key={n} value={n}>BO{n}</option>)}
+            </select>
+          </label>
+        )}
         <label>เลทได้ (นาที)<input type="number" name="lateMinutes" min={0} max={240} defaultValue={tournament?.lateMinutes ?? 15} /></label>
       </div>
       {format && (

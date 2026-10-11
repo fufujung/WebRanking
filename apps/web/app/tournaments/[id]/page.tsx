@@ -24,6 +24,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
             <div className="row small" style={{ marginTop: 8 }}>
               <span className="badge">{formatLabel[t.format]}</span>
               <span className="badge">BO{t.bestOf}</span>
+              {t.finalBestOf && t.finalBestOf !== t.bestOf && t.format !== "ROUND_ROBIN" && <span className="badge">รอบชิง BO{t.finalBestOf}</span>}
               <span className="badge">เลทได้ {t.lateMinutes} นาที</span>
               {t.registrationOpen && <span className="badge badge-accent">เปิดรับสมัครทาง Discord</span>}
             </div>

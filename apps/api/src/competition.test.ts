@@ -500,6 +500,33 @@ describe("live bracket", () => {
     assert.equal((await call("GET", `/matches/${r.matchId}`)).status, 200);
   });
 
+  test("the final can be played as a longer series than the other rounds", async () => {
+    const t = await newTournament({ bestOf: 3, finalBestOf: 5 });
+    const ids = [];
+    for (const name of ["F1", "F2", "F3", "F4"]) ids.push((await registerTeam(t.id, name)).id);
+    await ok("POST", `/tournaments/${t.id}/bracket/seed`, { method: "manual", order: ids });
+    const view = await ok("POST", `/tournaments/${t.id}/bracket/start`);
+    assert.equal(view.finalBestOf, 5);
+    assert.deepEqual(view.matches.map((m: any) => [m.label, m.bestOf]), [["รอบรองชนะเลิศ", 3], ["รอบรองชนะเลิศ", 3], ["รอบชิงชนะเลิศ", 5]]);
+    await ok("POST", `/tournaments/${t.id}/bracket/matches/M1/result`, { scoreA: 2, scoreB: 0 });
+    await ok("POST", `/tournaments/${t.id}/bracket/matches/M2/result`, { scoreA: 2, scoreB: 1 });
+    // A walkover in the final counts as the final's winning score.
+    const wo = await ok("POST", `/tournaments/${t.id}/bracket/matches/M3/walkover`, { teamId: ids[0], mode: "organizer" });
+    assert.deepEqual([wo.scoreA, wo.scoreB], [3, 0]);
+
+    // Not set = the same as the other rounds; double elimination's grand final is its final.
+    const d = await newTournament({ format: "DOUBLE_ELIMINATION", bestOf: 1, finalBestOf: 3 });
+    for (const name of ["D1", "D2"]) await registerTeam(d.id, name);
+    await ok("POST", `/tournaments/${d.id}/bracket/seed`, { method: "rating" });
+    const dv = await ok("POST", `/tournaments/${d.id}/bracket/start`);
+    assert.ok(dv.matches.filter((m: any) => m.stage === "GF").every((m: any) => m.bestOf === 3));
+    assert.ok(dv.matches.filter((m: any) => m.stage !== "GF").every((m: any) => m.bestOf === 1));
+    const same = await ok("PATCH", `/tournaments/${d.id}`, { finalBestOf: null });
+    assert.equal(same.finalBestOf, null);
+    assert.ok((await bracket(d.id)).matches.every((m: any) => m.bestOf === 1));
+    assert.equal((await call("POST", "/tournaments", { name: "Even", startDate: "2026-11-01T12:00:00Z", finalBestOf: 4 })).status, 400);
+  });
+
   test("organizers end a tournament early; unplayed matches stay unplayed", async () => {
     const t = await newTournament();
     const notStarted = await call("POST", `/tournaments/${t.id}/bracket/end`);
