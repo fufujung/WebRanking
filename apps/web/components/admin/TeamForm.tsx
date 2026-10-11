@@ -3,12 +3,13 @@
 import { useFormAction } from "./useFormAction";
 import { useState } from "react";
 import { saveTeam } from "@/app/admin/actions";
-import type { Team } from "@/lib/types";
+import type { Game, TeamDetail } from "@/lib/types";
+import { GameSelect } from "./GameForms";
 import { ImageDrop } from "../ImageDrop";
 import { Avatar } from "../ui";
 
 /** Logo on the left (drop, paste or click), name and details on the right, with a live preview of how the team will look. */
-export function TeamForm({ team }: { team?: Team }) {
+export function TeamForm({ team, games }: { team?: TeamDetail; games: Game[] }) {
   const [state, onSubmit, pending] = useFormAction(saveTeam.bind(null, team?.id ?? null), undefined);
   const [logo, setLogo] = useState<string | null>(team?.logoUrl ?? null);
   const [name, setName] = useState(team?.name ?? "");
@@ -29,6 +30,18 @@ export function TeamForm({ team }: { team?: Team }) {
           <div className="form-row">
             <label>ตัวย่อ<input name="tag" maxLength={12} value={tag} onChange={(e) => setTag(e.target.value)} placeholder="เช่น THK (ใช้แทนโลโก้ถ้ายังไม่มี)" /></label>
             <label>ประเทศ<input name="country" maxLength={60} defaultValue={team?.country ?? ""} /></label>
+          </div>
+          <div className="form-row">
+            <GameSelect games={games} value={team?.gameId} />
+            {team && team.players.length > 0 && (
+              <label>
+                หัวหน้าทีม
+                <select name="captainId" defaultValue={team.captainId ?? ""}>
+                  <option value="">ไม่มี</option>
+                  {team.players.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </label>
+            )}
           </div>
           <div>
             <div className="muted small" style={{ marginBottom: 6 }}>ตัวอย่างที่จะแสดงบนเว็บ</div>

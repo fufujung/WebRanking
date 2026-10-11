@@ -31,10 +31,10 @@ const tierInfo = (rating: number) => {
  * the change from their latest series, and rank movement over the last week.
  * Players need PLACEMENT_SERIES series to be ranked; the rest are still placing.
  */
-export async function playerBoard(now = new Date()) {
+export async function playerBoard(gameId?: string | null, now = new Date()) {
   const since = new Date(now.getTime() - MOVEMENT_DAYS * 86400_000);
   const [players, changes] = await Promise.all([
-    prisma.player.findMany({ include: { team: teamSummary } }),
+    prisma.player.findMany({ where: gameId ? { gameId } : {}, include: { team: teamSummary } }),
     prisma.playerMmrChange.findMany({
       select: { playerId: true, delta: true, result: true, match: { select: { playedAt: true } } },
       orderBy: [{ match: { playedAt: "desc" } }, { match: { createdAt: "desc" } }],
@@ -75,10 +75,10 @@ export function tierCounts(rows: { tier: { key: string } }[]) {
 }
 
 /** Rank movement, form and tier for every team, keyed by team id. */
-export async function teamMovement(now = new Date()) {
+export async function teamMovement(gameId?: string | null, now = new Date()) {
   const since = new Date(now.getTime() - MOVEMENT_DAYS * 86400_000);
   const [teams, matches] = await Promise.all([
-    prisma.team.findMany({ select: { id: true, rating: true } }),
+    prisma.team.findMany({ where: gameId ? { gameId } : {}, select: { id: true, rating: true } }),
     prisma.match.findMany({
       select: { teamAId: true, teamBId: true, winnerId: true, ratingDeltaA: true, ratingDeltaB: true, playedAt: true },
       orderBy: [{ playedAt: "desc" }, { createdAt: "desc" }],

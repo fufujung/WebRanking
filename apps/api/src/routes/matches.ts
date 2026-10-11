@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { adoptGame } from "../lib/games.js";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { recomputeRatings } from "../lib/elo.js";
@@ -43,7 +44,10 @@ matches.get("/:id", async (req, res) => {
 });
 
 matches.post("/", requireAdmin, async (req, res) => {
-  res.status(201).json(await saveMatch(matchInput.parse(req.body)));
+  const input = matchInput.parse(req.body);
+  const match = await saveMatch(input);
+  await adoptGame(input.tournamentId);
+  res.status(201).json(match);
 });
 
 /** Replaces a series (its games and scoreboards) in full. */
@@ -51,7 +55,11 @@ matches.put("/:id", requireAdmin, async (req, res) => {
   const id = String(req.params.id);
   const input = matchInput.parse(req.body);
   const slot = await slotOfMatch(id);
-  if (!slot) return void res.json(await saveMatch(input, id));
+  if (!slot) {
+    const match = await saveMatch(input, id);
+    await adoptGame(input.tournamentId);
+    return void res.json(match);
+  }
   // A bracket series: the teams are fixed by the bracket, and a new winner moves the bracket.
   if (input.teamAId !== slot.teamAId || input.teamBId !== slot.teamBId || input.tournamentId !== slot.tournamentId) {
     throw fail(409, "This series is part of a bracket; its teams and tournament cannot change", "แมตช์นี้อยู่ในสายการแข่ง เปลี่ยนทีมหรือรายการไม่ได้");

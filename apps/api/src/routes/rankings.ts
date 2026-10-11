@@ -9,13 +9,16 @@ import { MMR_K, MVP_BONUS, PLACEMENT_K, PLACEMENT_SERIES, START_MMR, SVP_BONUS, 
 
 export const rankings = Router();
 
+/** ?gameId= limits a board to one game; without it every game is mixed (older clients). */
+const gameId = z.string().trim().min(1).max(40).optional();
+
 rankings.get("/teams", async (req, res) => {
-  const q = pagination.extend({ minMatches: z.coerce.number().int().min(0).default(0) }).parse(req.query);
+  const q = pagination.extend({ minMatches: z.coerce.number().int().min(0).default(0), gameId }).parse(req.query);
   const [teams, allMatches, titles, movement] = await Promise.all([
-    prisma.team.findMany({ orderBy: [{ rating: "desc" }, { name: "asc" }] }),
+    prisma.team.findMany({ where: q.gameId ? { gameId: q.gameId } : {}, orderBy: [{ rating: "desc" }, { name: "asc" }] }),
     prisma.match.findMany({ select: { teamAId: true, teamBId: true, scoreA: true, scoreB: true, winnerId: true } }),
     prisma.tournamentEntry.groupBy({ by: ["teamId"], where: { placement: 1 }, _count: true }),
-    teamMovement(),
+    teamMovement(q.gameId),
   ]);
   const stats = statsByTeam(allMatches);
   const titleCount = new Map(titles.map((t) => [t.teamId, t._count]));
@@ -36,10 +39,11 @@ rankings.get("/players", async (req, res) => {
       /** Older name for minGames. */
       minMatches: z.coerce.number().int().min(0).optional(),
       teamId: z.string().optional(),
+      gameId,
     })
     .parse(req.query);
   const [players, lines] = await Promise.all([
-    prisma.player.findMany({ where: q.teamId ? { teamId: q.teamId } : {}, include: { team: teamSummary } }),
+    prisma.player.findMany({ where: { ...(q.teamId ? { teamId: q.teamId } : {}), ...(q.gameId ? { gameId: q.gameId } : {}) }, include: { team: teamSummary } }),
     prisma.matchPlayerStat.findMany({ select: statLineSelect }),
   ]);
   const stats = statsByPlayer(lines);
@@ -57,8 +61,8 @@ rankings.get("/players", async (req, res) => {
  * rank movement; players still placing; tier list and how many players are in each tier.
  */
 rankings.get("/mmr", async (req, res) => {
-  const q = pagination.extend({ teamId: z.string().optional() }).parse(req.query);
-  const board = await playerBoard();
+  const q = pagination.extend({ teamId: z.string().optional(), gameId }).parse(req.query);
+  const board = await playerBoard(q.gameId);
   const ranked = q.teamId ? board.ranked.filter((p) => p.teamId === q.teamId) : board.ranked;
   const placing = q.teamId ? board.placing.filter((p) => p.teamId === q.teamId) : board.placing;
   res.json({

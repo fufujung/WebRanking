@@ -47,6 +47,9 @@ const step = (s) => console.log("✓", s);
 
 // Stand-in for Discord's OAuth: approves at once and says the visitor is "E2E Discord".
 const DISCORD_USER = { id: "424242424242424242", username: "e2e_discord", global_name: "E2E Discord", avatar: null };
+// A teammate who joins through an invite link; the stand-in answers as whoever is set here.
+const TEAMMATE = { id: "434343434343434343", username: "e2e_mate", global_name: "E2E Mate", avatar: null };
+let discordUser = DISCORD_USER;
 const discordMock = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   let body = "";
@@ -65,7 +68,7 @@ const discordMock = http.createServer(async (req, res) => {
     return json(200, { access_token: "e2e-token", token_type: "Bearer" });
   }
   if (url.pathname === "/api/users/@me") {
-    return req.headers.authorization === "Bearer e2e-token" ? json(200, DISCORD_USER) : json(401, { message: "401: Unauthorized" });
+    return req.headers.authorization === "Bearer e2e-token" ? json(200, discordUser) : json(401, { message: "401: Unauthorized" });
   }
   json(404, { message: "not found" });
 });
@@ -169,7 +172,8 @@ step("logged in");
 // Tournament
 await page.goto(base + "/admin/tournaments/new");
 await page.fill('input[name="name"]', `E2E Cup ${uniq}`);
-await page.fill('input[name="game"]', "Valorant");
+// The demo data has one game, which a new tournament takes by default.
+if ((await page.locator('select[name="gameId"]').inputValue()) === "") throw new Error("the only game is not picked for a new tournament");
 await page.fill('input[name="startDate"]', "2026-10-01T19:00");
 await page.fill('input[name="endDate"]', "2026-09-01");
 await page.click("button:has-text('สร้างทัวร์นาเมนต์')");
@@ -655,6 +659,69 @@ for (const t of [`Shop ${uniq}`, `Popup ${uniq}`, `Card ${uniq}`, `Later ${uniq}
 }
 step("ad switched off from the list disappears from the site; ads deleted");
 
+// Games: MMR and rankings are per game; organizers manage the list.
+console.log("— Games");
+await page.goto(base + "/admin/games");
+await page.locator("tr:has-text('Basketball 3v3')").waitFor();
+const newGame = `E2E Game ${uniq}`;
+await page.fill('.game-add input[name="name"]', newGame);
+await page.click(".game-add button");
+await page.locator(`.game-add .success:has-text('${newGame}')`).waitFor();
+await page.locator(`tr:has-text('${newGame}')`).waitFor();
+await page.fill('.game-add input[name="name"]', "basketball 3V3");
+await page.click(".game-add button");
+await page.locator(".game-add .error:has-text('มีเกม')").waitFor();
+const gameRow = page.locator(`tr:has-text('${newGame}')`);
+await gameRow.locator("button:has-text('เปลี่ยนชื่อ')").click();
+// While editing the row holds an input instead of the name.
+const editing = page.locator("tbody tr:has(input[name='name'])");
+await editing.locator('input[name="name"]').fill(`${newGame} R`);
+await editing.locator("button:has-text('บันทึก')").click();
+await page.locator(`tr strong:has-text('${newGame} R')`).waitFor();
+if (await page.locator("tr:has-text('Basketball 3v3') button:has-text('ลบ')").isEnabled()) throw new Error("a game in use can be deleted");
+step("game added, duplicate name refused, renamed; a game in use can't be deleted");
+
+// Two games: the rankings get a game picker that is remembered.
+await page.goto(base + "/rankings/players");
+await page.locator(".game-tabs").waitFor();
+await page.locator(".game-tab", { hasText: `${newGame} R` }).click();
+await page.locator(`h1:has-text('${newGame} R')`).waitFor();
+await page.goto(base + "/rankings");
+await page.locator(`h1:has-text('${newGame} R')`).waitFor();
+await page.screenshot({ path: OUT + "/rankings-game-tabs.png" });
+await page.locator(".game-tab", { hasText: "Basketball 3v3" }).click();
+await page.locator("h1:has-text('Basketball 3v3')").waitFor();
+await page.goto(base + "/rankings/players");
+await page.locator("h1:has-text('Basketball 3v3')").waitFor();
+if ((await page.locator(".podium, table tbody tr").count()) === 0) throw new Error("Basketball ladder empty after switching back");
+step("rankings show a game picker; the picked game is remembered across pages");
+
+// Forms pick a game; an organizer sets a team's captain and gets its invite link.
+await page.goto(base + "/admin/teams/new");
+if ((await page.locator('select[name="gameId"] option').count()) !== 3) throw new Error("team form has no game choice");
+await page.goto(base + "/admin/teams?q=" + encodeURIComponent(teamNames[0]));
+await page.locator(`a[href^="/admin/teams/"]:has-text('${teamNames[0]}')`).first().click();
+await page.waitForURL(/\/admin\/teams\/(?!new)/);
+const adminTeamUrl = page.url();
+const captain = (await page.locator('select[name="captainId"] option').nth(1).textContent()).trim();
+await page.selectOption('select[name="captainId"]', { index: 1 });
+await page.click("button:has-text('บันทึกการแก้ไข')");
+await page.waitForURL(/\/teams\//);
+await page.locator(`tr:has-text('${captain}') .captain-chip`).waitFor();
+await page.goto(adminTeamUrl);
+await page.click("button:has-text('แสดงลิงก์เชิญ')");
+if (!/\/join\/[A-Z0-9]{8}$/.test(await page.locator(".invite-box input").inputValue())) throw new Error("admin invite link missing");
+step("organizer set a team captain (👑 on the team page) and got the team's invite link");
+
+page.once("dialog", (d) => d.accept());
+await page.goto(base + "/admin/games");
+await page.locator(`tr:has-text('${newGame} R') button:has-text('ลบ')`).click();
+await page.locator(`tr:has-text('${newGame} R')`).waitFor({ state: "detached" });
+await page.goto(base + "/rankings/players");
+if (await page.locator(".game-tabs").count()) throw new Error("game picker shown with one game");
+step("unused game deleted; with one game the picker is gone");
+await page.goto(base + "/admin");
+
 // Logout
 await page.click("button:has-text('ออกจากระบบ')");
 await page.waitForURL(base + "/");
@@ -707,6 +774,73 @@ if (!(await page.locator(".btn-discord").count())) {
   await page.locator(".verified-chip").waitFor();
   if (!(await page.locator(`text=Nick ${uniq}`).count())) throw new Error("nickname not on the public profile");
   step("player edited their own nickname and role; profile shows ✓ ยืนยันผ่าน Discord");
+
+  console.log("— Teams run by players");
+  await page.goto(base + "/me");
+  const ace = page.locator(".me-player:has-text('Ace')");
+  await ace.locator(".me-rank:has-text('Basketball 3v3')").waitFor();
+  if (!/อันดับ #\d+ จาก \d+ คน ใน Basketball 3v3/.test(await ace.locator(".me-rank").textContent())) throw new Error("own rank in the game missing on /me");
+  const disc = page.locator(`.me-player:has-text('Disc-${uniq}')`);
+  await disc.locator('.team-create input[name="name"]').fill(`Squad ${uniq}`);
+  await disc.locator('.team-create input[name="tag"]').fill("SQD");
+  await disc.locator(".team-create button").click();
+  await disc.locator(".pill:has-text('คุณเป็นหัวหน้าทีม')").waitFor();
+  const invite = new URL(await disc.locator(".invite-box input").inputValue()).pathname;
+  if (!/^\/join\/[A-Z0-9]{8}$/.test(invite)) throw new Error("no invite link for the captain: " + invite);
+  await page.screenshot({ path: OUT + "/me-team.png", fullPage: true });
+  step("/me shows the rank in each game; a player created a team and got an invite link");
+
+  // A teammate opens the link, logs in, makes a profile and joins.
+  discordUser = TEAMMATE;
+  const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const mate = await ctx2.newPage();
+  mate.on("pageerror", (e) => problems.push(`pageerror: ${e.message} @ ${mate.url()}`));
+  await mate.goto(base + invite);
+  await mate.locator(`.join-card:has-text('Squad ${uniq}')`).waitFor();
+  await mate.screenshot({ path: OUT + "/join-invite.png" });
+  await mate.click(".btn-discord");
+  await mate.waitForURL(base + invite);
+  await mate.locator(".join-card a[href='/me']").click();
+  await mate.fill('.claim-form input[name="uid"]', `78${uniq}`);
+  await mate.fill('.claim-form input[name="server"]', "Asia");
+  await mate.fill('.claim-form input[name="name"]', `Mate-${uniq}`);
+  await mate.click(".claim-form button:has-text('ผูกโปรไฟล์')");
+  await mate.locator(`.me-player:has-text('Mate-${uniq}')`).waitFor();
+  await mate.goto(base + invite);
+  await mate.click(".join-card button:has-text('เข้าร่วมทีม')");
+  await mate.waitForURL(/\/me\?joined=1/);
+  await mate.locator(`.team-panel:has-text('Squad ${uniq}')`).waitFor();
+  step("teammate opened the invite link, logged in with Discord, made a profile and joined");
+
+  // The captain kicks them; they come back with the code and leave on their own.
+  await page.reload();
+  page.once("dialog", (d) => d.accept());
+  await disc.locator(`.team-members li:has-text('Mate-${uniq}') button:has-text('เตะออก')`).click();
+  await disc.locator(`.team-members li:has-text('Mate-${uniq}')`).waitFor({ state: "detached" });
+  await mate.reload();
+  await mate.locator('.team-join input[name="code"]').fill(base + invite);
+  await mate.click(".team-join button");
+  await mate.locator(`.team-panel:has-text('Squad ${uniq}')`).waitFor();
+  mate.once("dialog", (d) => d.accept());
+  await mate.click(".team-panel button:has-text('ออกจากทีม')");
+  await mate.locator(".team-create").waitFor();
+  step("captain kicked a member; they rejoined by pasting the link and left on their own");
+
+  // Captaincy can be handed over.
+  await mate.locator('.team-join input[name="code"]').fill(invite.split("/").pop().toLowerCase());
+  await mate.click(".team-join button");
+  await mate.locator(`.team-panel:has-text('Squad ${uniq}')`).waitFor();
+  await page.reload();
+  page.once("dialog", (d) => d.accept());
+  await disc.locator(`.team-members li:has-text('Mate-${uniq}') button:has-text('ตั้งเป็นหัวหน้า')`).click();
+  await disc.locator(".pill:has-text('คุณเป็นหัวหน้าทีม')").waitFor({ state: "detached" });
+  await mate.reload();
+  await mate.locator(".pill:has-text('คุณเป็นหัวหน้าทีม')").waitFor();
+  await mate.locator(".team-panel a.entity").first().click();
+  await mate.locator(`tr:has-text('Mate-${uniq}') .captain-chip`).waitFor();
+  await ctx2.close();
+  discordUser = DISCORD_USER;
+  step("captain handed the team to the teammate; 👑 shows on the team page");
 
   await page.goto(base + "/me");
   page.once("dialog", (d) => d.accept());

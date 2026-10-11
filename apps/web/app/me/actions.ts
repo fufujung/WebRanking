@@ -7,7 +7,7 @@ import { explain } from "@/lib/explain";
 import { endMemberSession, getMember } from "@/lib/member";
 import type { Player } from "@/lib/types";
 
-export type MeState = { error?: string; ok?: string; needsName?: boolean } | undefined;
+export type MeState = { error?: string; ok?: string; needsName?: boolean; needsGame?: boolean } | undefined;
 
 const text = (f: FormData, k: string) => {
   const v = f.get(k);
@@ -35,13 +35,13 @@ export async function claimPlayer(_: MeState, form: FormData): Promise<MeState> 
   try {
     const p = await api<Player>(`/players/discord/${m.id}/claim`, {
       method: "POST",
-      json: { uid: text(form, "uid"), server: text(form, "server") || undefined, name: name || undefined },
+      json: { uid: text(form, "uid"), server: text(form, "server") || undefined, name: name || undefined, gameId: text(form, "gameId") || undefined },
     });
     revalidatePath("/", "layout");
     return { ok: `ผูกโปรไฟล์ ${p.name} กับบัญชี Discord แล้ว` };
   } catch (e) {
-    const needsName = e instanceof ApiError && Boolean((e.details as { needsName?: boolean } | undefined)?.needsName);
-    return { error: explain(e), needsName };
+    const d = e instanceof ApiError ? (e.details as { needsName?: boolean; needsGame?: boolean } | undefined) : undefined;
+    return { error: explain(e), needsName: Boolean(d?.needsName), needsGame: Boolean(d?.needsGame) };
   }
 }
 
@@ -72,6 +72,53 @@ export async function unlinkMyPlayer(id: string): Promise<MeState> {
   }
   revalidatePath("/", "layout");
   return { ok: "ยกเลิกการผูกแล้ว" };
+}
+
+// Teams run by their players. The API checks the character belongs to this Discord account.
+async function teamCall(path: string, body: Record<string, unknown>, ok: string): Promise<MeState> {
+  const m = await member();
+  try {
+    await api(`/members/${m.id}/${path}`, { method: "POST", json: body });
+  } catch (e) {
+    return { error: explain(e) };
+  }
+  revalidatePath("/", "layout");
+  return { ok };
+}
+
+export async function createMyTeam(playerId: string, _: MeState, form: FormData): Promise<MeState> {
+  const name = text(form, "name");
+  return teamCall("teams", { playerId, name, tag: text(form, "tag") || undefined, logoUrl: text(form, "logoUrl") || null }, `สร้างทีม ${name} แล้ว คุณเป็นหัวหน้าทีม`);
+}
+
+export async function joinWithCode(playerId: string, _: MeState, form: FormData): Promise<MeState> {
+  // Accept a pasted link as well as the code itself.
+  const raw = text(form, "code");
+  const code = raw.split("/").filter(Boolean).pop() ?? raw;
+  return teamCall("join", { playerId, code }, "เข้าร่วมทีมแล้ว");
+}
+
+export async function leaveMyTeam(playerId: string) {
+  return teamCall("leave", { playerId }, "ออกจากทีมแล้ว");
+}
+
+export async function kickFromTeam(playerId: string, memberId: string) {
+  return teamCall("kick", { playerId, memberId }, "นำสมาชิกออกจากทีมแล้ว");
+}
+
+export async function passCaptain(playerId: string, memberId: string) {
+  return teamCall("captain", { playerId, memberId }, "เปลี่ยนหัวหน้าทีมแล้ว");
+}
+
+export async function newInviteLink(playerId: string) {
+  return teamCall("invite", { playerId }, "สร้างลิงก์เชิญใหม่แล้ว ลิงก์เก่าใช้ไม่ได้แล้ว");
+}
+
+/** From the invite page: join, then go to "my profile". */
+export async function joinFromInvite(code: string, _: MeState, form: FormData): Promise<MeState> {
+  const res = await teamCall("join", { playerId: text(form, "playerId"), code }, "เข้าร่วมทีมแล้ว");
+  if (res?.error) return res;
+  redirect("/me?joined=1");
 }
 
 export async function memberLogout() {

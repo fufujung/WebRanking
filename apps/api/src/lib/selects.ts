@@ -1,3 +1,5 @@
+export const gameSummary = { select: { id: true, name: true } } as const;
+
 export const teamSummary = {
   select: { id: true, name: true, tag: true, logoUrl: true, rating: true },
 } as const;

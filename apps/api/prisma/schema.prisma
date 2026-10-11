@@ -7,6 +7,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// A game the site runs tournaments for. Players, teams and tournaments belong to one game, so MMR and rankings are per game.
+model Game {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  players     Player[]
+  teams       Team[]
+  tournaments Tournament[]
+}
+
 /// A competing team. Teams play matches and carry an Elo rating.
 model Team {
   id        String   @id @default(cuid())
@@ -15,8 +26,14 @@ model Team {
   logoUrl   String?
   country   String?
   rating    Int      @default(1000)
+  gameId    String?
+  /// The player who leads the team: can invite, kick and hand over the lead from the website.
+  captainId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  game   Game?       @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  invite TeamInvite?
 
   players    Player[]
   entries    TournamentEntry[]
@@ -24,6 +41,17 @@ model Team {
   matchesAsB Match[]           @relation("TeamB")
   matchesWon Match[]           @relation("Winner")
   statLines  MatchPlayerStat[]
+
+  @@index([gameId])
+}
+
+/// The secret code in a team's invite link. Kept apart from Team so team lists never show it.
+model TeamInvite {
+  teamId    String   @id
+  code      String   @unique
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }
 
 /// A player. The in-game UID (+ server) identifies the same person across name changes.
@@ -40,10 +68,12 @@ model Player {
   discordId String? // Discord account that logged in on the website as this player (one account may play several characters)
   mmr       Int      @default(1000) // personal rating, replayed from every series the player appeared in
   peakMmr   Int      @default(1000)
+  gameId    String? // the game this character plays; MMR and ranks are per game
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   team      Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  game      Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
   statLines MatchPlayerStat[]
   rosters   RosterPlayer[]
   names     PlayerName[]
@@ -52,6 +82,7 @@ model Player {
   @@index([teamId])
   @@index([uid])
   @@index([discordId])
+  @@index([gameId])
 }
 
 /// A name a player has used before, so old scoreboards and searches still find them.
@@ -86,7 +117,8 @@ model PlayerMmrChange {
 model Tournament {
   id          String    @id @default(cuid())
   name        String
-  game        String?
+  game        String? // the game's name, kept for API clients that read it
+  gameId      String?
   location    String?
   description String?
   status      String    @default("UPCOMING") // UPCOMING | ONGOING | COMPLETED
@@ -111,6 +143,9 @@ model Tournament {
   entries        TournamentEntry[]
   matches        Match[]
   bracketMatches BracketMatch[]
+  gameRef        Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
+
+  @@index([gameId])
 }
 
 model TournamentEntry {

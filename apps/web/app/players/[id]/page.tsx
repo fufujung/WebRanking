@@ -23,8 +23,9 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
           <div>
             <h1>{p.name}</h1>
             <span className="muted">{[p.nickname && `“${p.nickname}”`, p.role, p.country].filter(Boolean).join(" · ") || " "}</span>
-            {(p.uid || p.discordId || p.names.length > 0) && (
+            {(p.game || p.uid || p.discordId || p.names.length > 0) && (
               <div className="row small" style={{ gap: 8, marginTop: 6 }}>
+                {p.game && <span className="chip game-chip" title="เกม">{p.game.name}</span>}
                 {p.uid && <span className="chip uid-chip" title="UID ในเกม">UID {p.uid}{p.server ? ` · ${p.server}` : ""}</span>}
                 {p.discordId && <span className="chip verified-chip" title="เจ้าของโปรไฟล์ยืนยันตัวตนด้วย Discord แล้ว">✓ ยืนยันผ่าน Discord</span>}
                 {p.names.length > 0 && (
@@ -58,7 +59,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
           <div className="mmr-facts">
             <div>
               <strong>{p.mmrRank ? <>#{p.mmrRank} <RankMove change={p.rankChange} isNew /></> : "-"}</strong>
-              <span>{p.mmrRank ? `อันดับจาก ${p.rankedPlayers} คน` : `ลงอีก ${p.seriesToPlace} แมตช์เพื่อติดอันดับ`}</span>
+              <span>{p.mmrRank ? `อันดับจาก ${p.rankedPlayers} คน${p.game ? ` ใน ${p.game.name}` : ""}` : `ลงอีก ${p.seriesToPlace} แมตช์เพื่อติดอันดับ`}</span>
             </div>
             <div><strong>{p.peakMmr}</strong><span>MMR สูงสุดที่เคยทำได้</span></div>
             <div><strong>{p.series}</strong><span>แมตช์ที่นับ MMR</span></div>

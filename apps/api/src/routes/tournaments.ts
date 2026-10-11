@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { adoptGame, tournamentGame } from "../lib/games.js";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { fail, HttpError, notFound } from "../lib/errors.js";
@@ -40,7 +41,7 @@ tournaments.post("/", requireAdmin, async (req, res) => {
   const input = tournamentInput.parse(req.body);
   if (!datesInOrder(input)) throw badDates();
   if (!rosterSizeOk(input)) throw badRoster();
-  res.status(201).json(await prisma.tournament.create({ data: input }));
+  res.status(201).json(await prisma.tournament.create({ data: { ...input, ...(await tournamentGame(prisma, input)) } }));
 });
 
 tournaments.get("/:id", async (req, res) => {
@@ -80,6 +81,7 @@ tournaments.patch("/:id", requireAdmin, async (req, res) => {
   if (shapeChanged && (existing.bracketStatus === "LIVE" || existing.bracketStatus === "DONE")) {
     throw fail(409, "The bracket has started; its format can no longer change", "เริ่มแข่งแล้ว เปลี่ยนรูปแบบการแข่งไม่ได้ (ต้องรีเซ็ตสายก่อน)");
   }
+  if (input.game !== undefined || input.gameId !== undefined) Object.assign(input, await tournamentGame(prisma, input));
   const updated = await prisma.$transaction(async (tx) => {
     // A seeded draft no longer fits a new format: drop it so it is seeded again.
     if (shapeChanged && existing.bracketStatus === "DRAFT") {
@@ -89,6 +91,7 @@ tournaments.patch("/:id", requireAdmin, async (req, res) => {
     }
     return tx.tournament.update({ where: { id: existing.id }, data: input });
   });
+  await adoptGame(updated.id);
   res.json(updated);
 });
 
@@ -137,12 +140,16 @@ tournaments.delete("/:id/entries/:teamId", requireAdmin, async (req, res) => {
 
 /** A team signs up with its roster. Needs registration to be open, unless override is true. */
 tournaments.post("/:id/registrations", requireAdmin, async (req, res) => {
-  res.status(201).json(await comp.register(String(req.params.id), req.body));
+  const entry = await comp.register(String(req.params.id), req.body);
+  await adoptGame(String(req.params.id));
+  res.status(201).json(entry);
 });
 
 /** Replaces a team's roster (and optionally its captain). Locked once the first match starts, unless override is true. */
 tournaments.put("/:id/entries/:teamId/roster", requireAdmin, async (req, res) => {
-  res.json(await comp.setRoster(String(req.params.id), String(req.params.teamId), req.body));
+  const entry = await comp.setRoster(String(req.params.id), String(req.params.teamId), req.body);
+  await adoptGame(String(req.params.id));
+  res.json(entry);
 });
 
 // ---------- Bracket ----------
@@ -186,7 +193,9 @@ tournaments.get("/:id/bracket/matches/:match", async (req, res) => {
 });
 
 tournaments.post("/:id/bracket/matches/:match/result", requireAdmin, async (req, res) => {
-  res.json(await comp.recordResult(String(req.params.id), String(req.params.match), req.body));
+  const slot = await comp.recordResult(String(req.params.id), String(req.params.match), req.body);
+  await adoptGame(String(req.params.id));
+  res.json(slot);
 });
 
 tournaments.post("/:id/bracket/matches/:match/walkover", requireAdmin, async (req, res) => {

@@ -8,14 +8,16 @@ import { EntryManager } from "@/components/admin/EntryManager";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { BracketAdmin } from "@/components/admin/BracketAdmin";
 import { RosterManager } from "@/components/admin/RosterManager";
+import { allGames } from "@/lib/games";
 
 export const metadata = { title: "แก้ไขทัวร์นาเมนต์" };
 
 export default async function EditTournament({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string }> }) {
-  const [t, teams, sp] = await Promise.all([
+  const [t, teams, sp, games] = await Promise.all([
     apiOrNull<TournamentDetail>(`/tournaments/${encodeURIComponent((await params).id)}`),
     fetchAll<Team>("/teams"),
     searchParams,
+    allGames(),
   ]);
   if (!t) notFound();
   const bracket = t.format ? await apiOrNull<Bracket>(`/tournaments/${t.id}/bracket`) : null;
@@ -30,7 +32,7 @@ export default async function EditTournament({ params, searchParams }: { params:
         </div>
       </div>
       {sp.saved && <div className="success" style={{ marginBottom: 16 }}>บันทึกแล้ว</div>}
-      <TournamentForm tournament={t} />
+      <TournamentForm key={t.gameId ?? ""} tournament={t} games={games} />
       {t.format && (
         <>
           <h2 className="mt" id="bracket">สายการแข่งขัน</h2>

@@ -18,12 +18,18 @@ info:
     **Ratings:** each team has an Elo rating (start 1000, K = 32) recomputed from all
     matches in date order whenever a result is added, edited or deleted.
 
+    **Games:** every player (one in-game character), team and tournament belongs to a game,
+    so MMR, tiers and rankings are per game. Pass `gameId` to the ranking endpoints to get one
+    game's ladder; `GET /api/v1/games` lists the games.
+
     **Errors** are JSON: `{ "error": "message", "details": ... }`.
 servers:
   - url: http://localhost:4000
 security:
   - ApiKey: []
 tags:
+  - name: Games
+  - name: Members
   - name: Rankings
   - name: Teams
   - name: Players
@@ -35,6 +41,127 @@ tags:
   - name: API keys
   - name: Ads
 paths:
+  /api/v1/games:
+    get:
+      tags: [Games]
+      summary: List games with how many players, teams and tournaments each has
+      responses:
+        "200":
+          description: Games by name
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/GameTitle" } } } }
+    post:
+      tags: [Games]
+      summary: Add a game (admin)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, maxLength: 100 } } } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/GameTitle" } } } }
+        "409": { description: A game with this name exists }
+  /api/v1/games/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    patch:
+      tags: [Games]
+      summary: Rename a game; its tournaments' `game` name changes too (admin)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, maxLength: 100 } } } } } }
+      responses:
+        "200": { description: Renamed }
+        "409": { description: A game with this name exists }
+    delete:
+      tags: [Games]
+      summary: Delete a game that has no players, teams or tournaments (admin)
+      responses:
+        "204": { description: Deleted }
+        "409": { description: The game is in use }
+  /api/v1/members/{discordId}:
+    parameters: [{ $ref: "#/components/parameters/discordId" }]
+    get:
+      tags: [Members]
+      summary: A Discord member's characters with per-game rank and their teams (admin)
+      description: |
+        For a website or bot acting for a logged-in member. Each character has its game, tier, MMR,
+        `rank` and `rankedPlayers` within that game, and its team with members. The team's
+        `inviteCode` is only included when this character is the captain.
+      responses:
+        "200": { description: "{ data: MyCharacter[] }" }
+  /api/v1/members/{discordId}/teams:
+    parameters: [{ $ref: "#/components/parameters/discordId" }]
+    post:
+      tags: [Members]
+      summary: Create a team with one of the member's characters as captain (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [playerId, name]
+              properties:
+                playerId: { type: string, description: One of this member's characters, not yet in a team }
+                name: { type: string, maxLength: 100 }
+                tag: { type: string, maxLength: 12, nullable: true }
+                logoUrl: { type: string, nullable: true }
+      responses:
+        "201": { description: The new team with its invite code }
+        "403": { description: The character is not this member's }
+        "409": { description: The character already has a team, or the name is taken }
+  /api/v1/members/{discordId}/join:
+    parameters: [{ $ref: "#/components/parameters/discordId" }]
+    post:
+      tags: [Members]
+      summary: Join a team with an invite code (admin)
+      description: The team must be in the character's game and have fewer than 15 players. A team with no captain makes the first joiner captain.
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [playerId, code], properties: { playerId: { type: string }, code: { type: string } } } } } }
+      responses:
+        "200": { description: Joined }
+        "400": { description: The team plays another game }
+        "404": { description: No team has this code }
+        "409": { description: Already in a team, or the team is full }
+  /api/v1/members/{discordId}/leave:
+    parameters: [{ $ref: "#/components/parameters/discordId" }]
+    post:
+      tags: [Members]
+      summary: Leave the character's team (admin)
+      description: When the captain leaves, another member becomes captain (Discord-linked members first).
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [playerId], properties: { playerId: { type: string } } } } } }
+      responses:
+        "200": { description: Left }
+  /api/v1/members/{discordId}/kick:
+    parameters: [{ $ref: "#/components/parameters/discordId" }]
+    post:
+      tags: [Members]
+      summary: Captain removes a member from the team (admin)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [playerId, memberId], properties: { playerId: { type: string, description: The captain }, memberId: { type: string } } } } } }
+      responses:
+        "200": { description: Removed }
+        "403": { description: Only the captain can do this }
+  /api/v1/members/{discordId}/captain:
+    parameters: [{ $ref: "#/components/parameters/discordId" }]
+    post:
+      tags: [Members]
+      summary: Captain hands the captaincy to another member (admin)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [playerId, memberId], properties: { playerId: { type: string }, memberId: { type: string } } } } } }
+      responses:
+        "200": { description: Changed }
+        "403": { description: Only the captain can do this }
+  /api/v1/members/{discordId}/invite:
+    parameters: [{ $ref: "#/components/parameters/discordId" }]
+    post:
+      tags: [Members]
+      summary: Captain replaces the team's invite code; the old link stops working (admin)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [playerId], properties: { playerId: { type: string } } } } } }
+      responses:
+        "200": { description: "{ code }" }
+        "403": { description: Only the captain can do this }
+  /api/v1/members/invites/{code}:
+    get:
+      tags: [Members]
+      summary: What an invite code joins - team, game, member count, full (admin)
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Invite details }
+        "404": { description: No team has this code }
   /api/v1/rankings/teams:
     get:
       tags: [Rankings]
@@ -43,6 +170,7 @@ paths:
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/offset"
         - { name: minMatches, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: gameId, in: query, schema: { type: string }, description: "Only this game's ladder (see GET /api/v1/games)" }
       responses:
         "200":
           description: Ranked teams
@@ -77,6 +205,7 @@ paths:
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/offset"
         - { name: teamId, in: query, schema: { type: string } }
+        - { name: gameId, in: query, schema: { type: string }, description: "Only this game's ladder (see GET /api/v1/games)" }
       responses:
         "200":
           description: Ranked players, players still placing, and the tier list with player counts
@@ -140,6 +269,7 @@ paths:
           schema: { type: string, enum: [mmr, pts, ppg, avgRating, reb, ast, blk, stl, lbr, mvp, wins, winRate, games], default: pts }
         - { name: minGames, in: query, description: Only players with at least this many games (minMatches is accepted as an alias), schema: { type: integer, minimum: 0, default: 0 } }
         - { name: teamId, in: query, schema: { type: string } }
+        - { name: gameId, in: query, schema: { type: string }, description: "Only this game's ladder (see GET /api/v1/games)" }
       responses:
         "200":
           description: Ranked players
@@ -167,6 +297,7 @@ paths:
       summary: List or search teams (use for team dropdowns)
       parameters:
         - $ref: "#/components/parameters/search"
+        - { name: gameId, in: query, schema: { type: string } }
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/offset"
       responses:
@@ -204,15 +335,34 @@ paths:
       summary: Update a team (admin)
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/TeamInput" } } }
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/TeamInput"
+                - type: object
+                  properties:
+                    captainId: { type: string, nullable: true, description: A player on this team (400 otherwise) }
       responses:
         "200": { description: Updated }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
     delete:
       tags: [Teams]
       summary: Delete a team and its matches (admin)
       responses:
         "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/teams/{id}/invite:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [Teams]
+      summary: The team's invite code, made on first use (admin)
+      description: Players open `<site>/join/<code>` to join. `?new=1` replaces the code so old links stop working.
+      parameters:
+        - { name: new, in: query, schema: { type: string, enum: ["1"] } }
+      responses:
+        "200": { description: "{ code }" }
         "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/players:
     get:
@@ -292,10 +442,11 @@ paths:
                 uid: { type: string }
                 server: { type: string }
                 name: { type: string, description: Needed only when no player has this UID yet }
+                gameId: { type: string, description: "The character's game; required when the site has more than one game" }
       responses:
         "200": { description: Existing player linked }
         "201": { description: New player created and linked }
-        "400": { description: "No player has this UID and no name was sent (details.needsName: true)" }
+        "400": { description: "No player has this UID and no name was sent (details.needsName: true), or the game is missing (details.needsGame: true)" }
         "409": { description: The player is linked to another Discord account }
   /api/v1/players/{id}/discord:
     delete:
@@ -768,6 +919,7 @@ components:
     id: { name: id, in: path, required: true, schema: { type: string } }
     search: { name: search, in: query, schema: { type: string }, description: Case-insensitive name search }
     limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+    discordId: { name: discordId, in: path, required: true, schema: { type: string, pattern: "^[0-9]{5,25}$" } }
     offset: { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
   responses:
     BadRequest: { description: Invalid input, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
@@ -775,6 +927,14 @@ components:
     Forbidden: { description: Read-only key used for a write, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    GameTitle:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        players: { type: integer }
+        teams: { type: integer }
+        tournaments: { type: integer }
     Ad:
       type: object
       properties:
@@ -820,6 +980,8 @@ components:
         logoUrl: { type: string, nullable: true }
         country: { type: string, nullable: true }
         rating: { type: integer }
+        gameId: { type: string, nullable: true }
+        captainId: { type: string, nullable: true }
     TeamInput:
       type: object
       required: [name]
@@ -828,6 +990,7 @@ components:
         tag: { type: string, maxLength: 12, nullable: true }
         logoUrl: { type: string, nullable: true, description: http(s) URL or /uploads/... path }
         country: { type: string, nullable: true }
+        gameId: { type: string, nullable: true }
     TeamStats:
       type: object
       properties:
@@ -851,6 +1014,7 @@ components:
         teamId: { type: string, nullable: true }
         uid: { type: string, nullable: true, description: In-game UID; the same player across name changes }
         server: { type: string, nullable: true }
+        gameId: { type: string, nullable: true, description: The game this character plays; MMR is within it }
         mmr: { type: integer, description: Personal rating, starts at 1000 }
         peakMmr: { type: integer }
         team: { $ref: "#/components/schemas/Team" }
@@ -866,6 +1030,7 @@ components:
         teamId: { type: string, nullable: true }
         uid: { type: string, nullable: true, description: One player per UID + server (409 if taken) }
         server: { type: string, nullable: true }
+        gameId: { type: string, nullable: true }
     Tier:
       type: object
       properties:
@@ -909,7 +1074,8 @@ components:
       properties:
         id: { type: string }
         name: { type: string }
-        game: { type: string, nullable: true }
+        game: { type: string, nullable: true, description: The game's name }
+        gameId: { type: string, nullable: true }
         location: { type: string, nullable: true }
         description: { type: string, nullable: true }
         status: { type: string, enum: [UPCOMING, ONGOING, COMPLETED] }
@@ -920,7 +1086,8 @@ components:
       required: [name, startDate]
       properties:
         name: { type: string }
-        game: { type: string, nullable: true }
+        game: { type: string, nullable: true, description: A game name; a new name adds the game }
+        gameId: { type: string, nullable: true, description: An existing game (wins over game) }
         location: { type: string, nullable: true }
         description: { type: string, nullable: true }
         status: { type: string, enum: [UPCOMING, ONGOING, COMPLETED] }
