@@ -21,6 +21,8 @@ npm run setup   # สร้างฐานข้อมูล, API key ของ�
 npm run dev     # เปิด API เว็บ และบอทพร้อมกัน (บอทจะรอจนกว่าจะใส่ DISCORD_TOKEN)
 ```
 
+บน Windows ครั้งต่อไปดับเบิลคลิก **`start-webranking.bat`** ในโฟลเดอร์โปรเจกต์ได้เลย (หรือคลิกขวา → Send to → Desktop เพื่อสร้าง shortcut ไว้บนหน้าจอ)
+
 `npm run setup` จะพิมพ์ **รหัสผ่านผู้ดูแล** ออกมา (เก็บไว้ใน `apps/web/.env.local`) ใช้รหัสนี้เข้า http://localhost:3000/admin
 
 ไม่อยากได้ข้อมูลตัวอย่าง: `npm run setup -- --no-demo` บนฐานข้อมูลว่าง
