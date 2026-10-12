@@ -70,6 +70,17 @@ const tourCommand: ApplicationCommandData = {
     },
     {
       type: O.Subcommand,
+      name: "link",
+      description: "นำทัวร์ที่สร้างบนเว็บมาประกาศและรับสมัครในห้องนี้",
+      options: [
+        { type: O.String, name: "event", description: "ทัวร์นาเมนต์บนเว็บ", required: true, autocomplete: true },
+        { type: O.Role, name: "organizer_role", description: "ยศผู้จัด: เห็นทุกห้องแข่งและกดตัดสินได้" },
+        { type: O.Channel, name: "category", description: "หมวดที่จะสร้างห้องแข่ง (ไม่ใส่ = บอทสร้างให้)", channelTypes: [ChannelType.GuildCategory] },
+        { type: O.Channel, name: "announce_channel", description: "ห้องประกาศสายและผล (ไม่ใส่ = ห้องนี้)", channelTypes: [ChannelType.GuildText] },
+      ],
+    },
+    {
+      type: O.Subcommand,
       name: "registration",
       description: "เปิด/ปิดรับสมัคร",
       options: [{ type: O.Boolean, name: "open", description: "เปิดรับสมัคร?", required: true }, tournamentOption],

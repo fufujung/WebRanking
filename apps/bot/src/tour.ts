@@ -462,6 +462,7 @@ export class TourManager {
   private async tourCommand(i: ChatInputCommandInteraction, info: MemberInfo) {
     const sub = i.options.getSubcommand();
     if (sub === "create") return this.create(i, info);
+    if (sub === "link") return this.link(i, info);
     const tour = this.pick(i.guildId!, i.options.getString("tournament"));
     if (!tour) return void (await i.reply({ ephemeral: true, content: "ยังไม่มีทัวร์นาเมนต์ในเซิร์ฟเวอร์นี้ เริ่มด้วย `/tour create`" }));
     const tid = tour.tournamentId;
@@ -605,6 +606,59 @@ export class TourManager {
     );
   }
 
+  /** Takes a tournament made on the website into this server: posts its sign-up announcement here and runs it like one made with /tour create. */
+  private async link(i: ChatInputCommandInteraction, info: MemberInfo) {
+    if (!this.canCreate(info)) return void (await i.reply({ ephemeral: true, content: "นำทัวร์มาใช้ได้เฉพาะคนที่มีสิทธิ์จัดการเซิร์ฟเวอร์ (Manage Server)" }));
+    await i.deferReply({ ephemeral: true });
+    const tid = i.options.getString("event", true);
+    const b = await this.bracket(tid).catch((e) => {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    });
+    if (!b) return void (await i.editReply("ไม่พบทัวร์นาเมนต์นี้ เลือกจากรายการที่ขึ้นตอนพิมพ์"));
+    if (b.status === "DONE") return void (await i.editReply(`**${b.name}** จบไปแล้ว`));
+    const existing = this.tours.get(tid);
+    if (existing && existing.guildId !== i.guildId) return void (await i.editReply(`**${b.name}** ถูกนำไปใช้ในเซิร์ฟเวอร์อื่นแล้ว`));
+    const category = i.options.getChannel("category");
+    const announceChannelId = i.options.getChannel("announce_channel")?.id ?? i.channelId;
+    // Linking again moves the announcement; the rooms and results already made stay.
+    if (existing?.panel) {
+      const old = await this.fetchMessage(i.client, existing.panel.channelId, existing.panel.messageId);
+      await old?.delete().catch(() => null);
+    }
+    const tour: TourConfig = existing
+      ? {
+          ...existing,
+          organizerRoleId: i.options.getRole("organizer_role")?.id ?? existing.organizerRoleId,
+          announceChannelId,
+          categories: category && !existing.categories.some((c) => c.id === category.id) ? [...existing.categories, { id: category.id, count: 0 }] : existing.categories,
+          panel: null,
+        }
+      : {
+          tournamentId: tid,
+          guildId: i.guildId!,
+          ownerId: i.user.id,
+          organizerRoleId: i.options.getRole("organizer_role")?.id ?? null,
+          announceChannelId,
+          categories: category ? [{ id: category.id, count: 0 }] : [],
+          panel: null,
+          draft: null,
+          rooms: {},
+          announced: [],
+          finished: false,
+          createdAt: Date.now(),
+        };
+    this.tours.set(tid, tour);
+    await this.refreshPanel(i.client, tour);
+    const solo = (await this.soloView(tid).catch(() => null))?.entryMode === "SOLO";
+    const lines = [`✅ นำ **${b.name}** มาใช้ในเซิร์ฟเวอร์นี้แล้ว (ประกาศที่ <#${announceChannelId}>)`];
+    if (b.status === "LIVE") lines.push("ทัวร์นี้กำลังแข่งอยู่ บอทจะสร้างห้องแข่งให้แมตช์ที่ยังไม่จบเอง");
+    else if (!b.registrationOpen) lines.push("ตอนนี้ยังปิดรับสมัครอยู่ เปิดด้วย `/tour registration open:True`");
+    else if (solo) lines.push("ขั้นต่อไป: ผู้เล่นกดปุ่ม 🙋 ลงชื่อเดี่ยว ในประกาศ → ผู้จัดกด 🎲 สุ่มทีม แล้วยืนยัน → `/tour seed` → `/tour start`");
+    else lines.push("ขั้นต่อไป: ให้หัวหน้าทีมกดปุ่ม 📝 สมัครทีม ในประกาศ → ปิดรับสมัคร → `/tour seed` → `/tour start`");
+    await i.editReply(lines.join("\n"));
+  }
+
   /** Reads the player1/ign1 … options into a roster. Names default to the member's display name. */
   private rosterFrom(i: ChatInputCommandInteraction) {
     const players: { name: string; discordId: string }[] = [];
@@ -681,6 +735,16 @@ export class TourManager {
     const focused = i.options.getFocused(true);
     const q = String(focused.value).toLowerCase();
     try {
+      if (focused.name === "event") {
+        // Tournaments on the website that are not finished and not already run from another server.
+        const res = await this.api.get<{ data: { id: string; name: string; status: string; startDate: string }[] }>(
+          `/tournaments?limit=50${q ? `&search=${encodeURIComponent(q)}` : ""}`,
+        );
+        const free = res.data.filter((t) => t.status !== "COMPLETED" && (this.tours.get(t.id)?.guildId ?? i.guildId) === i.guildId);
+        return void (await i.respond(
+          free.slice(0, 25).map((t) => ({ name: `${t.name}${this.tours.get(t.id) ? " (ใช้ในเซิร์ฟเวอร์นี้แล้ว)" : ""}`.slice(0, 100), value: t.id })),
+        ));
+      }
       if (focused.name === "tournament") {
         const list = this.toursIn(i.guildId!);
         const names = await Promise.all(list.map((t) => this.bracket(t.tournamentId).then((b) => ({ id: t.tournamentId, name: b.name, status: b.status })).catch(() => null)));

@@ -75,6 +75,9 @@ class FakeMessage {
     if (payload) this.apply(payload);
     channels.get(channelId)?.messages.set(this.id, this);
   }
+  async delete() {
+    channels.get(this.channelId)?.messages.delete(this.id);
+  }
   apply(payload: any) {
     if ("content" in payload) this.content = payload.content;
     if (payload.embeds) this.embeds = payload.embeds.map((e: any) => ({ toJSON: () => (typeof e.toJSON === "function" ? e.toJSON() : e) }));
@@ -1388,5 +1391,69 @@ describe("a SOLO tournament from Discord", () => {
     assert.equal((await api.get<any>(`/tournaments/${tid}/bracket`)).teams.length, 2);
     await bot.onCommand(command("tour", "seed", { method: "random", tournament: tid }, OWNER));
     assert.equal((await api.get<any>(`/tournaments/${tid}/bracket`)).status, "DRAFT");
+  });
+});
+
+describe("a tournament made on the website, run from Discord", () => {
+  const OTHER = "c-other";
+  new FakeChannel(OTHER);
+  let tid: string;
+
+  test("/tour link offers the website's tournaments and posts the sign-up panel here", async () => {
+    const t = await api.post<any>("/tournaments", {
+      name: "Web Squad Showdown",
+      status: "UPCOMING",
+      startDate: new Date(Date.now() + 86_400_000).toISOString(),
+      format: "SINGLE_ELIMINATION",
+      entryMode: "SOLO",
+      teamSize: 3,
+      rosterMin: 3,
+      rosterMax: 3,
+      registrationOpen: true,
+    });
+    tid = t.id;
+    const ac = command("tour", "link", { focused: "event", value: "squad" }, OWNER);
+    await bot.onAutocomplete(ac);
+    assert.deepEqual(last<any>(ac.replies), [{ name: "Web Squad Showdown", value: tid }]);
+
+    const no = command("tour", "link", { event: tid }, person(70));
+    await bot.onCommand(no);
+    assert.match(text(last(no.replies)), /Manage Server/);
+    assert.equal(bot.tour.tours.get(tid), undefined);
+
+    const link = command("tour", "link", { event: tid, organizer_role: ORG_ROLE });
+    await bot.onCommand(link);
+    assert.match(text(last(link.replies)), /นำ \*\*Web Squad Showdown\*\* มาใช้/);
+    assert.match(text(last(link.replies)), /ลงชื่อเดี่ยว/);
+    const tour = bot.tour.tours.get(tid)!;
+    assert.equal(tour.organizerRoleId, ORG_ROLE);
+    assert.equal(tour.panel!.channelId, ANNOUNCE);
+    const p = channels.get(ANNOUNCE)!.messages.get(tour.panel!.messageId)!;
+    assert.match(p.embed.title, /เปิดรับลงชื่อเดี่ยว: Web Squad Showdown/);
+    assert.deepEqual(controls(p), [[`tr:tso:${tid}`, `tr:tsx:${tid}`, `tr:tdw:${tid}`]]);
+
+    const again = command("tour", "link", { focused: "event", value: "squad" }, OWNER);
+    await bot.onAutocomplete(again);
+    assert.match(last<any>(again.replies)[0].name, /ใช้ในเซิร์ฟเวอร์นี้แล้ว/);
+  });
+
+  test("linking again moves the announcement to the new room", async () => {
+    const old = bot.tour.tours.get(tid)!.panel!;
+    const move = command("tour", "link", { event: tid, announce_channel: OTHER });
+    await bot.onCommand(move);
+    const tour = bot.tour.tours.get(tid)!;
+    assert.equal(tour.panel!.channelId, OTHER);
+    assert.equal(tour.organizerRoleId, ORG_ROLE, "keeps the organizer role");
+    assert.equal(channels.get(ANNOUNCE)!.messages.has(old.messageId), false, "the old announcement is gone");
+  });
+
+  test("a closed or unknown tournament", async () => {
+    await api.patch(`/tournaments/${tid}`, { registrationOpen: false });
+    const closed = command("tour", "link", { event: tid });
+    await bot.onCommand(closed);
+    assert.match(text(last(closed.replies)), /ยังปิดรับสมัคร/);
+    const unknown = command("tour", "link", { event: "nope" });
+    await bot.onCommand(unknown);
+    assert.match(text(last(unknown.replies)), /ไม่พบทัวร์นาเมนต์นี้/);
   });
 });
