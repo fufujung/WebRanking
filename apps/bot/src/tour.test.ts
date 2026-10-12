@@ -29,7 +29,7 @@ const { imageReader } = await import("../../api/src/lib/extract.js");
 const { createApi } = await import("./api.js");
 const { TournamentBot } = await import("./bot.js");
 const { parseThaiTime } = await import("./tourFormat.js");
-const { channelSlug, parseSeriesScore } = await import("./tour.js");
+const { channelSlug, parseSeriesScore, TourManager } = await import("./tour.js");
 
 const PNG = new Uint8Array(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64"));
 const GUILD = "900000000000000001";
@@ -1254,5 +1254,139 @@ describe("ending a tournament early", () => {
     assert.deepEqual(rooms(), {});
     assert.ok(roomIds.every((id) => !channels.has(id)), "the rooms stay gone");
     assert.equal(announce().sent.filter((m) => m.embed?.title === "🏁 จบ Early Cup").length, 1, "announced once");
+  });
+});
+
+describe("a SOLO tournament from Discord", () => {
+  const SOLO = [50, 51, 52, 53, 54, 55].map(person);
+  SOLO.forEach((id, n) => members.set(id, { roles: [], manage: false, name: `Solo${n + 1}` }));
+  const POS = ["GUARD", "GUARD", "FORWARD", "FORWARD", "CENTER", "ALL"];
+  /** The sign-up form, filled in: text fields plus the position and rank picked. */
+  const signUpForm = (customId: string, userId: string, text: Record<string, string>, picks: Record<string, string>) => {
+    const i: any = submitForm(customId, userId, ANNOUNCE, text);
+    i.fields.getStringSelectValues = (id: string) => {
+      if (!(id in picks)) throw new Error(`no menu ${id}`);
+      return [picks[id]];
+    };
+    return i;
+  };
+  const tap = (customId: string, userId: string, message: FakeMessage) => {
+    const i = press(customId, userId, message);
+    i.deferUpdate = async () => {
+      i.deferred = true;
+    };
+    return i;
+  };
+  const panel = (tid: string) => {
+    const p = bot.tour.tours.get(tid)!.panel!;
+    return channels.get(p.channelId)!.messages.get(p.messageId)!;
+  };
+  let tid: string;
+
+  test("/tour create entry:SOLO posts a sign-up panel; team sign-up is refused", async () => {
+    const create = command("tour", "create", { name: "Solo Cup", format: "SINGLE_ELIMINATION", start: bkk(60 * 24), entry: "SOLO", team_size: 3 });
+    await bot.onCommand(create);
+    assert.match(text(last(create.replies)), /แบบลงเดี่ยว \(ทีมละ 3 คน\)/);
+    tid = bot.tour.toursIn(GUILD)[0].tournamentId;
+    const t = await api.get<any>(`/tournaments/${tid}`);
+    assert.equal(t.entryMode, "SOLO");
+    assert.equal(t.rosterMax, 3);
+    assert.match(panel(tid).embed.title, /เปิดรับลงชื่อเดี่ยว: Solo Cup/);
+    assert.deepEqual(controls(panel(tid)), [[`tr:tso:${tid}`, `tr:tsx:${tid}`, `tr:tdw:${tid}`]]);
+    const team = command("register", null, { team: "Nope", player1: SOLO[0], tournament: tid }, SOLO[0]);
+    await bot.onCommand(team);
+    assert.match(text(last(team.replies)), /ลงชื่อเดี่ยว/);
+  });
+
+  test("players sign up with a new character, position and rank; they can change it or withdraw", async () => {
+    for (const [n, id] of SOLO.entries()) {
+      const open = tap(`tr:tso:${tid}`, id, panel(tid));
+      await bot.onButton(open);
+      const fields = formFields(open.modal);
+      assert.deepEqual(Object.keys(fields), ["name", "uid", "server", "position", "rank"], JSON.stringify(open.replies));
+      const ranks = open.modal.components.at(-1).component.options.map((o: any) => o.label);
+      assert.deepEqual(ranks, ["แม่ทัพไร้มงกุฎ", "ซูเปอร์สตาร์ ม.ปลาย", "รุ่นแห่งปาฏิหาริย์", "เจ้าแห่ง ZONE"]);
+      const form = signUpForm(open.modal.custom_id, id, { name: `Solo${n + 1}`, uid: `55${n}000`, server: "Asia" }, { position: POS[n], rank: ranks[n % 4] });
+      await bot.onModal(form);
+      assert.match(text(last(form.replies)), new RegExp(`ลงชื่อแล้ว: \\*\\*Solo${n + 1}\\*\\*`), JSON.stringify(form.replies));
+    }
+    assert.match(panel(tid).embed.fields[0].name, /ลงชื่อแล้ว \(6 คน · ได้ 2 ทีม\)/);
+
+    // Pressing again opens the form for the one character, filled in.
+    const again = tap(`tr:tso:${tid}`, SOLO[5], panel(tid));
+    await bot.onButton(again);
+    assert.deepEqual(Object.keys(formFields(again.modal)), ["position", "rank"]);
+    assert.equal(again.modal.custom_id, `tr:tsu:${tid}:${(await api.get<any>(`/tournaments/${tid}/solo`)).signups[5].playerId}`);
+    const change = signUpForm(again.modal.custom_id, SOLO[5], {}, { position: "CENTER", rank: "เจ้าแห่ง ZONE" });
+    await bot.onModal(change);
+    assert.match(text(last(change.replies)), /Center \(เซ็นเตอร์\) · เจ้าแห่ง ZONE/);
+    assert.equal((await api.get<any>(`/tournaments/${tid}/solo`)).signups.length, 6, "changed, not added");
+
+    // A UID someone else linked is refused.
+    const thief = person(60);
+    const steal = signUpForm(`tr:tsu:${tid}`, thief, { name: "X", uid: "550000", server: "Asia" }, { position: "GUARD", rank: "เจ้าแห่ง ZONE" });
+    await bot.onModal(steal);
+    assert.match(text(last(steal.replies)), /ผูกกับบัญชี Discord อื่น/);
+
+    const out = tap(`tr:tsx:${tid}`, SOLO[0], panel(tid));
+    await bot.onButton(out);
+    assert.match(text(last(out.replies)), /ถอนชื่อแล้ว/);
+    assert.match(panel(tid).embed.fields[0].name, /5 คน/);
+    const back = signUpForm(`tr:tsu:${tid}`, SOLO[0], {}, { position: "GUARD", rank: "แม่ทัพไร้มงกุฎ" });
+    // One character now: the form carries its id.
+    const reopen = tap(`tr:tso:${tid}`, SOLO[0], panel(tid));
+    await bot.onButton(reopen);
+    back.customId = reopen.modal.custom_id;
+    await bot.onModal(back);
+    assert.match(panel(tid).embed.fields[0].name, /6 คน/);
+  });
+
+  test("only organizers draw; the draw can be redone, then confirmed into teams with their Discord members", async () => {
+    const notOrg = tap(`tr:tdw:${tid}`, SOLO[1], panel(tid));
+    await bot.onButton(notOrg);
+    assert.match(text(last(notOrg.replies)), /สำหรับผู้จัด/);
+
+    const draw = tap(`tr:tdw:${tid}`, OWNER, panel(tid));
+    await bot.onButton(draw);
+    const view = privateMessage(last(draw.replies));
+    assert.equal(view.embed.fields.length, 2);
+    assert.ok(view.embed.fields.every((f: any) => !/ตำแหน่งไม่ครบ/.test(f.name)), JSON.stringify(view.embed.fields));
+    assert.deepEqual(controls(view), [[`tr:tdw:${tid}`, `tr:tdc:${tid}`]]);
+    // Drawing again from the private message replaces it.
+    const redo = tap(`tr:tdw:${tid}`, OWNER, view);
+    await bot.onButton(redo);
+    const view2 = privateMessage(last(redo.replies));
+    const before = announce().sent.length;
+    const ok = tap(`tr:tdc:${tid}`, OWNER, view2);
+    await bot.onButton(ok);
+    assert.match(text(last(ok.replies)), /บันทึก 2 ทีมแล้ว/, JSON.stringify(ok.replies));
+    const b = await api.get<any>(`/tournaments/${tid}/bracket`);
+    assert.equal(b.teams.length, 2);
+    for (const t of b.teams) assert.equal(t.roster.filter((r: any) => SOLO.includes(r.discordId)).length, 3);
+    const news = announce().sent.slice(before).find((m) => /สุ่มทีม Solo Cup แล้ว/.test(m.content ?? ""));
+    assert.ok(news, "the teams are announced");
+    assert.equal(news!.allowedMentions.users.length, 6);
+    assert.match(panel(tid).embed.title, /สุ่มทีมแล้ว: Solo Cup/);
+    assert.deepEqual(controls(panel(tid)), [[`tr:tls:${tid}`, `tr:tdw:${tid}`]]);
+    // A drawn player is on a team for the match rooms.
+    assert.ok(TourManager.teamOf(b, SOLO[2]));
+
+    const late = tap(`tr:tso:${tid}`, person(61), panel(tid));
+    await bot.onButton(late);
+    assert.match(text(last(late.replies)), /สุ่มทีมแล้ว/);
+  });
+
+  test("drawing again after saving asks before replacing the teams", async () => {
+    const draw = tap(`tr:tdw:${tid}`, OWNER, panel(tid));
+    await bot.onButton(draw);
+    const view = privateMessage(last(draw.replies));
+    assert.deepEqual(controls(view), [[`tr:tdw:${tid}`, `tr:tdc:${tid}:r`]]);
+    assert.match(view.embed.description, /แทนที่ทีมเดิม/);
+    const ok = tap(`tr:tdc:${tid}:r`, OWNER, view);
+    await bot.onButton(ok);
+    assert.match(text(last(ok.replies)), /บันทึก 2 ทีมแล้ว/);
+    assert.equal((await api.get<any>(`/tournaments/${tid}/bracket`)).teams.length, 2);
+    await bot.onCommand(command("tour", "seed", { method: "random", tournament: tid }, OWNER));
+    assert.equal((await api.get<any>(`/tournaments/${tid}/bracket`)).status, "DRAFT");
   });
 });

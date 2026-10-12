@@ -44,6 +44,16 @@ const tourCommand: ApplicationCommandData = {
           ],
         },
         { type: O.String, name: "start", description: "เวลาเริ่มแข่ง เช่น 20/10 19:00 (เวลาไทย)", required: true },
+        {
+          type: O.String,
+          name: "entry",
+          description: "สมัครแบบไหน (ค่าเริ่มต้น สมัครเป็นทีม)",
+          choices: [
+            { name: "สมัครเป็นทีม", value: "TEAM" },
+            { name: "ลงเดี่ยว แล้วสุ่มจัดทีม (SOLO)", value: "SOLO" },
+          ],
+        },
+        { type: O.Integer, name: "team_size", description: "ลงเดี่ยว: ทีมละกี่คน (ค่าเริ่มต้น 3)", minValue: 2, maxValue: 6 },
         { type: O.Integer, name: "best_of", description: "แข่งกี่เกม ทุกรอบยกเว้นรอบชิง (ค่าเริ่มต้น Bo3)", choices: [1, 3, 5, 7].map((n) => ({ name: `Bo${n}`, value: n })) },
         { type: O.Integer, name: "final_best_of", description: "รอบชิงชนะเลิศแข่งกี่เกม (ไม่ใส่ = เท่ากับรอบอื่น)", choices: [1, 3, 5, 7, 9].map((n) => ({ name: `Bo${n}`, value: n })) },
         { type: O.Integer, name: "late", description: "มาสายได้กี่นาที (ค่าเริ่มต้น 15)", minValue: 0, maxValue: 240 },
