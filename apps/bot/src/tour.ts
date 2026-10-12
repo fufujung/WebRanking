@@ -46,6 +46,7 @@ import {
   when,
 } from "./tourFormat.js";
 import type { Bracket, BracketMatch, Entry, Format } from "./types.js";
+import { drawnButtons, drawnPanel, drawView, positionLabel, soloButtons, soloModal, soloPanel, type Character, type SoloDraw, type SoloView } from "./solo.js";
 
 /** What the bot remembers about a tournament it runs in a server. */
 export interface TourConfig {
@@ -370,6 +371,8 @@ export class TourManager {
   private now: () => Date;
   /** Teams being put together, by "user:tournament:new" (sign-up) or "user:tournament:teamId" (roster change). */
   private builders = new Map<string, Builder>();
+  /** An organizer's latest SOLO draw (player ids per team), waiting for them to confirm it. Keyed by user:tournament. */
+  private soloDraws = new Map<string, string[][]>();
   /** The last reason each match room could not be made, so the same problem is reported once. */
   private roomFailures = new Map<string, string>();
   /** Tournaments being synced right now, so overlapping ticks don't create a room twice. */
@@ -459,6 +462,7 @@ export class TourManager {
   private async tourCommand(i: ChatInputCommandInteraction, info: MemberInfo) {
     const sub = i.options.getSubcommand();
     if (sub === "create") return this.create(i, info);
+    if (sub === "link") return this.link(i, info);
     const tour = this.pick(i.guildId!, i.options.getString("tournament"));
     if (!tour) return void (await i.reply({ ephemeral: true, content: "ยังไม่มีทัวร์นาเมนต์ในเซิร์ฟเวอร์นี้ เริ่มด้วย `/tour create`" }));
     const tid = tour.tournamentId;
@@ -544,8 +548,11 @@ export class TourManager {
     const start = parseThaiTime(i.options.getString("start", true), this.now());
     if (!start) return void (await i.reply({ ephemeral: true, content: "อ่านเวลาเริ่มไม่ออก ใช้รูปแบบ `20/10 19:00` หรือ `2026-10-20 19:00` (เวลาไทย)" }));
     await i.deferReply({ ephemeral: true });
-    const rosterMin = i.options.getInteger("roster_min") ?? 3;
-    const rosterMax = i.options.getInteger("roster_max") ?? Math.max(5, rosterMin);
+    const solo = i.options.getString("entry") === "SOLO";
+    const teamSize = i.options.getInteger("team_size") ?? 3;
+    // Drawn teams are exactly teamSize players.
+    const rosterMin = solo ? teamSize : (i.options.getInteger("roster_min") ?? 3);
+    const rosterMax = solo ? teamSize : (i.options.getInteger("roster_max") ?? Math.max(5, rosterMin));
     if (rosterMax > 6) return void (await i.editReply("สมัครผ่าน Discord ได้สูงสุด 6 คนต่อทีม"));
     const t = await this.api.post<{ id: string; name: string }>("/tournaments", {
       name: i.options.getString("name", true),
@@ -563,6 +570,8 @@ export class TourManager {
       registrationOpen: true,
       thirdPlaceMatch: i.options.getBoolean("third_place") ?? false,
       grandFinalReset: i.options.getBoolean("grand_final_reset") ?? true,
+      entryMode: solo ? "SOLO" : "TEAM",
+      teamSize,
     });
     const category = i.options.getChannel("category");
     const tour: TourConfig = {
@@ -581,12 +590,73 @@ export class TourManager {
     };
     this.tours.set(t.id, tour);
     await this.refreshPanel(i.client, tour);
+    if (solo) {
+      return void (await i.editReply(
+        [
+          `✅ สร้าง **${t.name}** แบบลงเดี่ยว (ทีมละ ${teamSize} คน) และเปิดรับลงชื่อแล้ว (ประกาศที่ <#${tour.announceChannelId}>)`,
+          "ขั้นต่อไป: ผู้เล่นกดปุ่ม 🙋 ลงชื่อเดี่ยว ในประกาศ (เลือกตำแหน่งและแรงค์) → ผู้จัดกด 🎲 สุ่มทีม ดูผลแล้วกดยืนยัน → จัดสาย `/tour seed` → ตรวจ/แก้ แล้วกดยืนยันเริ่มแข่ง",
+        ].join("\n"),
+      ));
+    }
     await i.editReply(
       [
         `✅ สร้าง **${t.name}** และเปิดรับสมัครแล้ว (ประกาศที่ <#${tour.announceChannelId}>)`,
         "ขั้นต่อไป: ให้หัวหน้าทีมกดปุ่ม 📝 สมัครทีม ในประกาศ (หรือ `/register`) → ปิดรับสมัคร `/tour registration open:False` → จัดสาย `/tour seed` → ตรวจ/แก้ แล้วกดยืนยันเริ่มแข่ง",
       ].join("\n"),
     );
+  }
+
+  /** Takes a tournament made on the website into this server: posts its sign-up announcement here and runs it like one made with /tour create. */
+  private async link(i: ChatInputCommandInteraction, info: MemberInfo) {
+    if (!this.canCreate(info)) return void (await i.reply({ ephemeral: true, content: "นำทัวร์มาใช้ได้เฉพาะคนที่มีสิทธิ์จัดการเซิร์ฟเวอร์ (Manage Server)" }));
+    await i.deferReply({ ephemeral: true });
+    const tid = i.options.getString("event", true);
+    const b = await this.bracket(tid).catch((e) => {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    });
+    if (!b) return void (await i.editReply("ไม่พบทัวร์นาเมนต์นี้ เลือกจากรายการที่ขึ้นตอนพิมพ์"));
+    if (b.status === "DONE") return void (await i.editReply(`**${b.name}** จบไปแล้ว`));
+    const existing = this.tours.get(tid);
+    if (existing && existing.guildId !== i.guildId) return void (await i.editReply(`**${b.name}** ถูกนำไปใช้ในเซิร์ฟเวอร์อื่นแล้ว`));
+    const category = i.options.getChannel("category");
+    const announceChannelId = i.options.getChannel("announce_channel")?.id ?? i.channelId;
+    // Linking again moves the announcement; the rooms and results already made stay.
+    if (existing?.panel) {
+      const old = await this.fetchMessage(i.client, existing.panel.channelId, existing.panel.messageId);
+      await old?.delete().catch(() => null);
+    }
+    const tour: TourConfig = existing
+      ? {
+          ...existing,
+          organizerRoleId: i.options.getRole("organizer_role")?.id ?? existing.organizerRoleId,
+          announceChannelId,
+          categories: category && !existing.categories.some((c) => c.id === category.id) ? [...existing.categories, { id: category.id, count: 0 }] : existing.categories,
+          panel: null,
+        }
+      : {
+          tournamentId: tid,
+          guildId: i.guildId!,
+          ownerId: i.user.id,
+          organizerRoleId: i.options.getRole("organizer_role")?.id ?? null,
+          announceChannelId,
+          categories: category ? [{ id: category.id, count: 0 }] : [],
+          panel: null,
+          draft: null,
+          rooms: {},
+          announced: [],
+          finished: false,
+          createdAt: Date.now(),
+        };
+    this.tours.set(tid, tour);
+    await this.refreshPanel(i.client, tour);
+    const solo = (await this.soloView(tid).catch(() => null))?.entryMode === "SOLO";
+    const lines = [`✅ นำ **${b.name}** มาใช้ในเซิร์ฟเวอร์นี้แล้ว (ประกาศที่ <#${announceChannelId}>)`];
+    if (b.status === "LIVE") lines.push("ทัวร์นี้กำลังแข่งอยู่ บอทจะสร้างห้องแข่งให้แมตช์ที่ยังไม่จบเอง");
+    else if (!b.registrationOpen) lines.push("ตอนนี้ยังปิดรับสมัครอยู่ เปิดด้วย `/tour registration open:True`");
+    else if (solo) lines.push("ขั้นต่อไป: ผู้เล่นกดปุ่ม 🙋 ลงชื่อเดี่ยว ในประกาศ → ผู้จัดกด 🎲 สุ่มทีม แล้วยืนยัน → `/tour seed` → `/tour start`");
+    else lines.push("ขั้นต่อไป: ให้หัวหน้าทีมกดปุ่ม 📝 สมัครทีม ในประกาศ → ปิดรับสมัคร → `/tour seed` → `/tour start`");
+    await i.editReply(lines.join("\n"));
   }
 
   /** Reads the player1/ign1 … options into a roster. Names default to the member's display name. */
@@ -665,6 +735,16 @@ export class TourManager {
     const focused = i.options.getFocused(true);
     const q = String(focused.value).toLowerCase();
     try {
+      if (focused.name === "event") {
+        // Tournaments on the website that are not finished and not already run from another server.
+        const res = await this.api.get<{ data: { id: string; name: string; status: string; startDate: string }[] }>(
+          `/tournaments?limit=50${q ? `&search=${encodeURIComponent(q)}` : ""}`,
+        );
+        const free = res.data.filter((t) => t.status !== "COMPLETED" && (this.tours.get(t.id)?.guildId ?? i.guildId) === i.guildId);
+        return void (await i.respond(
+          free.slice(0, 25).map((t) => ({ name: `${t.name}${this.tours.get(t.id) ? " (ใช้ในเซิร์ฟเวอร์นี้แล้ว)" : ""}`.slice(0, 100), value: t.id })),
+        ));
+      }
       if (focused.name === "tournament") {
         const list = this.toursIn(i.guildId!);
         const names = await Promise.all(list.map((t) => this.bracket(t.tournamentId).then((b) => ({ id: t.tournamentId, name: b.name, status: b.status })).catch(() => null)));
@@ -753,6 +833,7 @@ export class TourManager {
     const organizer = this.isOrganizer(tour, i.user.id, info);
     try {
       if (action === "treg" || action === "tmy" || action === "ted" || action === "tcp" || action === "twd") return await this.teamButton(i, tour, action, ref, extra, organizer);
+      if (action === "tso" || action === "tsx" || action === "tdw" || action === "tdc") return await this.soloButton(i, tour, action, ref, organizer);
       if (action === "tba" || action === "tbs") return await this.onBuilder(i, action, tid, ref);
       if (action === "tls") {
         const b = await this.bracket(tid);
@@ -852,6 +933,7 @@ export class TourManager {
     const [, action, tid, ref] = i.customId.split(":");
     if (action === "trm" || action === "tcm") return this.teamModal(i, action, tid, ref);
     if (action === "tbm") return this.onBuilder(i, action, tid, ref, i.customId.split(":")[4]);
+    if (action === "tsu") return this.soloSubmit(i, tid, ref);
     if (action !== "tdm") return;
     const tour = this.tours.get(tid);
     if (!tour) return void (await i.reply({ ephemeral: true, content: "ไม่พบทัวร์นาเมนต์นี้" }));
@@ -869,6 +951,118 @@ export class TourManager {
       await this.refreshHeader(i.client, tour, b, slot);
     } catch (e) {
       await i.reply({ ephemeral: true, content: `❌ ${thaiError(e)}` }).catch(() => null);
+    }
+  }
+
+  // ---------- SOLO: players sign up alone, organizers draw the teams ----------
+
+  private soloView(tid: string) {
+    return this.api.get<SoloView>(`/tournaments/${tid}/solo`);
+  }
+
+  /** The member's characters that can play this tournament's game. */
+  private async charactersOf(discordId: string, tid: string): Promise<Character[]> {
+    const [{ data }, t] = await Promise.all([
+      this.api.get<{ data: (Character & { gameId?: string | null })[] }>(`/players/discord/${discordId}`),
+      this.api.get<{ gameId?: string | null }>(`/tournaments/${tid}`),
+    ]);
+    return data.filter((c) => !t.gameId || !c.gameId || c.gameId === t.gameId);
+  }
+
+  private async soloButton(i: ButtonInteraction, tour: TourConfig, action: string, extra: string | undefined, organizer: boolean) {
+    const tid = tour.tournamentId;
+    if (action === "tso") {
+      const v = await this.soloView(tid);
+      if (v.entryMode !== "SOLO") return void (await i.reply({ ephemeral: true, content: "ทัวร์นี้สมัครเป็นทีม กด 📝 สมัครทีม แทน" }));
+      if (v.drawn) return void (await i.reply({ ephemeral: true, content: "ผู้จัดสุ่มทีมแล้ว ลงชื่อเพิ่มหรือแก้ไม่ได้ ติดต่อผู้จัด" }));
+      if (!v.registrationOpen) return void (await i.reply({ ephemeral: true, content: "🔒 ปิดรับลงชื่อแล้ว" }));
+      const current = v.signups.find((s) => s.discordId === i.user.id);
+      return void (await i.showModal(soloModal(tid, v, await this.charactersOf(i.user.id, tid), current)));
+    }
+    if (action === "tsx") {
+      await i.deferReply({ ephemeral: true });
+      const v = await this.soloView(tid);
+      if (!v.signups.some((s) => s.discordId === i.user.id)) return void (await i.editReply("คุณยังไม่ได้ลงชื่อในทัวร์นี้"));
+      await this.api.delete(`/members/${i.user.id}/solo/${tid}`);
+      await this.refreshPanel(i.client, tour);
+      return void (await i.editReply("🚪 ถอนชื่อแล้ว"));
+    }
+    if (!organizer) return void (await i.reply({ ephemeral: true, content: "ปุ่มนี้สำหรับผู้จัด" }));
+    const key = `${i.user.id}:${tid}`;
+    if (action === "tdw") {
+      // Pressed on the panel: a private reply. Pressed on a previous draw: replace it.
+      if (i.message.flags.has(MessageFlags.Ephemeral)) await i.deferUpdate();
+      else await i.deferReply({ ephemeral: true });
+      const [v, d] = await Promise.all([this.soloView(tid), this.api.post<SoloDraw>(`/tournaments/${tid}/solo/draw`, {})]);
+      this.soloDraws.set(key, d.teams.map((t) => t.players.map((p) => p.playerId)));
+      return void (await i.editReply(drawView(tid, d, v.drawn)));
+    }
+    // tdc: save the draw.
+    const teams = this.soloDraws.get(key);
+    if (!teams) return void (await i.reply({ ephemeral: true, content: "ไม่พบผลสุ่มนี้แล้ว กด 🎲 สุ่มทีม ใหม่อีกครั้ง" }));
+    await i.deferUpdate();
+    try {
+      await this.api.post(`/tournaments/${tid}/solo/teams`, { teams, replace: extra === "r" });
+    } catch (e) {
+      if (e instanceof ApiError && (e.details as { needsReplace?: boolean } | undefined)?.needsReplace) {
+        const d = await this.api.post<SoloDraw>(`/tournaments/${tid}/solo/draw`, {});
+        this.soloDraws.set(key, d.teams.map((t) => t.players.map((p) => p.playerId)));
+        return void (await i.editReply(drawView(tid, d, true)));
+      }
+      throw e;
+    }
+    this.soloDraws.delete(key);
+    await this.refreshPanel(i.client, tour);
+    const b = await this.bracket(tid);
+    const players = b.teams.flatMap((t) => t.roster.map((r) => r.discordId)).filter((x): x is string => Boolean(x));
+    const channel = await i.client.channels.fetch(tour.announceChannelId).catch(() => null);
+    if (channel?.isSendable()) {
+      await channel
+        .send({
+          content: [`🎲 **สุ่มทีม ${b.name} แล้ว!**`, ...b.teams.map((t) => `**${t.name}**: ${t.roster.map((r) => (r.discordId ? `<@${r.discordId}>` : r.name)).join(", ")}`)].join("\n").slice(0, 1900),
+          allowedMentions: { users: players },
+        })
+        .catch(() => null);
+    }
+    await i.editReply({ content: `✅ บันทึก ${b.teams.length} ทีมแล้ว ขั้นต่อไป: จัดสาย \`/tour seed\` → ตรวจ/แก้ แล้วกดยืนยันเริ่มแข่ง`, embeds: [], components: [] });
+  }
+
+  /** The sign-up form: links a new character first when needed, then signs up with position and rank. */
+  private async soloSubmit(i: ModalSubmitInteraction, tid: string, playerId: string | undefined) {
+    const tour = this.tours.get(tid);
+    if (!tour) return void (await i.reply({ ephemeral: true, content: "ไม่พบทัวร์นาเมนต์นี้" }));
+    const text = (id: string) => {
+      try {
+        return i.fields.getTextInputValue(id).trim();
+      } catch {
+        return null;
+      }
+    };
+    const pick = (id: string) => {
+      try {
+        return i.fields.getStringSelectValues(id)[0] ?? null;
+      } catch {
+        return null;
+      }
+    };
+    try {
+      await i.deferReply({ ephemeral: true });
+      let id = playerId ?? pick("player");
+      const uid = text("uid");
+      if (!id && uid) {
+        const t = await this.api.get<{ gameId?: string | null }>(`/tournaments/${tid}`);
+        const p = await this.api.post<{ id: string }>(`/players/discord/${i.user.id}/claim`, { uid, server: text("server") || undefined, name: text("name") || undefined, gameId: t.gameId ?? undefined });
+        id = p.id;
+      }
+      if (!id) return void (await i.editReply("เลือกตัวละครที่จะลงก่อน"));
+      const v = await this.api.post<SoloView>(`/members/${i.user.id}/solo/${tid}`, { playerId: id, position: pick("position"), rank: pick("rank") });
+      const me = v.signups.find((s) => s.playerId === id);
+      await this.refreshPanel(i.client, tour);
+      await i.editReply(me ? `✅ ลงชื่อแล้ว: **${me.nickname || me.name}** · ${positionLabel(me.position)} · ${me.rank}\nกด 🙋 อีกครั้งเพื่อแก้ไข` : "✅ ลงชื่อแล้ว");
+    } catch (e) {
+      const msg = `❌ ${thaiError(e)}`;
+      if (i.deferred || i.replied) await i.editReply(msg).catch(() => null);
+      else await i.reply({ ephemeral: true, content: msg }).catch(() => null);
     }
   }
 
@@ -1544,7 +1738,14 @@ export class TourManager {
   private async refreshPanel(client: Client, tour: TourConfig) {
     const b = await this.bracket(tour.tournamentId).catch(() => null);
     if (!b) return;
-    const payload = { embeds: [registrationPanel(b, this.siteUrl)], components: panelButtons(tour.tournamentId, b.registrationOpen && b.status !== "LIVE" && b.status !== "DONE"), allowedMentions: { parse: [] } };
+    const open = b.registrationOpen && b.status !== "LIVE" && b.status !== "DONE";
+    const solo = await this.soloView(tour.tournamentId).catch(() => null);
+    const payload =
+      solo?.entryMode === "SOLO"
+        ? solo.drawn
+          ? { embeds: [drawnPanel(b, this.siteUrl)], components: drawnButtons(tour.tournamentId), allowedMentions: { parse: [] } }
+          : { embeds: [soloPanel(b, solo, this.siteUrl)], components: soloButtons(tour.tournamentId, open && solo.registrationOpen), allowedMentions: { parse: [] } }
+        : { embeds: [registrationPanel(b, this.siteUrl)], components: panelButtons(tour.tournamentId, open), allowedMentions: { parse: [] } };
     const fresh = this.tours.get(tour.tournamentId)!;
     const old = fresh.panel ? await this.fetchMessage(client, fresh.panel.channelId, fresh.panel.messageId) : null;
     if (old) {

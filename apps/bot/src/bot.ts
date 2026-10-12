@@ -57,7 +57,7 @@ import type { BracketMatch, Draft, Match, MatchDetail, Page, PlayerDetail, Ranke
 
 const SAVE = "✅";
 /** Button actions handled by the tournament manager. */
-const TOUR_ACTIONS = new Set(["tci", "tsr", "two", "tdp", "tad", "taw", "tro", "trs", "tsd", "tst", "tls", "treg", "tmy", "ted", "tcp", "twd", "tep", "ten", "tba", "tbs"]);
+const TOUR_ACTIONS = new Set(["tso", "tsx", "tdw", "tdc", "tci", "tsr", "two", "tdp", "tad", "taw", "tro", "trs", "tsd", "tst", "tls", "treg", "tmy", "ted", "tcp", "twd", "tep", "ten", "tba", "tbs"]);
 const WEEK = 7 * 24 * 3600_000;
 
 type MemberLike = Pick<GuildMember, "permissions" | "roles"> | { permissions: unknown; roles: string[] | unknown } | null;

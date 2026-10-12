@@ -44,6 +44,16 @@ const tourCommand: ApplicationCommandData = {
           ],
         },
         { type: O.String, name: "start", description: "เวลาเริ่มแข่ง เช่น 20/10 19:00 (เวลาไทย)", required: true },
+        {
+          type: O.String,
+          name: "entry",
+          description: "สมัครแบบไหน (ค่าเริ่มต้น สมัครเป็นทีม)",
+          choices: [
+            { name: "สมัครเป็นทีม", value: "TEAM" },
+            { name: "ลงเดี่ยว แล้วสุ่มจัดทีม (SOLO)", value: "SOLO" },
+          ],
+        },
+        { type: O.Integer, name: "team_size", description: "ลงเดี่ยว: ทีมละกี่คน (ค่าเริ่มต้น 3)", minValue: 2, maxValue: 6 },
         { type: O.Integer, name: "best_of", description: "แข่งกี่เกม ทุกรอบยกเว้นรอบชิง (ค่าเริ่มต้น Bo3)", choices: [1, 3, 5, 7].map((n) => ({ name: `Bo${n}`, value: n })) },
         { type: O.Integer, name: "final_best_of", description: "รอบชิงชนะเลิศแข่งกี่เกม (ไม่ใส่ = เท่ากับรอบอื่น)", choices: [1, 3, 5, 7, 9].map((n) => ({ name: `Bo${n}`, value: n })) },
         { type: O.Integer, name: "late", description: "มาสายได้กี่นาที (ค่าเริ่มต้น 15)", minValue: 0, maxValue: 240 },
@@ -57,6 +67,17 @@ const tourCommand: ApplicationCommandData = {
         { type: O.Boolean, name: "grand_final_reset", description: "Double Elimination: ถ้าสายล่างชนะนัดชิง ให้แข่งนัดตัดสินอีกนัด (ค่าเริ่มต้น เปิด)" },
         { type: O.String, name: "game", description: "ชื่อเกม", maxLength: 100 },
       ]),
+    },
+    {
+      type: O.Subcommand,
+      name: "link",
+      description: "นำทัวร์ที่สร้างบนเว็บมาประกาศและรับสมัครในห้องนี้",
+      options: [
+        { type: O.String, name: "event", description: "ทัวร์นาเมนต์บนเว็บ", required: true, autocomplete: true },
+        { type: O.Role, name: "organizer_role", description: "ยศผู้จัด: เห็นทุกห้องแข่งและกดตัดสินได้" },
+        { type: O.Channel, name: "category", description: "หมวดที่จะสร้างห้องแข่ง (ไม่ใส่ = บอทสร้างให้)", channelTypes: [ChannelType.GuildCategory] },
+        { type: O.Channel, name: "announce_channel", description: "ห้องประกาศสายและผล (ไม่ใส่ = ห้องนี้)", channelTypes: [ChannelType.GuildText] },
+      ],
     },
     {
       type: O.Subcommand,

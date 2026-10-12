@@ -259,7 +259,7 @@ export function register(tournamentId: string, body: unknown) {
   return serial(async () => {
     const t = await tournamentOr404(tournamentId);
     if (!input.override && !t.registrationOpen) throw fail(409, "Registration is closed", "ปิดรับสมัครแล้ว");
-    if (!input.override && t.entryMode === "SOLO") throw fail(409, "Players sign up alone for this tournament", "ทัวร์นี้ลงทะเบียนเดี่ยวที่หน้าเว็บ แล้วผู้จัดจะสุ่มจัดทีมให้");
+    if (!input.override && t.entryMode === "SOLO") throw fail(409, "Players sign up alone for this tournament", "ทัวร์นี้ลงชื่อเดี่ยว: กดปุ่ม 🙋 ลงชื่อเดี่ยว ในประกาศของบอท หรือลงที่หน้าเว็บ แล้วผู้จัดจะสุ่มจัดทีมให้");
     if (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") throw fail(409, "The tournament has already started", "ทัวร์นาเมนต์เริ่มแข่งแล้ว สมัครเพิ่มไม่ได้");
     checkRosterShape(t, input.players);
     const count = await prisma.tournamentEntry.count({ where: { tournamentId } });
