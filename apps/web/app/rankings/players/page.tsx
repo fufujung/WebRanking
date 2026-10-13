@@ -43,6 +43,7 @@ export default async function MmrRanking({ searchParams }: { searchParams: Promi
           <h1>Ranking ผู้เล่น · MMR{game ? ` · ${game.name}` : ""}</h1>
           <p className="muted">
             ทุกคนเริ่มที่ {ladder.rules.start} MMR ชนะแล้วขึ้น แพ้แล้วลง ชนะทีมที่เก่งกว่าได้มากกว่า แรงค์ของคุณดูได้จากตราด้านข้างชื่อ
+            {" "}แพ้บายเพราะไม่มาเช็คอินโดนหัก 20 MMR และติด <Link href="/blacklist">⛔ Blacklist</Link>
           </p>
         </div>
         <div className="ladder-hero-stats">
@@ -93,6 +94,7 @@ export default async function MmrRanking({ searchParams }: { searchParams: Promi
                       </td>
                       <td>
                         <PlayerLink player={p} />
+                        {p.blacklisted && <> <Link href="/blacklist" className="blacklist-chip" title="ติด Blacklist">⛔</Link></>}
                         {p.team && <div className="muted small ladder-team">{p.team.name}</div>}
                       </td>
                       <td><TierBadge tier={p.tier} /></td>

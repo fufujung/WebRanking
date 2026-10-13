@@ -90,6 +90,8 @@ export interface PlayerDetail {
   id: string;
   name: string;
   nickname: string | null;
+  mmr?: number;
+  blacklist?: { active: boolean; penalty: number; entries: BlacklistEntry[] };
   team: TeamSummary | null;
   stats: PlayerStats;
 }
@@ -142,6 +144,32 @@ export interface BracketMatch {
   winnerTo: string | null;
   loserTo: string | null;
 }
+export interface BracketBlacklist {
+  id: string;
+  slotCode: string | null;
+  matchNumber: number | null;
+  teamName: string | null;
+  penalty: number;
+  reason: string;
+  player: { id: string; name: string; nickname: string | null; discordId: string | null };
+}
+
+export interface BlacklistEntry {
+  id: string;
+  playerId: string;
+  tournamentId: string | null;
+  matchNumber: number | null;
+  teamName: string | null;
+  source: "AUTO" | "ADMIN";
+  reason: string;
+  penalty: number;
+  createdAt: string;
+  liftedAt: string | null;
+  liftNote: string | null;
+  player: { id: string; name: string; nickname: string | null; uid: string | null; discordId: string | null; mmr: number };
+  tournament: { id: string; name: string } | null;
+}
+
 export interface Bracket {
   tournamentId: string;
   name: string;
@@ -163,4 +191,6 @@ export interface Bracket {
   matches: BracketMatch[];
   standings: { position: number; teamId: string; played: number; wins: number; draws: number; losses: number; diff: number; points: number; team: Entry | null }[] | null;
   placements: { placement: number; team: Entry }[];
+  /** Standing blacklist entries from this tournament's walkovers (one per player of the team that did not come). */
+  blacklist?: BracketBlacklist[];
 }

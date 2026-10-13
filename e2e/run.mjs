@@ -76,7 +76,7 @@ await new Promise((r) => discordMock.listen(Number(process.env.DISCORD_MOCK_PORT
 const uniq = Date.now().toString().slice(-5);
 
 console.log("— Public pages");
-const paths = ["/", "/guilds", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=ppg", "/rankings/stats", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", LOGIN];
+const paths = ["/", "/guilds", "/blacklist", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=ppg", "/rankings/stats", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", LOGIN];
 for (const p of paths) {
   await page.goto(base + p);
   await page.waitForLoadState("networkidle");
@@ -556,6 +556,24 @@ if (!publicCup.includes("สายการแข่งขัน") || !publicCup
 if (!(await page.locator(".card", { hasText: "แชมป์" }).textContent()).includes("Siam Dragons")) throw new Error("champion not shown");
 await page.screenshot({ path: OUT + "/bracket-public.png", fullPage: true });
 step("final decided by the organizer; public page shows the bracket and the champion");
+
+// Thunder Hawks never checked in for the final: every player of the team is on the blacklist, 20 MMR each
+await page.goto(base + "/blacklist");
+await page.locator(".blacklist-table tbody tr", { hasText: "Thunder Hawks" }).first().waitFor();
+const blackRows = await page.locator(".blacklist-table tbody tr").count();
+if (!(await page.locator(".blacklist-table").textContent()).includes("-20 MMR")) throw new Error("blacklist penalty not shown");
+await page.screenshot({ path: OUT + "/blacklist.png", fullPage: true });
+await page.locator(".blacklist-table tbody tr").first().locator("a.entity").click();
+await page.waitForURL(/\/players\//);
+await page.locator(".blacklist-banner", { hasText: "-20 MMR" }).waitFor();
+await page.locator(".blacklist-chip", { hasText: "ติด Blacklist" }).waitFor();
+await page.screenshot({ path: OUT + "/blacklist-player.png", fullPage: true });
+await page.goto(base + "/admin/blacklist");
+page.once("dialog", (d) => d.accept("แจ้งผู้จัดล่วงหน้าแล้ว"));
+await page.locator("tr", { hasText: "Thunder Hawks" }).first().locator("button:has-text('ยกเลิกโทษ')").click();
+await page.locator("a.tab:has-text('ยกเลิกโทษแล้ว') .tab-count", { hasText: "1" }).waitFor();
+await page.screenshot({ path: OUT + "/blacklist-admin.png", fullPage: true });
+step(`walkover loser's ${blackRows} players listed on /blacklist (-20 MMR) and flagged on their page; organizer lifted one`);
 
 // Clearing the semi-final also clears the final: asks first
 await page.goto(cupUrl);

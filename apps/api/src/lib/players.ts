@@ -120,6 +120,13 @@ export async function mergePlayers(intoId: string, fromId: string) {
     }
     if (normaliseName(from.name) !== normaliseName(into.name)) await rememberName(tx, into.id, from.name);
 
+    // Blacklist entries follow the person; one walkover counts once even if both characters were on that roster.
+    for (const b of await tx.blacklistEntry.findMany({ where: { playerId: from.id } })) {
+      const both = b.slotCode ? await tx.blacklistEntry.findFirst({ where: { tournamentId: b.tournamentId, slotCode: b.slotCode, playerId: into.id } }) : null;
+      if (both) await tx.blacklistEntry.delete({ where: { id: b.id } });
+      else await tx.blacklistEntry.update({ where: { id: b.id }, data: { playerId: into.id } });
+    }
+
     const guildId = into.guildId ?? from.guildId;
     if (guildId) await tx.guild.updateMany({ where: { id: guildId, leaderId: from.id }, data: { leaderId: into.id } });
     await tx.player.delete({ where: { id: from.id } });

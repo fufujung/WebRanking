@@ -32,17 +32,18 @@ export function recomputeRatings(): Promise<void> {
 }
 
 async function replayAllMatches() {
-  const [teams, players, matches, oldChanges] = await Promise.all([
+  const [teams, players, matches, oldChanges, penalties] = await Promise.all([
     prisma.team.findMany({ select: { id: true, rating: true } }),
     prisma.player.findMany({ select: { id: true, mmr: true, peakMmr: true } }),
     prisma.match.findMany({
       orderBy: [{ playedAt: "asc" }, { createdAt: "asc" }],
       select: {
-        id: true, teamAId: true, teamBId: true, winnerId: true, ratingDeltaA: true, ratingDeltaB: true,
+        id: true, playedAt: true, teamAId: true, teamBId: true, winnerId: true, ratingDeltaA: true, ratingDeltaB: true,
         playerStats: { select: { playerId: true, teamId: true, award: true } },
       },
     }),
     prisma.playerMmrChange.findMany({ select: { id: true, playerId: true, matchId: true, before: true, delta: true, result: true } }),
+    prisma.blacklistEntry.findMany({ where: { liftedAt: null }, orderBy: { createdAt: "asc" }, select: { playerId: true, penalty: true, createdAt: true } }),
   ]);
   const ratings = new Map(teams.map((t) => [t.id, START_RATING]));
   const stored = new Map(teams.map((t) => [t.id, t.rating]));
@@ -51,7 +52,18 @@ async function replayAllMatches() {
   const matchUpdates = [];
   const changes: { playerId: string; matchId: string; before: number; delta: number; result: string }[] = [];
 
+  // Blacklist penalties come off at the time they were given, between the series around them.
+  let next = 0;
+  const applyPenalties = (until: Date | null) => {
+    while (next < penalties.length && (until === null || penalties[next].createdAt <= until)) {
+      const p = penalties[next++];
+      const cur = mmr.get(p.playerId) ?? { mmr: START_MMR, series: 0 };
+      mmr.set(p.playerId, { mmr: cur.mmr - p.penalty, series: cur.series });
+    }
+  };
+
   for (const m of matches) {
+    applyPenalties(m.playedAt);
     const ra = ratings.get(m.teamAId) ?? START_RATING;
     const rb = ratings.get(m.teamBId) ?? START_RATING;
     const scoreA = m.winnerId === null ? 0.5 : m.winnerId === m.teamAId ? 1 : 0;
@@ -70,6 +82,8 @@ async function replayAllMatches() {
       peak.set(c.playerId, Math.max(peak.get(c.playerId) ?? START_MMR, c.before + c.delta));
     }
   }
+
+  applyPenalties(null);
 
   // Only write what changed: most replays move a handful of rows.
   const old = new Map(oldChanges.map((c) => [`${c.playerId}:${c.matchId}`, c]));

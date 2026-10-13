@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { endSession, passwordMatches, requireAdmin, startSession } from "@/lib/auth";
+import { clearFailures, lockedFor, loginAddress, recordFailure } from "@/lib/loginGuard";
 import { explain } from "@/lib/explain";
 import { fromBangkokInput } from "@/lib/format";
 import type { SoloDraw } from "@/lib/types";
@@ -34,11 +35,17 @@ async function run(fn: () => Promise<void>): Promise<FormState> {
 }
 
 export async function login(_: FormState, form: FormData): Promise<FormState> {
+  const ip = await loginAddress();
+  const wait = lockedFor(ip);
+  if (wait) return { error: `ใส่รหัสผิดหลายครั้งเกินไป ลองใหม่ในอีก ${wait} นาที` };
   if (!passwordMatches(text(form, "password"))) {
+    recordFailure(ip);
     // Slow down password guessing.
     await new Promise((r) => setTimeout(r, 800));
-    return { error: "รหัสผ่านไม่ถูกต้อง" };
+    const left = lockedFor(ip);
+    return { error: left ? `ใส่รหัสผิดหลายครั้งเกินไป ลองใหม่ในอีก ${left} นาที` : "รหัสผ่านไม่ถูกต้อง" };
   }
+  clearFailures(ip);
   await startSession();
   redirect("/admin");
 }
@@ -385,6 +392,28 @@ export async function removeGuildMember(guildId: string, playerId: string): Prom
   // The last member left: the guild is closed.
   if (closed) redirect("/admin/guilds?deleted=1");
   return { ok: "นำออกจากกิลด์แล้ว" };
+}
+
+// Blacklist
+export async function addBlacklist(_: FormState, form: FormData): Promise<FormState> {
+  const result = await run(async () => {
+    await api("/blacklist", { method: "POST", json: { playerId: text(form, "playerId"), reason: text(form, "reason"), penalty: Number(text(form, "penalty") || 20) } });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: "เพิ่มเข้า Blacklist และหัก MMR แล้ว" };
+}
+
+/** Lift an entry (MMR back), put it back, or delete one an organizer added. */
+export async function changeBlacklist(id: string, change: "lift" | "restore" | "delete", note?: string): Promise<FormState> {
+  const result = await run(async () => {
+    const path = `/blacklist/${encodeURIComponent(id)}`;
+    if (change === "delete") await api(path, { method: "DELETE" });
+    else await api(path, { method: "PATCH", json: change === "lift" ? { lifted: true, ...(note ? { note } : {}) } : { lifted: false } });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: change === "lift" ? "ยกเลิกโทษแล้ว คืน MMR ให้แล้ว" : change === "restore" ? "ใส่โทษกลับแล้ว" : "ลบแล้ว" };
 }
 
 // Deletes

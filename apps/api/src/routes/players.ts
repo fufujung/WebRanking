@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { blacklistOf } from "../lib/blacklist.js";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
 import { notFound } from "../lib/errors.js";
@@ -90,6 +91,7 @@ async function playerDetail(id: string) {
     }),
     playerBoard(player.gameId),
   ]);
+  const blacklist = await blacklistOf(player.id);
   const onBoard = board.ranked.find((p) => p.id === player.id);
   return {
     ...player,
@@ -100,6 +102,7 @@ async function playerDetail(id: string) {
     mmrRank: onBoard?.rank ?? null,
     rankedPlayers: board.ranked.length,
     rankChange: onBoard?.rankChange ?? null,
+    blacklist,
     /** Oldest first, one point per series. */
     mmrHistory: history.map(({ match, before, delta, result }) => ({ match, before, delta, after: before + delta, result })),
     stats: statsByPlayer(lines).get(player.id) ?? emptyPlayerStats(),

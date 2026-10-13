@@ -730,7 +730,15 @@ function shapeSlot(t: Tournament, r: BracketMatch, rows: BracketMatch[], teams: 
 
 export async function bracketView(tournamentId: string) {
   const t = await tournamentOr404(tournamentId);
-  const [rows, entries] = await Promise.all([loadRows(tournamentId), entriesView(tournamentId)]);
+  const [rows, entries, blacklist] = await Promise.all([
+    loadRows(tournamentId),
+    entriesView(tournamentId),
+    prisma.blacklistEntry.findMany({
+      where: { tournamentId, liftedAt: null },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, slotCode: true, matchNumber: true, teamName: true, penalty: true, reason: true, player: { select: { id: true, name: true, nickname: true, discordId: true } } },
+    }),
+  ]);
   const teams = new Map(entries.map((e) => [e.id, e]));
   const lock = rosterLock(t, rows);
   const slots = rows.map(toSlot);
@@ -756,6 +764,8 @@ export async function bracketView(tournamentId: string) {
       t.format === "ROUND_ROBIN" && rows.length
         ? roundRobinTable(slots, entries.map((e) => e.id)).map((s, i) => ({ position: i + 1, ...s, team: teams.get(s.teamId) ?? null }))
         : null,
+    /** Standing blacklist entries from this tournament's walkovers. */
+    blacklist,
     placements: entries
       .filter((e) => e.placement !== null)
       .sort((a, b) => a.placement! - b.placement!)
@@ -766,7 +776,7 @@ export async function bracketView(tournamentId: string) {
 export async function slotView(tournamentId: string, id: string) {
   const view = await bracketView(tournamentId);
   const match = view.matches.find((m) => m.id === id)!;
-  return { ...match, tournament: { id: view.tournamentId, name: view.name, status: view.status, format: view.format, bestOf: view.bestOf } };
+  return { ...match, blacklist: view.blacklist.filter((e) => e.slotCode === match.code), tournament: { id: view.tournamentId, name: view.name, status: view.status, format: view.format, bestOf: view.bestOf } };
 }
 
 /** The bracket slot (if any) a recorded series belongs to. */

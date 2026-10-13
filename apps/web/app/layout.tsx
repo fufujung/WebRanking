@@ -39,6 +39,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/guilds">กิลด์</Link>
               <Link href="/players">ผู้เล่น</Link>
               <Link href="/matches">ผลการแข่ง</Link>
+              <Link href="/blacklist">Blacklist</Link>
               {admin && <Link href="/admin">จัดการข้อมูล</Link>}
               {member ? (
                 <Link href="/me" className="nav-me" title="โปรไฟล์ของฉัน">
@@ -69,7 +70,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </HideOnAdmin>
         <footer className="footer">
           <div className="container row between">
-            <span>Tournament Ranking</span>
+            <span className="row" style={{ gap: 16 }}>
+              <span>Tournament Ranking</span>
+              <Link href="/blacklist">⛔ Blacklist</Link>
+            </span>
             {/* Only organizers need the API docs; visitors don't see the link. */}
             {admin && (
               <a href={`${process.env.PUBLIC_API_URL ?? process.env.API_URL ?? "http://localhost:4000"}/docs`} target="_blank" rel="noreferrer">

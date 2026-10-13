@@ -881,6 +881,12 @@ describe("a whole tournament from Discord", () => {
     assert.equal(m.outcome, "WALKOVER");
     assert.equal(m.winnerId, teamIds.Blue);
     assert.ok(announce().texts.some((t) => /🏳️ M2 · สายบน รอบ 1: \*\*Blue\*\* ชนะบาย \*\*Green\*\*/.test(t)));
+    // Green never checked in: its players go on the blacklist, and both the announcement and the room say so.
+    assert.ok(announce().texts.some((t) => /ชนะบาย \*\*Green\*\*[\s\S]*⛔ ติด Blacklist \(-20 MMR\)/.test(t)), announce().texts.join("\n---\n"));
+    assert.ok(room.texts.some((t) => /⛔ ติด Blacklist \(-20 MMR\)/.test(t)), room.texts.join("\n"));
+    const black = await api.get<any>(`/blacklist?tournamentId=${tid}`);
+    assert.ok(black.total >= 1);
+    assert.ok(black.data.every((e: any) => e.teamName === "Green"));
     // Next rooms: winners final (Red v Blue) and losers round 1 (Gold v Green).
     const rooms = bot.tour.tours.get(tid)!.rooms;
     const w2 = after.matches.find((x: any) => x.code === "W2-0");
@@ -1455,5 +1461,43 @@ describe("a tournament made on the website, run from Discord", () => {
     const unknown = command("tour", "link", { event: "nope" });
     await bot.onCommand(unknown);
     assert.match(text(last(unknown.replies)), /ไม่พบทัวร์นาเมนต์นี้/);
+  });
+});
+
+describe("/blacklist in Discord", () => {
+  const reply = (i: any) => JSON.stringify(last(i.replies));
+
+  test("anyone lists it; organizers add and lift entries; others cannot", async () => {
+    const list = command("blacklist", "list", {}, captain(0));
+    await bot.onCommand(list);
+    assert.match(reply(list), /Blacklist/);
+
+    const players = await api.get<any>("/players?search=Red&limit=5");
+    const target = players.data[0];
+    const ac = command("blacklist", "add", { focused: "player", value: "Red" }, OWNER);
+    await bot.onAutocomplete(ac);
+    assert.ok(last<any>(ac.replies).some((c: any) => c.value === target.id));
+
+    const no = command("blacklist", "add", { player: target.id, reason: "ทดสอบ" }, captain(0));
+    await bot.onCommand(no);
+    assert.match(text(last(no.replies)), /ผู้จัดเท่านั้น/);
+
+    const before = (await api.get<any>(`/players/${target.id}`)).mmr;
+    const add = command("blacklist", "add", { player: target.id, reason: "ทำผิดกติกา", penalty: 30 }, OWNER);
+    await bot.onCommand(add);
+    assert.match(text(last(add.replies)), /ติด Blacklist: ทำผิดกติกา \(-30 MMR/);
+    assert.equal((await api.get<any>(`/players/${target.id}`)).mmr, before - 30);
+
+    const pick = command("blacklist", "lift", { focused: "entry", value: "ทำผิด" }, OWNER);
+    await bot.onAutocomplete(pick);
+    const entryId = last<any>(pick.replies)[0].value;
+    const lift = command("blacklist", "lift", { entry: entryId, note: "พลาดเอง" }, OWNER);
+    await bot.onCommand(lift);
+    assert.match(text(last(lift.replies)), /ยกเลิกโทษ.*คืน 30 MMR/);
+    assert.equal((await api.get<any>(`/players/${target.id}`)).mmr, before);
+
+    const mine = command("blacklist", "list", { player: target.id }, captain(0));
+    await bot.onCommand(mine);
+    assert.match(reply(mine), /ยังไม่มีใครติด Blacklist/);
   });
 });
