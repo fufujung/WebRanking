@@ -172,6 +172,13 @@ describe("blacklist", () => {
     await ok("POST", `/tournaments/${t.id}/bracket/matches/${m.id}/walkover`, { teamId: a.id, mode: "organizer" });
     assert.equal((await ok("GET", `/blacklist?tournamentId=${t.id}`)).total, 2);
     assert.equal((await ok("GET", `/blacklist?tournamentId=${t.id}&status=lifted`)).total, 1);
+    // Force majeure: the organizer keeps the entry but takes nothing (or less).
+    const other = wo.blacklist[1];
+    assert.equal((await ok("PATCH", `/blacklist/${other.id}`, { penalty: 0 })).penalty, 0);
+    assert.equal((await player(other.player.id)).mmr, 1000);
+    assert.equal((await ok("PATCH", `/blacklist/${other.id}`, { penalty: 10 })).penalty, 10);
+    assert.equal((await player(other.player.id)).mmr, 990);
+    assert.equal((await call("PATCH", `/blacklist/${other.id}`, { penalty: -5 })).status, 400);
     let res = await call("DELETE", `/blacklist/${entry.id}`);
     assert.equal(res.status, 409, "automatic entries are lifted, not deleted");
     await ok("PATCH", `/blacklist/${entry.id}`, { lifted: false });

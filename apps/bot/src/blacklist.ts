@@ -30,6 +30,15 @@ export const blacklistCommand: ApplicationCommandData = {
     },
     {
       type: O.Subcommand,
+      name: "penalty",
+      description: "ผู้จัด: เปลี่ยนจำนวน MMR ที่หัก (เช่น เหตุสุดวิสัย ใส่ 0)",
+      options: [
+        { type: O.String, name: "entry", description: "รายการ", required: true, autocomplete: true },
+        { type: O.Integer, name: "mmr", description: "หักกี่ MMR (0 = ไม่หัก)", required: true, minValue: 0, maxValue: 500 },
+      ],
+    },
+    {
+      type: O.Subcommand,
       name: "lift",
       description: "ผู้จัด: ยกเลิกโทษ คืน MMR",
       options: [
@@ -94,6 +103,13 @@ export class BlacklistCommands {
       });
       return void (await i.editReply({
         content: `⛔ ${who(e.player)} ติด Blacklist: ${e.reason} (-${e.penalty} MMR · เหลือ ${e.player.mmr} MMR)`,
+        allowedMentions: { users: e.player.discordId ? [e.player.discordId] : [] },
+      }));
+    }
+    if (sub === "penalty") {
+      const e = await this.api.patch<BlacklistEntry>(`/blacklist/${encodeURIComponent(i.options.getString("entry", true))}`, { penalty: i.options.getInteger("mmr", true) });
+      return void (await i.editReply({
+        content: `✏️ ${who(e.player)} ตอนนี้หัก ${e.penalty} MMR (เหลือ ${e.player.mmr} MMR)`,
         allowedMentions: { users: e.player.discordId ? [e.player.discordId] : [] },
       }));
     }

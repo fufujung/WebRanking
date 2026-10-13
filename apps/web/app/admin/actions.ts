@@ -405,6 +405,15 @@ export async function addBlacklist(_: FormState, form: FormData): Promise<FormSt
 }
 
 /** Lift an entry (MMR back), put it back, or delete one an organizer added. */
+export async function setBlacklistPenalty(id: string, penalty: number): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/blacklist/${encodeURIComponent(id)}`, { method: "PATCH", json: { penalty } });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: `เปลี่ยนเป็นหัก ${penalty} MMR แล้ว` };
+}
+
 export async function changeBlacklist(id: string, change: "lift" | "restore" | "delete", note?: string): Promise<FormState> {
   const result = await run(async () => {
     const path = `/blacklist/${encodeURIComponent(id)}`;

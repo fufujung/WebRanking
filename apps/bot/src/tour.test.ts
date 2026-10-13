@@ -1491,9 +1491,13 @@ describe("/blacklist in Discord", () => {
     const pick = command("blacklist", "lift", { focused: "entry", value: "ทำผิด" }, OWNER);
     await bot.onAutocomplete(pick);
     const entryId = last<any>(pick.replies)[0].value;
+    const soft = command("blacklist", "penalty", { entry: entryId, mmr: 5 }, OWNER);
+    await bot.onCommand(soft);
+    assert.match(text(last(soft.replies)), /หัก 5 MMR/);
+    assert.equal((await api.get<any>(`/players/${target.id}`)).mmr, before - 5);
     const lift = command("blacklist", "lift", { entry: entryId, note: "พลาดเอง" }, OWNER);
     await bot.onCommand(lift);
-    assert.match(text(last(lift.replies)), /ยกเลิกโทษ.*คืน 30 MMR/);
+    assert.match(text(last(lift.replies)), /ยกเลิกโทษ.*คืน 5 MMR/);
     assert.equal((await api.get<any>(`/players/${target.id}`)).mmr, before);
 
     const mine = command("blacklist", "list", { player: target.id }, captain(0));

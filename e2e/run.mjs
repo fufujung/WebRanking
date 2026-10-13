@@ -569,11 +569,16 @@ await page.locator(".blacklist-banner", { hasText: "-20 MMR" }).waitFor();
 await page.locator(".blacklist-chip", { hasText: "ติด Blacklist" }).waitFor();
 await page.screenshot({ path: OUT + "/blacklist-player.png", fullPage: true });
 await page.goto(base + "/admin/blacklist");
+// Force majeure: the organizer changes one entry to take nothing, then lifts another
+page.once("dialog", (d) => d.accept("0"));
+await page.locator("tr", { hasText: "Thunder Hawks" }).nth(1).locator("button:has-text('แก้ MMR')").click();
+await page.locator(".success", { hasText: "หัก 0 MMR" }).waitFor();
+await page.locator("tr", { hasText: "Thunder Hawks" }).locator(".pill", { hasText: "-0" }).waitFor();
 page.once("dialog", (d) => d.accept("แจ้งผู้จัดล่วงหน้าแล้ว"));
 await page.locator("tr", { hasText: "Thunder Hawks" }).first().locator("button:has-text('ยกเลิกโทษ')").click();
 await page.locator("a.tab:has-text('ยกเลิกโทษแล้ว') .tab-count", { hasText: "1" }).waitFor();
 await page.screenshot({ path: OUT + "/blacklist-admin.png", fullPage: true });
-step(`walkover loser's ${blackRows} players listed on /blacklist (-20 MMR) and flagged on their page; organizer lifted one`);
+step(`walkover loser's ${blackRows} players listed on /blacklist (-20 MMR) and flagged on their page; organizer set one to 0 MMR and lifted another`);
 
 // Clearing the semi-final also clears the final: asks first
 await page.goto(cupUrl);

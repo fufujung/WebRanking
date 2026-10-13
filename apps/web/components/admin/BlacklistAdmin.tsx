@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { addBlacklist, changeBlacklist, type FormState } from "@/app/admin/actions";
+import { addBlacklist, changeBlacklist, setBlacklistPenalty, type FormState } from "@/app/admin/actions";
 import type { BlacklistEntry } from "@/lib/types";
 import { TeamPicker, type PickerTeam } from "../TeamPicker";
 import { useFormAction } from "./useFormAction";
@@ -19,8 +19,16 @@ export function BlacklistActions({ entry }: { entry: BlacklistEntry }) {
     } else if (change === "delete" && !confirm(`ลบรายการนี้ของ ${entry.player.name}? MMR ${entry.penalty} จะคืนให้`)) return;
     start(async () => setState(await changeBlacklist(entry.id, change, note)));
   };
+  const editPenalty = () => {
+    const answer = prompt(`หัก MMR ของ ${entry.player.name} กี่แต้ม? (0-500 ใส่ 0 = ไม่หัก แต่ยังอยู่ใน Blacklist)`, String(entry.penalty));
+    if (answer === null) return;
+    const n = Number(answer.trim());
+    if (!Number.isInteger(n) || n < 0 || n > 500) return setState({ error: "ใส่ตัวเลข 0 ถึง 500" });
+    start(async () => setState(await setBlacklistPenalty(entry.id, n)));
+  };
   return (
     <span className="row-actions">
+      {!entry.liftedAt && <button className="btn btn-sm" disabled={pending} onClick={editPenalty}>แก้ MMR</button>}
       {entry.liftedAt ? (
         <button className="btn btn-sm" disabled={pending} onClick={() => act("restore")}>ใส่โทษกลับ</button>
       ) : (
@@ -28,6 +36,7 @@ export function BlacklistActions({ entry }: { entry: BlacklistEntry }) {
       )}
       {entry.source === "ADMIN" && <button className="btn btn-sm btn-danger" disabled={pending} onClick={() => act("delete")}>ลบ</button>}
       {state?.error && <span className="error small">{state.error}</span>}
+      {state?.ok && <span className="success small">{state.ok}</span>}
     </span>
   );
 }
