@@ -85,6 +85,7 @@ model Player {
   soloSignups  SoloSignup[]
   names        PlayerName[]
   mmrLog       PlayerMmrChange[]
+  blacklist    BlacklistEntry[]
 
   @@index([teamId])
   @@index([uid])
@@ -157,6 +158,7 @@ model Tournament {
   matches        Match[]
   bracketMatches BracketMatch[]
   soloSignups    SoloSignup[]
+  blacklist      BlacklistEntry[]
   gameRef        Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
 
   @@index([gameId])
@@ -388,4 +390,31 @@ model GuildInvite {
 
   @@unique([guildId, playerId])
   @@index([playerId])
+}
+
+/**
+ * A player on the blacklist. Added by itself for every player of a team that lost a bracket match
+ * by walkover without checking in on time, or by an organizer. Each standing entry takes `penalty`
+ * MMR (applied in the MMR replay at createdAt); lifting it gives the MMR back.
+ */
+model BlacklistEntry {
+  id           String    @id @default(cuid())
+  playerId     String
+  tournamentId String?
+  slotCode     String? // the bracket match the team lost by walkover (automatic entries)
+  matchNumber  Int?
+  teamName     String?
+  source       String    @default("AUTO") // AUTO (walkover) | ADMIN
+  reason       String
+  penalty      Int       @default(20)
+  createdAt    DateTime  @default(now())
+  liftedAt     DateTime?
+  liftNote     String?
+
+  player     Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  tournament Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, slotCode, playerId])
+  @@index([playerId])
+  @@index([createdAt])
 }

@@ -33,6 +33,7 @@ tags:
   - name: Rankings
   - name: Teams
   - name: Guilds
+  - name: Blacklist
   - name: Players
   - name: Tournaments
   - name: Brackets
@@ -447,6 +448,60 @@ paths:
       responses:
         "200": { description: "{ code }" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/blacklist:
+    get:
+      tags: [Blacklist]
+      summary: Players on the blacklist. A team that loses a bracket match by walkover without checking in on time is added by itself (every rostered player, 20 MMR each); organizers add others. Standing entries take their penalty off the player's MMR.
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, lifted, all], default: active } }
+        - { name: playerId, in: query, schema: { type: string } }
+        - { name: tournamentId, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 200, maximum: 500 } }
+      responses:
+        "200": { description: "{ data, total }; each entry has player, tournament, teamName, matchNumber, source (AUTO | ADMIN), reason, penalty, createdAt, liftedAt, liftNote" }
+    post:
+      tags: [Blacklist]
+      summary: Put a player on the blacklist by hand (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [playerId, reason]
+              properties:
+                playerId: { type: string }
+                reason: { type: string, maxLength: 300 }
+                penalty: { type: integer, minimum: 0, maximum: 500, default: 20 }
+      responses:
+        "201": { description: The new entry }
+        "404": { description: Player not found }
+  /api/v1/blacklist/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Blacklist]
+      summary: Lift an entry (the MMR comes back) or put it back, or change its reason or penalty (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lifted: { type: boolean }
+                note: { type: string, maxLength: 300 }
+                reason: { type: string, maxLength: 300 }
+                penalty: { type: integer, minimum: 0, maximum: 500 }
+      responses:
+        "200": { description: The entry }
+        "404": { description: Not found }
+    delete:
+      tags: [Blacklist]
+      summary: Delete an entry an organizer added (admin). Walkover entries are lifted instead.
+      responses:
+        "204": { description: Deleted }
+        "409": { description: Walkover entries can only be lifted }
   /api/v1/guilds:
     get:
       tags: [Guilds]

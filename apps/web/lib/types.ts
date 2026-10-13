@@ -108,6 +108,8 @@ export interface Movement {
 
 export interface LadderPlayer extends Player, Movement {
   rank: number;
+  /** On the blacklist right now. */
+  blacklisted?: boolean;
   mmr: number;
   peakMmr: number;
   /** Series played, won and lost. */
@@ -284,7 +286,31 @@ export interface TeamDetail extends Team, Movement {
   recentMatches: Match[];
 }
 
+export interface BlacklistEntry {
+  id: string;
+  playerId: string;
+  tournamentId: string | null;
+  slotCode: string | null;
+  matchNumber: number | null;
+  teamName: string | null;
+  source: "AUTO" | "ADMIN";
+  reason: string;
+  penalty: number;
+  createdAt: string;
+  liftedAt: string | null;
+  liftNote: string | null;
+  player: { id: string; name: string; nickname: string | null; avatarUrl: string | null; uid: string | null; server: string | null; discordId: string | null; mmr: number };
+  tournament: { id: string; name: string } | null;
+}
+
+export interface PlayerBlacklist {
+  active: boolean;
+  penalty: number;
+  entries: BlacklistEntry[];
+}
+
 export interface PlayerDetail extends Player {
+  blacklist?: PlayerBlacklist;
   guild?: GuildSummary | null;
   mmr: number;
   peakMmr: number;

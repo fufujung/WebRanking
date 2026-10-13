@@ -53,6 +53,7 @@ import {
 import { JsonStore } from "./store.js";
 import { PoolManager } from "./pool.js";
 import { parseSeriesScore, TourManager } from "./tour.js";
+import { BlacklistCommands } from "./blacklist.js";
 import type { BracketMatch, Draft, Match, MatchDetail, Page, PlayerDetail, RankedPlayer, RankedTeam, TeamDetail, Tournament } from "./types.js";
 
 const SAVE = "✅";
@@ -106,6 +107,7 @@ export class TournamentBot {
   readonly pending: JsonStore<Pending>;
   readonly tour: TourManager;
   readonly pool: PoolManager;
+  readonly blacklist: BlacklistCommands;
   private trackers = new Map<string, AnnounceTracker>();
   /** Result posts being saved right now, so two admins can't record one twice. */
   private busy = new Set<string>();
@@ -124,6 +126,7 @@ export class TournamentBot {
     this.pending.prune((p) => Date.now() - p.createdAt < 4 * WEEK);
     this.tour = new TourManager({ api: this.api, dataDir: opts.dataDir, siteUrl: opts.siteUrl, log: this.log, now: opts.now });
     this.pool = new PoolManager({ dataDir: opts.dataDir, log: this.log, random: opts.random });
+    this.blacklist = new BlacklistCommands(this.api, opts.siteUrl);
   }
 
   settingsFor(guildId: string): Settings {
@@ -434,6 +437,10 @@ export class TournamentBot {
     if (["tour", "register", "roster"].includes(i.commandName)) return this.tour.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     if (i.commandName === "pool") return this.pool.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     try {
+      if (i.commandName === "blacklist") {
+        const info = memberInfo(i.member as MemberLike, i.memberPermissions);
+        return await this.blacklist.onCommand(i, canSave(info, this.settingsFor(i.guildId!)));
+      }
       switch (i.commandName) {
         case "setup":
           return await this.setup(i);
@@ -494,6 +501,7 @@ export class TournamentBot {
   async onAutocomplete(i: AutocompleteInteraction) {
     if (["tour", "register", "roster"].includes(i.commandName)) return this.tour.onAutocomplete(i);
     if (i.commandName === "pool") return this.pool.onAutocomplete(i);
+    if (i.commandName === "blacklist") return this.blacklist.onAutocomplete(i);
     const focused = i.options.getFocused(true);
     try {
       if (i.commandName === "setup" && focused.name === "tournament") {

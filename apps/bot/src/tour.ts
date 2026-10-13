@@ -46,6 +46,7 @@ import {
   when,
 } from "./tourFormat.js";
 import type { Bracket, BracketMatch, Entry, Format } from "./types.js";
+import { walkoverBlacklistLine } from "./blacklist.js";
 import { drawnButtons, drawnPanel, drawView, positionLabel, soloButtons, soloModal, soloPanel, type Character, type SoloDraw, type SoloView } from "./solo.js";
 
 /** What the bot remembers about a tournament it runs in a server. */
@@ -1389,7 +1390,8 @@ export class TourManager {
         continue;
       }
       if (m.status === "DONE" && !room.closed) {
-        await this.roomSay(client, tour, m.id, `${resultLine(m)}\nห้องนี้กับห้องเสียงรวมจะยังเปิดไว้ ถ้ามีปัญหากด ⚠️ แจ้งผู้จัด`);
+        const black = walkoverBlacklistLine(b, m, true);
+        await this.roomSay(client, tour, m.id, [resultLine(m), black?.text, "ห้องนี้กับห้องเสียงรวมจะยังเปิดไว้ ถ้ามีปัญหากด ⚠️ แจ้งผู้จัด"].filter(Boolean).join("\n"), black?.users ?? []);
         await this.refreshHeader(client, tour, b, m, true);
         this.saveRoom(tid, m.id, { closed: true });
         await this.removeTeamVoices(client, tid, m.id);
@@ -1447,6 +1449,7 @@ export class TourManager {
         const extra = [
           wNext && winner ? `➡️ ${winner.name} ไป M${wNext.number} (${wNext.label})` : "",
           lNext && loser ? `⬇️ ${loser.name} ไป M${lNext.number} (${lNext.label})` : "",
+          walkoverBlacklistLine(b, m)?.text ?? "",
         ].filter(Boolean);
         if (channel?.isSendable()) await channel.send({ content: [resultLine(m), ...extra].join("\n"), allowedMentions: { parse: [] } }).catch(() => null);
         announced.add(m.id);

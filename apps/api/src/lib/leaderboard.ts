@@ -33,13 +33,15 @@ const tierInfo = (rating: number) => {
  */
 export async function playerBoard(gameId?: string | null, now = new Date()) {
   const since = new Date(now.getTime() - MOVEMENT_DAYS * 86400_000);
-  const [players, changes] = await Promise.all([
+  const [players, changes, blacklisted] = await Promise.all([
     prisma.player.findMany({ where: gameId ? { gameId } : {}, include: { team: teamSummary } }),
     prisma.playerMmrChange.findMany({
       select: { playerId: true, delta: true, result: true, match: { select: { playedAt: true } } },
       orderBy: [{ match: { playedAt: "desc" } }, { match: { createdAt: "desc" } }],
     }),
+    prisma.blacklistEntry.findMany({ where: { liftedAt: null }, select: { playerId: true }, distinct: ["playerId"] }),
   ]);
+  const banned = new Set(blacklisted.map((b) => b.playerId));
   const empty = () => ({ series: 0, wins: 0, losses: 0, seriesBefore: 0, recentDelta: 0, form: [] as SeriesResult[], lastDelta: null as number | null });
   const info = new Map<string, ReturnType<typeof empty>>();
   for (const c of changes) {
@@ -55,7 +57,7 @@ export async function playerBoard(gameId?: string | null, now = new Date()) {
   }
   const rows = players.map((p) => {
     const i = info.get(p.id) ?? empty();
-    return { ...p, ...tierInfo(p.mmr), series: i.series, wins: i.wins, losses: i.losses, placed: i.series >= PLACEMENT_SERIES, form: i.form, lastDelta: i.lastDelta, weekAgo: { mmr: p.mmr - i.recentDelta, placed: i.seriesBefore >= PLACEMENT_SERIES } };
+    return { ...p, ...tierInfo(p.mmr), blacklisted: banned.has(p.id), series: i.series, wins: i.wins, losses: i.losses, placed: i.series >= PLACEMENT_SERIES, form: i.form, lastDelta: i.lastDelta, weekAgo: { mmr: p.mmr - i.recentDelta, placed: i.seriesBefore >= PLACEMENT_SERIES } };
   });
   const rankedNow = rows.filter((r) => r.placed);
   const nowRanks = rankMap(rankedNow, (r) => r.mmr);

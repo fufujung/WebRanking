@@ -197,6 +197,7 @@ export function playerEmbed(p: PlayerDetail, siteUrl?: string): APIEmbed {
       { name: "แต้ม/เกม", value: String(s.ppg), inline: true },
       { name: "MVP / SVP", value: `${s.mvp} / ${s.svp}`, inline: true },
       { name: "รวม", value: `PTS ${s.pts} · REB ${s.reb} · BLK ${s.blk} · STL ${s.stl} · AST ${s.ast} · LBR ${s.lbr}` },
+      ...(p.blacklist?.active ? [{ name: "⛔ ติด Blacklist", value: `ถูกหักรวม ${p.blacklist.penalty} MMR · ${p.blacklist.entries.filter((e) => !e.liftedAt).map((e) => e.reason).join(", ")}`.slice(0, 1024) }] : []),
     ],
   });
 }

@@ -42,8 +42,26 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
           {p.guild && (
             <Link href={`/guilds/${p.guild.id}`} className="chip guild-chip" title="กิลด์">🛡 {p.guild.name}{p.guild.tag ? ` [${p.guild.tag}]` : ""}</Link>
           )}
+          {p.blacklist?.active && <Link href="/blacklist" className="blacklist-chip" title="ดูรายชื่อ Blacklist">⛔ ติด Blacklist</Link>}
         </div>
       </div>
+
+      {p.blacklist?.active && (
+        <div className="blacklist-banner" role="note">
+          <strong>⛔ ผู้เล่นนี้ติด Blacklist ถูกหักรวม {p.blacklist.penalty} MMR</strong>
+          <ul className="small">
+            {p.blacklist.entries
+              .filter((e) => !e.liftedAt)
+              .map((e) => (
+                <li key={e.id}>
+                  {e.reason}
+                  {e.tournament && <> · <Link href={`/tournaments/${e.tournament.id}`}>{e.tournament.name}</Link>{e.matchNumber ? ` (M${e.matchNumber})` : ""}</>}
+                  {" "}· {fmtDate(e.createdAt)} · <strong>-{e.penalty} MMR</strong>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
 
       <section className="mmr-card" style={{ ["--tier" as string]: p.tier.color }}>
         <div className="mmr-card-emblem">

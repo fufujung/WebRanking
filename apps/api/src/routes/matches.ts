@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { syncBlacklist } from "../lib/blacklist.js";
 import { adoptGame } from "../lib/games.js";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
@@ -66,6 +67,7 @@ matches.put("/:id", requireAdmin, async (req, res) => {
   }
   const { scoreA, scoreB, notes, imageUrl, playedAt, source, sourceRef, games } = input;
   await recordResult(slot.tournamentId, slot.id, { scoreA, scoreB, notes, imageUrl, playedAt, source, sourceRef, games, replace: true, force: req.query.force === "true" });
+  await syncBlacklist(slot.tournamentId);
   res.json(await getMatch(id));
 });
 

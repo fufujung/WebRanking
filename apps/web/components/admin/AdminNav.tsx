@@ -12,6 +12,7 @@ const MAIN: { href: string; label: string; icon: IconName }[] = [
   { href: "/admin/teams", label: "ทีม", icon: "teams" },
   { href: "/admin/guilds", label: "กิลด์", icon: "guild" },
   { href: "/admin/players", label: "ผู้เล่น", icon: "players" },
+  { href: "/admin/blacklist", label: "Blacklist", icon: "ban" },
   { href: "/admin/games", label: "เกม", icon: "game" },
   { href: "/admin/ads", label: "โฆษณาร้าน", icon: "megaphone" },
 ];

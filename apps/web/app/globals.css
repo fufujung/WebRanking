@@ -729,3 +729,13 @@ h4 { font-size: 15px; font-weight: 700; }
 .home-guild-name { font-size: 22px; overflow-wrap: anywhere; }
 .home-guild-score { color: var(--text); font-size: 16px; }
 .home-guild-top { padding: 10px 14px; border-radius: 12px; border: 1px solid var(--tier); background: color-mix(in srgb, var(--tier) 10%, transparent); }
+
+/* Blacklist */
+.pill-danger { color: var(--loss); border-color: var(--danger-border); background: var(--accent-soft); }
+.show-sm { display: none; }
+@media (max-width: 760px) { .show-sm { display: inline; } }
+.blacklist-rule { border-color: var(--danger-border); background: var(--accent-soft); margin-bottom: 16px; }
+.blacklist-table td { vertical-align: middle; }
+.blacklist-banner { border: 1px solid var(--danger-border); background: var(--accent-soft); border-radius: 12px; padding: 14px 16px; margin: 16px 0; }
+.blacklist-banner ul { margin: 8px 0 0; padding-left: 20px; }
+.blacklist-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--accent-ink); background: var(--accent); white-space: nowrap; }

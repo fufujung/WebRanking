@@ -8,6 +8,24 @@ const config: NextConfig = {
     return [{ source: "/uploads/:file", destination: `${apiUrl}/uploads/:file` }];
   },
   experimental: { serverActions: { bodySizeLimit: "2mb" } },
+  poweredByHeader: false,
+  // Hardening for every page: no framing (clickjacking), no content sniffing, no plugins,
+  // only https once a browser has seen the site over https, and no camera/mic/location access.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+          { key: "Strict-Transport-Security", value: "max-age=31536000" },
+        ],
+      },
+    ];
+  },
 };
 
 export default config;

@@ -1,4 +1,5 @@
 import { ApplicationCommandOptionType, ApplicationCommandType, ChannelType, PermissionFlagsBits, type ApplicationCommandData, type ApplicationCommandOptionData, type ApplicationCommandSubCommandData } from "discord.js";
+import { blacklistCommand } from "./blacklist.js";
 import { PLAYER_SORTS } from "./format.js";
 
 export const READ_POST_COMMAND = "อ่านผลจากโพสต์นี้";
@@ -246,4 +247,5 @@ export const commandData: ApplicationCommandData[] = [
   registerCommand,
   rosterCommand,
   poolCommand,
+  blacklistCommand,
 ];

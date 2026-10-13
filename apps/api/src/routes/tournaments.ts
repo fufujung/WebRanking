@@ -9,6 +9,7 @@ import { datesInOrder, entryInput, rosterSizeOk, searchQuery, tournamentInput, t
 import * as comp from "../lib/competition.js";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { matchInclude, matchOrder } from "../lib/selects.js";
+import { syncBlacklist } from "../lib/blacklist.js";
 import { confirmTeams, drawTeams, removeSignup, soloView } from "../lib/solo.js";
 
 export const tournaments = Router();
@@ -177,13 +178,24 @@ tournaments.delete("/:id/solo/:playerId", requireAdmin, async (req, res) => {
 
 // ---------- Bracket ----------
 
+/** After a result changes: the blacklist follows walkovers, then the slot is shown with its blacklist entries. */
+async function slotAfter(tid: string, ref: string) {
+  await syncBlacklist(tid);
+  const view = await comp.bracketView(tid);
+  const n = /^m?(\d+)$/i.exec(ref);
+  const m = view.matches.find((x) => x.id === ref || x.code === ref || (n && x.number === Number(n[1])))!;
+  return comp.slotView(tid, m.id);
+}
+
 tournaments.get("/:id/bracket", async (req, res) => {
   res.json(await comp.bracketView(String(req.params.id)));
 });
 
 /** Seeds the teams (by rating, at random, or by hand) and builds a bracket to review. */
 tournaments.post("/:id/bracket/seed", requireAdmin, async (req, res) => {
-  res.json(await comp.seed(String(req.params.id), req.body));
+  const b = await comp.seed(String(req.params.id), req.body);
+  await syncBlacklist(String(req.params.id));
+  res.json(b);
 });
 
 /** Confirms the reviewed bracket: the tournament starts and registration closes. */
@@ -198,6 +210,7 @@ tournaments.post("/:id/bracket/end", requireAdmin, async (req, res) => {
 
 tournaments.delete("/:id/bracket", requireAdmin, async (req, res) => {
   await comp.resetBracket(String(req.params.id), req.query.force === "true");
+  await syncBlacklist(String(req.params.id));
   res.status(204).end();
 });
 
@@ -216,18 +229,20 @@ tournaments.get("/:id/bracket/matches/:match", async (req, res) => {
 });
 
 tournaments.post("/:id/bracket/matches/:match/result", requireAdmin, async (req, res) => {
-  const slot = await comp.recordResult(String(req.params.id), String(req.params.match), req.body);
+  await comp.recordResult(String(req.params.id), String(req.params.match), req.body);
   await adoptGame(String(req.params.id));
-  res.json(slot);
+  res.json(await slotAfter(String(req.params.id), String(req.params.match)));
 });
 
 tournaments.post("/:id/bracket/matches/:match/walkover", requireAdmin, async (req, res) => {
-  res.json(await comp.walkover(String(req.params.id), String(req.params.match), req.body));
+  await comp.walkover(String(req.params.id), String(req.params.match), req.body);
+  res.json(await slotAfter(String(req.params.id), String(req.params.match)));
 });
 
 tournaments.post("/:id/bracket/matches/:match/reopen", requireAdmin, async (req, res) => {
   const { force } = z.object({ force: z.boolean().default(false) }).parse(req.body ?? {});
-  res.json(await comp.reopenMatch(String(req.params.id), String(req.params.match), force));
+  await comp.reopenMatch(String(req.params.id), String(req.params.match), force);
+  res.json(await slotAfter(String(req.params.id), String(req.params.match)));
 });
 
 tournaments.post("/:id/bracket/matches/:match/checkin", requireAdmin, async (req, res) => {
