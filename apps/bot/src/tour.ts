@@ -65,6 +65,8 @@ export interface TourConfig {
   announced: string[];
   finished: boolean;
   createdAt: number;
+  /** The tournament's name when the panel was last drawn, for the message after it is deleted on the website. */
+  name?: string;
 }
 
 export interface Room {
@@ -103,6 +105,8 @@ const CATEGORY_LIMIT = 48;
 /** Channels per match: the text room, the shared voice room and one voice room per team. */
 const ROOM_SLOTS = 4;
 const REMIND_BEFORE = 10 * 60_000;
+/** Every this many syncs (30 s apart), finished tournaments are checked too. */
+const ALL_TOURS_EVERY = 10;
 
 /** Keeps channel names readable: lower case, Thai and Latin letters, digits and dashes. */
 export function channelSlug(s: string) {
@@ -378,6 +382,7 @@ export class TourManager {
   private roomFailures = new Map<string, string>();
   /** Tournaments being synced right now, so overlapping ticks don't create a room twice. */
   private syncing = new Map<string, Promise<void>>();
+  private syncRounds = 0;
 
   constructor(opts: TourOptions) {
     this.api = opts.api;
@@ -1327,7 +1332,9 @@ export class TourManager {
 
   /** Creates rooms for matches that became ready, posts results, reminders and the champion. */
   sync(client: Client, only?: string): Promise<void> {
-    const ids = only ? [only] : this.tours.entries().filter(([, t]) => !t.finished || Object.values(t.rooms).some((r) => !r.closed)).map(([id]) => id);
+    // Finished tournaments are looked at every few minutes too, so deleting one on the website clears its posts here.
+    const everything = only === undefined && this.syncRounds++ % ALL_TOURS_EVERY === 0;
+    const ids = only ? [only] : this.tours.entries().filter(([, t]) => everything || !t.finished || Object.values(t.rooms).some((r) => !r.closed)).map(([id]) => id);
     return Promise.all(
       ids.map((id) => {
         const running = this.syncing.get(id);
@@ -1360,9 +1367,11 @@ export class TourManager {
     try {
       b = await this.bracket(tid);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 404) this.tours.delete(tid);
+      // Only a "no such tournament" answer counts: a wrong API address must never wipe the posts and rooms.
+      if (e instanceof ApiError && e.status === 404 && e.message === "Tournament not found") await this.forget(client, tour);
       return;
     }
+    if (tour.name !== b.name) this.save(tid, { name: b.name });
     if (b.status !== "LIVE" && b.status !== "DONE") return;
     const now = this.now().getTime();
 
@@ -1464,6 +1473,21 @@ export class TourManager {
     } else if (b.status === "LIVE" && fresh.finished) {
       this.save(tid, { finished: false });
     }
+  }
+
+  /** The tournament was deleted on the website: its sign-up post, draft and match rooms go too. */
+  private async forget(client: Client, tour: TourConfig) {
+    const panel = tour.panel ? await this.fetchMessage(client, tour.panel.channelId, tour.panel.messageId) : null;
+    const title = tour.name ?? null;
+    await panel?.delete().catch(() => null);
+    const draft = tour.draft ? await this.fetchMessage(client, tour.draft.channelId, tour.draft.messageId) : null;
+    await draft?.delete().catch(() => null);
+    const rooms = await this.cleanup(client, tour);
+    this.tours.delete(tour.tournamentId);
+    this.log(`tournament ${tour.tournamentId} was deleted on the website; removed its post and ${rooms} rooms`);
+    if (!panel && !rooms) return;
+    const channel = await client.channels.fetch(tour.announceChannelId).catch(() => null);
+    if (channel?.isSendable()) await channel.send({ content: `🗑️ ผู้จัดลบทัวร์นาเมนต์${title ? ` **${title}**` : ""} ออกจากเว็บแล้ว ประกาศรับสมัคร${rooms ? `และห้องแข่ง ${rooms} ห้อง` : ""}ถูกลบตามไปด้วย`, allowedMentions: { parse: [] } }).catch(() => null);
   }
 
   private async fetchMessage(client: Client, channelId: string, messageId: string) {
@@ -1749,6 +1773,7 @@ export class TourManager {
           ? { embeds: [drawnPanel(b, this.siteUrl)], components: drawnButtons(tour.tournamentId), allowedMentions: { parse: [] } }
           : { embeds: [soloPanel(b, solo, this.siteUrl)], components: soloButtons(tour.tournamentId, open && solo.registrationOpen), allowedMentions: { parse: [] } }
         : { embeds: [registrationPanel(b, this.siteUrl)], components: panelButtons(tour.tournamentId, open), allowedMentions: { parse: [] } };
+    if (tour.name !== b.name) this.save(tour.tournamentId, { name: b.name });
     const fresh = this.tours.get(tour.tournamentId)!;
     const old = fresh.panel ? await this.fetchMessage(client, fresh.panel.channelId, fresh.panel.messageId) : null;
     if (old) {

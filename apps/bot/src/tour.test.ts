@@ -146,6 +146,7 @@ class FakeChannel {
   async send(payload: any) {
     const m = new FakeMessage(this.id, "", 0, typeof payload === "string" ? { content: payload } : payload);
     this.sent.push(m);
+    this.messages.set(m.id, m);
     return m;
   }
   async delete() {
@@ -1461,6 +1462,39 @@ describe("a tournament made on the website, run from Discord", () => {
     const unknown = command("tour", "link", { event: "nope" });
     await bot.onCommand(unknown);
     assert.match(text(last(unknown.replies)), /ไม่พบทัวร์นาเมนต์นี้/);
+  });
+
+  test("deleting it on the website removes its sign-up post in Discord", async () => {
+    const panel = bot.tour.tours.get(tid)!.panel!;
+    const room = channels.get(panel.channelId)!;
+    assert.ok(room.messages.has(panel.messageId));
+    await prisma.tournament.delete({ where: { id: tid } });
+    await bot.tour.sync(fakeClient);
+    assert.equal(bot.tour.tours.get(tid), undefined);
+    assert.equal(room.messages.has(panel.messageId), false, "the sign-up post is gone");
+    assert.ok(room.texts.some((t) => t.includes("🗑️ ผู้จัดลบทัวร์นาเมนต์ **Web Squad Showdown** ออกจากเว็บแล้ว")));
+  });
+});
+
+describe("a running tournament deleted on the website", () => {
+  test("its match rooms, voice rooms and category go too", async () => {
+    await bot.onCommand(command("tour", "create", { name: "Gone Cup", format: "SINGLE_ELIMINATION", start: bkk(60 * 24), roster_min: 1, roster_max: 3 }));
+    const tid = bot.tour.toursIn(GUILD).find((t) => t.name === "Gone Cup")!.tournamentId;
+    for (const t of [0, 1, 2, 3]) await bot.onCommand(command("register", null, { team: `${TEAMS[t]} G`, player1: roster(t)[0], tournament: tid }, captain(t)));
+    await bot.onCommand(command("tour", "seed", { method: "rating", tournament: tid }, OWNER));
+    await bot.onCommand(command("tour", "start", { tournament: tid }, OWNER));
+    const tour = bot.tour.tours.get(tid)!;
+    const ids = Object.values(tour.rooms).flatMap((r) => [r.channelId, r.voiceChannelId, r.teamVoice?.A?.id, r.teamVoice?.B?.id]).filter(Boolean) as string[];
+    assert.ok(ids.length >= 2, "rooms were made");
+    const cats = tour.categories.map((c) => c.id);
+    assert.ok(cats.length);
+    await prisma.tournament.delete({ where: { id: tid } });
+    await bot.tour.sync(fakeClient, tid);
+    assert.equal(bot.tour.tours.get(tid), undefined);
+    assert.ok(ids.every((id) => !channels.has(id)), "every room is deleted");
+    assert.ok(cats.every((id) => !channels.has(id)), "the bot's category is deleted");
+    assert.equal(channels.get(tour.panel!.channelId)!.messages.has(tour.panel!.messageId), false);
+    assert.ok(announce().texts.some((t) => /🗑️ ผู้จัดลบทัวร์นาเมนต์ \*\*Gone Cup\*\* ออกจากเว็บแล้ว ประกาศรับสมัครและห้องแข่ง \d+ ห้องถูกลบตามไปด้วย/.test(t)));
   });
 });
 
