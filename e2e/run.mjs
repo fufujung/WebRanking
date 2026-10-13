@@ -517,7 +517,7 @@ const owls = await page.locator('select[aria-label="คู่ที่ 1 ฝั�
 await page.selectOption('select[aria-label="คู่ที่ 1 ฝั่ง B"]', owls);
 await page.click("button:has-text('ใช้สายนี้')");
 await page.locator("text=ตัวอย่างสาย").waitFor();
-const draft = await page.locator(".bracket").first().textContent();
+const draft = await page.locator(".bk-canvas").first().textContent();
 if (!draft.includes("บาย") || !draft.includes("Night Owls")) throw new Error("draft bracket should show the manual pairs and a bye: " + draft);
 await page.screenshot({ path: OUT + "/bracket-draft.png", fullPage: true });
 step("manual draw previewed before confirming");
