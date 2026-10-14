@@ -186,6 +186,7 @@ const poolCommand: ApplicationCommandData = {
       description: "ตั้งห้องลงชื่อตัวสำรอง (แอดมิน) แรงค์ใช้รายการแรงค์ของเกมบนเว็บ",
       options: [
         { type: O.Channel, name: "channel", description: "ห้องลงชื่อ (ไม่ใส่ = ห้องนี้)", channelTypes: [ChannelType.GuildText] },
+        { type: O.String, name: "game", description: "เกมของห้องนี้ (แต่ละเกมมีรายชื่อแยกกัน ไม่ใส่ = เกมเดิมหรือเกมหลักของเว็บ)", autocomplete: true },
         { type: O.Role, name: "organizer_role", description: "ยศที่สุ่ม เปลี่ยนตัว และดูช่องทางติดต่อได้" },
       ],
     },

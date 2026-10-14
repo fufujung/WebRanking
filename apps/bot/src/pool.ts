@@ -97,6 +97,9 @@ export interface PoolConfig {
   ranks?: string[];
   organizerRoleId: string | null;
   ownerId: string;
+  /** The game this room signs people up for: each game keeps its own list. null = the website's default (busiest) game. */
+  gameId?: string | null;
+  gameName?: string | null;
   /** Only the old list waiting to be carried over to the website. */
   players?: Record<string, LegacyPlayer>;
   draws: Record<string, Draw>;
@@ -165,16 +168,21 @@ export class PoolManager {
 
   // ---------- The list (on the website) ----------
 
-  /** The ranks to pick from: the game's in-game ranks on the website, lowest first. */
-  async ranks(): Promise<string[]> {
-    const { data } = await this.api.get<{ data: { name: string }[] }>("/special/ranks");
+  /** ?gameId= for this room's game. */
+  private game(pool: PoolConfig | undefined) {
+    return pool?.gameId ? `?gameId=${encodeURIComponent(pool.gameId)}` : "";
+  }
+
+  /** The ranks to pick from: the room's game's in-game ranks on the website, lowest first. */
+  async ranks(pool?: PoolConfig): Promise<string[]> {
+    const { data } = await this.api.get<{ data: { name: string }[] }>(`/special/ranks${this.game(pool)}`);
     return data.map((r) => r.name);
   }
 
   /** Everyone signed up, by Discord account. The old list in pool.json is carried over to the website first. */
-  async players(): Promise<Players> {
+  async players(pool?: PoolConfig): Promise<Players> {
     await this.carryOver();
-    const { data } = await this.api.get<{ data: ReserveRow[] }>("/special/reserve/private");
+    const { data } = await this.api.get<{ data: ReserveRow[] }>(`/special/reserve/private${this.game(pool)}`);
     return Object.fromEntries(data.filter((r) => r.discordId).map((r) => [r.discordId!, toPlayer(r)]));
   }
 
@@ -196,9 +204,9 @@ export class PoolManager {
     const list = Object.values(players);
     const byPosition = (["GUARD", "FORWARD", "CENTER", "ALL"] as const).map((p) => `${POSITION_SHORT[p]} **${list.filter((x) => x.position === p).length}**`);
     const byRank = ranks.map((r) => `${r} **${list.filter((p) => p.rank === r).length}**`);
-    const board = siteLink(this.siteUrl, "/special");
+    const board = siteLink(this.siteUrl, `/special${pool.gameId ? `?game=${encodeURIComponent(pool.gameId)}` : ""}`);
     const embed: APIEmbed = {
-      title: "🎲 ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง",
+      title: `🎲 ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง${pool.gameName ? ` · ${pool.gameName}` : ""}`.slice(0, 256),
       url: isPublicUrl(board) ? board : undefined,
       color: RED,
       description: [
@@ -368,8 +376,8 @@ export class PoolManager {
     const channel = await client.channels.fetch(pool.channelId).catch(() => null);
     const msg = channel?.isTextBased() ? await channel.messages.fetch(pool.panelMessageId).catch(() => null) : null;
     if (!msg) return;
-    const list = players ?? (await this.players().catch(() => null));
-    const ranks = await this.ranks().catch(() => null);
+    const list = players ?? (await this.players(pool).catch(() => null));
+    const ranks = await this.ranks(pool).catch(() => null);
     if (list && ranks) await msg.edit(this.panel(pool, list, ranks)).catch(() => null);
   }
 
@@ -379,11 +387,24 @@ export class PoolManager {
     const sub = i.options.getSubcommand();
     const pool = this.pools.get(i.guildId!);
     try {
-      if (sub === "rank") return void (await this.showBoard(i));
+      if (sub === "rank") return void (await this.showBoard(i, pool));
       if (sub === "setup") {
         if (!info.manageGuild && !(pool && this.isOrganizer(pool, i.user.id, info))) return void (await i.reply({ ephemeral: true, content: "เฉพาะแอดมินเซิร์ฟเวอร์หรือผู้จัด" }));
         const channelId = i.options.getChannel("channel")?.id ?? i.channelId;
+        // The game: picked from the list (an id) or typed (a name). Each game keeps its own list.
+        const typedGame = i.options.getString("game")?.trim();
+        let gameId = pool?.gameId ?? null;
+        let gameName = pool?.gameName ?? null;
+        if (typedGame) {
+          const { data: games } = await this.api.get<{ data: { id: string; name: string }[] }>("/games");
+          const g = games.find((x) => x.id === typedGame) ?? games.find((x) => x.name.toLowerCase() === typedGame.toLowerCase());
+          if (!g) return void (await i.reply({ ephemeral: true, content: `ไม่พบเกม "${typedGame}" (มี ${games.map((x) => x.name).join(", ") || "-"})` }));
+          gameId = g.id;
+          gameName = g.name;
+        }
         const next: PoolConfig = {
+          gameId,
+          gameName,
           guildId: i.guildId!,
           channelId,
           panelMessageId: pool?.channelId === channelId ? pool.panelMessageId : null,
@@ -394,7 +415,7 @@ export class PoolManager {
         };
         await i.deferReply({ ephemeral: true });
         this.pools.set(next.guildId, next);
-        const [players, ranks] = await Promise.all([this.players(), this.ranks()]);
+        const [players, ranks] = await Promise.all([this.players(next), this.ranks(next)]);
         const channel = await i.client.channels.fetch(channelId).catch(() => null);
         if (!channel?.isSendable()) return void (await i.editReply("บอทส่งข้อความในห้องนั้นไม่ได้ ตรวจสิทธิ์ View Channel / Send Messages"));
         const old = next.panelMessageId && channel.isTextBased() ? await channel.messages.fetch(next.panelMessageId).catch(() => null) : null;
@@ -403,13 +424,13 @@ export class PoolManager {
         this.pools.set(next.guildId, { ...this.pools.get(next.guildId)!, panelMessageId: next.panelMessageId });
         const gone = Object.values(players).filter((p) => !p.rank || !ranks.includes(p.rank));
         const warn = gone.length ? `\n⚠️ มี ${gone.length} คนที่ยังไม่มีแรงค์ในรายการ จะไม่ถูกสุ่มตามแรงค์จนกว่าจะกด 📝 แล้วเลือกแรงค์` : "";
-        return void (await i.editReply(`✅ ตั้งห้องลงชื่อตัวสำรองที่ <#${channelId}> แล้ว แรงค์ให้เลือก: ${ranks.join(", ")} (แก้รายการแรงค์ได้ที่หน้าแอดมินบนเว็บ > เกม)${warn}`));
+        return void (await i.editReply(`✅ ตั้งห้องลงชื่อตัวสำรองที่ <#${channelId}> แล้ว${next.gameName ? ` เกม: **${next.gameName}**` : ""} แรงค์ให้เลือก: ${ranks.join(", ")} (แก้รายการแรงค์ได้ที่หน้าแอดมินบนเว็บ > เกม)${warn}`));
       }
       if (!pool) return void (await i.reply({ ephemeral: true, content: "ยังไม่ได้ตั้งห้องลงชื่อ ใช้ `/pool setup` ก่อน" }));
       if (!this.isOrganizer(pool, i.user.id, info)) return void (await i.reply({ ephemeral: true, content: "คำสั่งนี้สำหรับผู้จัด" }));
       // The draw is posted in the room; list and remove answer privately.
       if (sub !== "draw") await i.deferReply({ ephemeral: true });
-      const players = await this.players();
+      const players = await this.players(pool);
       const say = (content: string) => (i.deferred ? i.editReply(content) : i.reply({ ephemeral: true, content }));
       if (sub === "list") {
         const rank = i.options.getString("rank")?.replace(/^แรงค์/, "").trim() || null;
@@ -440,7 +461,7 @@ export class PoolManager {
       const rank = i.options.getString("rank")?.replace(/^แรงค์/, "").trim() || null;
       const position = (i.options.getString("position") as SoloPosition | null) ?? null;
       if (rank) {
-        const ranks = await this.ranks();
+        const ranks = await this.ranks(pool);
         if (!ranks.includes(rank)) return void (await say(`ไม่มีแรงค์ "${rank}" (มี ${ranks.join(", ")})`));
       }
       const count = i.options.getInteger("count", true);
@@ -477,17 +498,17 @@ export class PoolManager {
   }
 
   /** /pool rank: the special events' own MMR ladder, top 10, for everyone. */
-  private async showBoard(i: ChatInputCommandInteraction) {
+  private async showBoard(i: ChatInputCommandInteraction, pool?: PoolConfig) {
     await i.deferReply();
     const board = await this.api.get<{
       ranked: { rank: number; name: string; nickname: string | null; mmr: number; series: number; wins: number; losses: number; tier: { nameTh: string } }[];
       placing: unknown[];
       events: unknown[];
-    }>("/special");
-    const link = siteLink(this.siteUrl, "/special");
+    }>(`/special${this.game(pool)}`);
+    const link = siteLink(this.siteUrl, `/special${pool?.gameId ? `?game=${encodeURIComponent(pool.gameId)}` : ""}`);
     const lines = board.ranked.slice(0, 10).map((p) => `**${p.rank}.** ${p.nickname || p.name} · **${p.mmr}** MMR · ${p.tier.nameTh} · ชนะ ${p.wins} แพ้ ${p.losses}`);
     const embed: APIEmbed = {
-      title: "🏆 อันดับ MMR รายการเล่นเก่งปากเก่ง",
+      title: `🏆 อันดับ MMR รายการเล่นเก่งปากเก่ง${pool?.gameName ? ` · ${pool.gameName}` : ""}`.slice(0, 256),
       url: isPublicUrl(link) ? link : undefined,
       color: RED,
       description: [
@@ -502,8 +523,14 @@ export class PoolManager {
   }
 
   async onAutocomplete(i: AutocompleteInteraction) {
+    const pool = this.pools.get(i.guildId ?? "");
+    if (i.options.getFocused(true).name === "game") {
+      const typedGame = String(i.options.getFocused()).trim().toLowerCase();
+      const { data } = await this.api.get<{ data: { id: string; name: string }[] }>("/games").catch(() => ({ data: [] as { id: string; name: string }[] }));
+      return void (await i.respond(data.filter((g) => g.name.toLowerCase().includes(typedGame)).slice(0, 25).map((g) => ({ name: g.name.slice(0, 100), value: g.id }))));
+    }
     const typed = String(i.options.getFocused()).replace(/^แรงค์/, "").trim().toLowerCase();
-    const ranks = (await this.ranks().catch(() => [] as string[])).filter((r) => r.toLowerCase().includes(typed));
+    const ranks = (await this.ranks(pool).catch(() => [] as string[])).filter((r) => r.toLowerCase().includes(typed));
     await i.respond(ranks.slice(0, 25).map((r) => ({ name: r.slice(0, 100), value: r.slice(0, 100) })));
   }
 
@@ -516,13 +543,13 @@ export class PoolManager {
         const pool = this.pools.get(id);
         if (!pool) return void (await i.reply({ ephemeral: true, content: "ยังไม่ได้ตั้งห้องลงชื่อ" }));
         if (action === "reg") {
-          const mine = await this.mine(i.user.id);
+          const mine = await this.mine(i.user.id, pool);
           return void (await i.showModal(this.registerModal(pool, mine ?? undefined)));
         }
         await i.deferReply({ ephemeral: true });
         if (action === "out") {
           try {
-            await this.api.delete(`/members/${i.user.id}/reserve`);
+            await this.api.delete(`/members/${i.user.id}/reserve${this.game(pool)}`);
           } catch (e) {
             if (e instanceof ApiError && e.status === 404) return void (await i.editReply("คุณยังไม่ได้ลงชื่อ"));
             throw e;
@@ -530,7 +557,7 @@ export class PoolManager {
           await i.editReply("🚪 ถอนชื่อแล้ว จะไม่ถูกสุ่มอีก (ลงชื่อใหม่ได้ทุกเมื่อ)");
           return void (await this.refreshPanel(i.client, pool));
         }
-        const mine = await this.mine(i.user.id);
+        const mine = await this.mine(i.user.id, pool);
         return void (await i.editReply(mine ? `คุณลงชื่อไว้:\n${privateLine(i.user.id, mine)}\nกด 📝 เพื่อแก้ไข` : "คุณยังไม่ได้ลงชื่อ กด 📝 ลงชื่อ / แก้ข้อมูล"));
       }
       const found = this.findDraw(id);
@@ -539,7 +566,7 @@ export class PoolManager {
       if (d.status !== "OPEN") return void (await i.reply({ ephemeral: true, content: d.status === "CONFIRMED" ? "ยืนยันทีมไปแล้ว" : "การสุ่มนี้ถูกยกเลิกแล้ว" }));
       if (action === "busy") {
         if (!d.sides.some((s) => s.players.includes(i.user.id))) return void (await i.reply({ ephemeral: true, content: "ปุ่มนี้สำหรับคนที่ถูกสุ่มเท่านั้น" }));
-        const players = await this.players();
+        const players = await this.players(pool);
         const name = players[i.user.id]?.name ?? d.names?.[i.user.id] ?? "ผู้เล่น";
         const swapped = this.swap(pool, players, d, i.user.id, null);
         if ("error" in swapped) return void (await i.reply({ ephemeral: true, content: `รับทราบครับ แต่${swapped.error} ผู้จัดจะหาคนแทนให้` }));
@@ -547,7 +574,7 @@ export class PoolManager {
         return void (await i.update(this.drawMessage(players, d, `🙋 ${name} ไม่สะดวก สุ่ม ${players[swapped.in]?.name ?? ""} มาแทนแล้ว`)));
       }
       if (!this.isOrganizer(pool, i.user.id, info)) return void (await i.reply({ ephemeral: true, content: "ปุ่มนี้สำหรับผู้จัด" }));
-      const players = await this.players();
+      const players = await this.players(pool);
       if (action === "re") {
         const before = d.sides.map((s) => s.players);
         const problem = this.fill(pool, players, d);
@@ -579,7 +606,7 @@ export class PoolManager {
       if (d.status !== "OPEN") return void (await i.reply({ ephemeral: true, content: "การสุ่มนี้ปิดแล้ว" }));
       if (!this.isOrganizer(pool, i.user.id, info)) return void (await i.reply({ ephemeral: true, content: "เปลี่ยนตัวได้เฉพาะผู้จัด" }));
       const value = (i as StringSelectMenuInteraction).values[0];
-      const players = await this.players();
+      const players = await this.players(pool);
       const nameOf = (pid: string) => players[pid]?.name ?? d.names?.[pid] ?? pid;
       if (action === "sw") {
         // Step 1: who goes out. Step 2 (private): who comes in, at random or by hand.
@@ -609,8 +636,8 @@ export class PoolManager {
   }
 
   /** The member's own sign-up with their contact details, or null. */
-  private async mine(discordId: string): Promise<PoolPlayer | null> {
-    const { data } = await this.api.get<{ data: ReserveRow | null }>(`/members/${discordId}/reserve`);
+  private async mine(discordId: string, pool: PoolConfig): Promise<PoolPlayer | null> {
+    const { data } = await this.api.get<{ data: ReserveRow | null }>(`/members/${discordId}/reserve${this.game(pool)}`);
     return data ? toPlayer(data) : null;
   }
 
@@ -636,16 +663,16 @@ export class PoolManager {
     }
     try {
       await i.deferReply({ ephemeral: true });
-      const [before, ranks] = await Promise.all([this.mine(i.user.id), this.ranks()]);
+      const [before, ranks] = await Promise.all([this.mine(i.user.id, pool), this.ranks(pool)]);
       const form: PendingForm = { uid, name, position, facebook: text("facebook"), phone: text("phone") || null, at: Date.now() };
       if (!before?.rank || !ranks.includes(before.rank)) {
         // The rank is required but doesn't fit in the form: check the form now, save it once the rank is picked.
-        await this.api.post(`/members/${i.user.id}/reserve/check`, { uid, name, position, facebook: form.facebook, phone: form.phone });
+        await this.api.post(`/members/${i.user.id}/reserve/check`, { uid, name, gameId: pool.gameId ?? undefined, position, facebook: form.facebook, phone: form.phone });
         this.pending.set(i.user.id, form);
         return void (await i.editReply({ content: "📝 อีกขั้นเดียว: **เลือกแรงค์ของคุณ** ด้านล่าง แล้วระบบจะบันทึกการลงชื่อให้", components: [this.rankPicker(pool, ranks, null)] }));
       }
       // The website checks the form first, then links (or creates) the character with this UID.
-      const me = await this.save(i.user.id, form, before.rank);
+      const me = await this.save(i.user.id, pool, form, before.rank);
       const renamed = me.name !== name ? `\n(UID ${uid} อยู่ในระบบแล้วในชื่อ **${me.name}** ถ้าชื่อผิดให้แจ้งผู้จัด)` : "";
       await i.editReply({
         content: `✅ แก้ข้อมูลแล้ว: **${me.name}** (UID ${me.uid}) · ${positionText(me.position)} · ${rankText(me.rank)}${renamed}\nเปลี่ยนแรงค์ได้ด้านล่าง`,
@@ -659,8 +686,8 @@ export class PoolManager {
     }
   }
 
-  private async save(discordId: string, f: PendingForm, rank: string) {
-    const { data } = await this.api.post<{ data: ReserveRow }>(`/members/${discordId}/reserve`, { uid: f.uid, name: f.name, position: f.position, facebook: f.facebook, phone: f.phone, rank });
+  private async save(discordId: string, pool: PoolConfig, f: PendingForm, rank: string) {
+    const { data } = await this.api.post<{ data: ReserveRow }>(`/members/${discordId}/reserve`, { uid: f.uid, name: f.name, gameId: pool.gameId ?? undefined, position: f.position, facebook: f.facebook, phone: f.phone, rank });
     return toPlayer(data);
   }
 
@@ -670,14 +697,14 @@ export class PoolManager {
     if (!pool) return void (await i.update({ content: "ยังไม่ได้ตั้งห้องลงชื่อ", components: [] }));
     const form = this.pending.get(i.user.id);
     if (form && Date.now() - form.at < PENDING_MS) {
-      const me = await this.save(i.user.id, form, rank);
+      const me = await this.save(i.user.id, pool, form, rank);
       this.pending.delete(i.user.id);
       const renamed = me.name !== form.name ? `\n(UID ${form.uid} อยู่ในระบบแล้วในชื่อ **${me.name}** ถ้าชื่อผิดให้แจ้งผู้จัด)` : "";
       await i.update({ content: `✅ ลงชื่อแล้ว: **${me.name}** (UID ${me.uid}) · ${positionText(me.position)} · ${rankText(me.rank)}${renamed}\nถ้าถูกสุ่มไปช่วยแข่ง บอทจะแท็กชื่อคุณ`, components: [] });
       return void (await this.refreshPanel(i.client, pool));
     }
     this.pending.delete(i.user.id);
-    const { data } = await this.api.get<{ data: ReserveRow | null }>(`/members/${i.user.id}/reserve`);
+    const { data } = await this.api.get<{ data: ReserveRow | null }>(`/members/${i.user.id}/reserve${this.game(pool)}`);
     if (!data) return void (await i.update({ content: "คุณยังไม่ได้ลงชื่อ กด 📝 ลงชื่อ / แก้ข้อมูล", components: [] }));
     if (!data.position || !data.facebook) return void (await i.update({ content: "กรอก Facebook และตำแหน่งก่อน: กด 📝 ลงชื่อ / แก้ข้อมูล", components: [] }));
     await this.api.post(`/members/${i.user.id}/reserve`, { playerId: data.playerId, position: data.position, facebook: data.facebook, phone: data.phone ?? null, rank });

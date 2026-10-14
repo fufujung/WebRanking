@@ -57,6 +57,8 @@ export const reserveInput = z.object({
   playerId: z.string().trim().min(1).max(40).optional(),
   uid: z.string().trim().min(1).max(40).optional(),
   name: z.string().trim().max(100).regex(noControl).optional(),
+  /** The game of a new character signed up by UID (the default: the busiest game). */
+  gameId: z.string().trim().min(1).max(40).optional(),
   position: positionField.refine((p) => p !== null, { message: "Choose a position" }),
   facebook: facebookField,
   phone: phoneField,
@@ -111,8 +113,8 @@ const playerSelect = { id: true, name: true, nickname: true, avatarUrl: true, ui
  * Everyone on the list, oldest sign-up first. The public list leaves out Facebook, phone and the
  * Discord account; withContact (admins only) includes them.
  */
-export async function reserveList(withContact = false) {
-  const rows = await prisma.reservePlayer.findMany({ orderBy: { createdAt: "asc" }, include: { player: { select: playerSelect } } });
+export async function reserveList(withContact = false, gameId?: string | null) {
+  const rows = await prisma.reservePlayer.findMany({ where: inGame(gameId), orderBy: { createdAt: "asc" }, include: { player: { select: playerSelect } } });
   return rows.map(({ facebook, phone, discordId, ...r }) => ({ ...r, ...(withContact ? { facebook, phone, discordId } : {}) }));
 }
 
@@ -120,6 +122,21 @@ async function ownPlayer(discordId: string, playerId: string) {
   const player = await prisma.player.findUnique({ where: { id: playerId } });
   if (!player || player.discordId !== discordId) throw fail(403, "Not your character", "ตัวละครนี้ไม่ใช่ของคุณ");
   return player;
+}
+
+/** Each game keeps its own list: UIDs and character names differ between games. */
+const inGame = (gameId: string | null | undefined) => (gameId ? { player: { gameId } } : {});
+
+/** The game a sign-up is for: the one asked for, or the default (the busiest game). */
+export async function reserveGame(gameId?: string | null) {
+  return gameId || (await specialGame());
+}
+
+/** The game of the character a form names, before anything is linked or created. */
+async function formGame(discordId: string, input: { playerId?: string; uid?: string; gameId?: string }) {
+  if (input.playerId) return (await ownPlayer(discordId, input.playerId)).gameId ?? (await reserveGame(input.gameId));
+  const owner = input.uid ? await findByUid(prisma, input.uid, null) : null;
+  return owner?.gameId ?? (await reserveGame(input.gameId));
 }
 
 /** The ranks to pick from: the game's in-game ranks, lowest first (the same list solo tournaments use). */
@@ -135,7 +152,7 @@ async function checkRank(rank: string, gameId: string | null) {
 /** Checks a member's sign-up form without saving it, rank optional (Discord asks for the rank after the form). */
 export async function checkReserve(discordId: string, body: unknown) {
   const input = parseThai(reserveInput.extend({ rank: rankField }), body);
-  if (input.rank) await checkRank(input.rank, null);
+  if (input.rank) await checkRank(input.rank, await formGame(discordId, input));
   if (input.playerId) {
     await ownPlayer(discordId, input.playerId);
   } else if (input.uid) {
@@ -149,21 +166,21 @@ export async function checkReserve(discordId: string, body: unknown) {
 export async function joinReserve(discordId: string, body: unknown) {
   const input = parseThai(reserveInput, body);
   // Everything is checked before a character is linked or created, so a bad form leaves nothing behind.
-  const chosen = input.playerId ? await ownPlayer(discordId, input.playerId) : null;
-  await checkRank(input.rank!, chosen?.gameId ?? null);
-  const playerId = input.playerId ?? (input.uid ? (await claimByUid(discordId, { uid: input.uid, server: null, name: input.name || null, gameId: await busiestGame() })).player.id : null);
+  const game = await formGame(discordId, input);
+  await checkRank(input.rank!, game);
+  const playerId = input.playerId ?? (input.uid ? (await claimByUid(discordId, { uid: input.uid, server: null, name: input.name || null, gameId: input.gameId ?? (await busiestGame()) })).player.id : null);
   if (!playerId) throw fail(400, "Send playerId or uid", THAI_PROBLEMS.playerId);
   const player = await ownPlayer(discordId, playerId);
   const taken = await prisma.reservePlayer.findUnique({ where: { playerId: player.id } });
   if (taken?.discordId && taken.discordId !== discordId) throw fail(409, "Signed up by another account", "ตัวละครนี้ถูกลงชื่อไว้โดยบัญชีอื่นแล้ว");
   const data = { position: input.position, facebook: input.facebook, phone: input.phone, rank: input.rank, discordId };
   await prisma.$transaction(async (tx) => {
-    // One sign-up per account: switching character moves it.
-    await tx.reservePlayer.deleteMany({ where: { discordId, playerId: { not: player.id } } });
+    // One sign-up per account in each game: switching to another character of the same game moves it.
+    await tx.reservePlayer.deleteMany({ where: { discordId, playerId: { not: player.id }, ...inGame(player.gameId) } });
     await tx.reservePlayer.upsert({ where: { playerId: player.id }, create: { playerId: player.id, ...data }, update: data });
     await tx.player.update({ where: { id: player.id }, data: { role: input.position } });
   });
-  return myReserve(discordId);
+  return prisma.reservePlayer.findUnique({ where: { playerId: player.id }, include: { player: { select: playerSelect } } });
 }
 
 /** With several games, a new character for the special events joins the one most players play. */
@@ -178,13 +195,18 @@ async function specialGame() {
   return (await busiestGame()) ?? (await prisma.game.findFirst({ select: { id: true } }))?.id ?? null;
 }
 
-/** The member's own sign-up, with their own contact details, or null. */
-export async function myReserve(discordId: string) {
-  return prisma.reservePlayer.findUnique({ where: { discordId }, include: { player: { select: playerSelect } } });
+/** The member's own sign-up in one game (the default game when none is given), with their own contact details, or null. */
+export async function myReserve(discordId: string, gameId?: string | null) {
+  return prisma.reservePlayer.findFirst({ where: { discordId, ...inGame(await reserveGame(gameId)) }, include: { player: { select: playerSelect } } });
 }
 
-export async function leaveReserve(discordId: string) {
-  const { count } = await prisma.reservePlayer.deleteMany({ where: { discordId } });
+/** All the member's sign-ups, one per game at most. */
+export async function myReserves(discordId: string) {
+  return prisma.reservePlayer.findMany({ where: { discordId }, orderBy: { createdAt: "asc" }, include: { player: { select: { ...playerSelect, gameId: true } } } });
+}
+
+export async function leaveReserve(discordId: string, gameId?: string | null) {
+  const { count } = await prisma.reservePlayer.deleteMany({ where: { discordId, ...inGame(await reserveGame(gameId)) } });
   if (!count) throw fail(404, "Not signed up", "คุณยังไม่ได้ลงชื่อ");
 }
 
@@ -214,7 +236,7 @@ export async function importReserve(body: unknown) {
   let added = 0;
   const skipped: { discordId: string; reason: string }[] = [];
   for (const p of players) {
-    if (await prisma.reservePlayer.findUnique({ where: { discordId: p.discordId } })) {
+    if (await prisma.reservePlayer.findFirst({ where: { discordId: p.discordId } })) {
       skipped.push({ discordId: p.discordId, reason: "already signed up" });
       continue;
     }
@@ -233,20 +255,20 @@ export async function importReserve(body: unknown) {
   return { added, skipped };
 }
 
-const specialLines = (where: object = {}) =>
-  prisma.matchPlayerStat.findMany({ where: { ...where, match: { tournament: { special: true } } }, select: statLineSelect });
+const specialLines = (where: object = {}, gameId?: string | null) =>
+  prisma.matchPlayerStat.findMany({ where: { ...where, match: { tournament: { special: true, ...(gameId ? { gameId } : {}) } } }, select: statLineSelect });
 
 /** The special board: MMR ladder, players still placing, per-player stats, the events and the substitutes list. */
 export async function specialBoard(gameId?: string | null) {
   const [board, lines, events, reserve, ranks] = await Promise.all([
     playerBoard(gameId, new Date(), true),
-    specialLines(),
+    specialLines({}, gameId),
     prisma.tournament.findMany({
-      where: { special: true },
+      where: { special: true, ...(gameId ? { gameId } : {}) },
       orderBy: { startDate: "desc" },
       select: { id: true, name: true, status: true, startDate: true, _count: { select: { matches: true } } },
     }),
-    reserveList(),
+    reserveList(false, gameId),
     reserveRanks(gameId),
   ]);
   const stats = statsByPlayer(lines);

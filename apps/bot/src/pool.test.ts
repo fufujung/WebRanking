@@ -211,6 +211,15 @@ test("setting up the room carries the old list over to the website", async () =>
   const old = (await api.get<{ data: any[] }>("/special/reserve/private")).data;
   assert.deepEqual(old.map((x) => [x.discordId, x.player.name, x.player.uid, x.rank, x.position]), [[LEGACY, "Oldie", "700000001", "ทอง", null]]);
   assert.deepEqual(pool.pools.get(GUILD)!.players, {}, "carried over once");
+
+  // Each game keeps its own list: the room is tied to one game.
+  const wrongGame = command("setup", { channel: "signup", game: "Dunk City" });
+  await pool.onCommand(wrongGame, admin);
+  assert.match(reply(wrongGame), /ไม่พบเกม "Dunk City" \(มี Street Rivals\)/);
+  const withGame = command("setup", { channel: "signup", game: "street rivals" });
+  await pool.onCommand(withGame, admin);
+  assert.match(reply(withGame), /เกม: \*\*Street Rivals\*\*/);
+  assert.match([...messages.values()].find((m) => m.ids[0]?.[0] === `tp:reg:${GUILD}`)!.payload.embeds[0].title, /เล่นเก่งปากเก่ง · Street Rivals/);
 });
 
 test("people sign up with name, UID, Facebook, optional phone and position, then pick their rank", async () => {
@@ -420,7 +429,7 @@ test("organizers list with contact details, remove people; people leave; /pool r
   const embed = board.replies.at(-1).embeds[0];
   assert.match(embed.title, /อันดับ MMR รายการเล่นเก่งปากเก่ง/);
   assert.match(embed.description, /\*\*1\.\*\* Zone1 · \*\*\d{4}\*\* MMR[\s\S]*\*\*2\.\*\* Zone2/);
-  assert.equal(embed.url, "https://ranking.example/special");
+  assert.match(embed.url, /^https:\/\/ranking\.example\/special\?game=\w+$/, "the room's own game");
   const main = await api.get<{ data: any[] }>("/rankings/mmr");
   assert.equal(main.data.length, 0, "the main ladder is untouched");
 });

@@ -215,11 +215,20 @@ paths:
       summary: Withdraw from a SOLO tournament before the draw (admin)
       responses:
         "200": { description: The sign-up view }
-  /api/v1/members/{discordId}/reserve:
+  /api/v1/members/{discordId}/reserves:
     parameters: [{ $ref: "#/components/parameters/discordId" }]
     get:
       tags: [Members]
-      summary: This member's own sign-up on the "เล่นเก่งปากเก่ง" substitutes list, with their own contact details (admin)
+      summary: All this member's "เล่นเก่งปากเก่ง" sign-ups, one per game at most (admin)
+      responses:
+        "200": { description: "{ data: [] }" }
+  /api/v1/members/{discordId}/reserve:
+    parameters:
+      - { $ref: "#/components/parameters/discordId" }
+      - { name: gameId, in: query, description: "GET and DELETE: the game (default: the busiest game). Each game keeps its own list.", schema: { type: string } }
+    get:
+      tags: [Members]
+      summary: This member's own sign-up in one game on the "เล่นเก่งปากเก่ง" substitutes list, with their own contact details (admin)
       responses:
         "200": { description: "{ data } (null when not signed up)" }
     post:
@@ -231,9 +240,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: [playerId, position, facebook, rank]
+              required: [position, facebook, rank]
               properties:
-                playerId: { type: string, description: One of this member's characters }
+                playerId: { type: string, description: One of this member's characters; the sign-up is for that character's game }
+                uid: { type: string, description: Instead of playerId, link (or create, with name) the character with this UID }
+                name: { type: string }
+                gameId: { type: string, description: The game of a new character signed up by UID }
                 position: { type: string, enum: [GUARD, FORWARD, CENTER, ALL], description: "GUARD = บอลหลัก, FORWARD = บอลรอง" }
                 facebook: { type: string, maxLength: 200, description: A Facebook name or a facebook.com link (private) }
                 phone: { type: string, nullable: true, maxLength: 20, description: Optional (private) }
@@ -279,12 +291,16 @@ paths:
     get:
       tags: [Special]
       summary: The substitutes list without contact details, oldest sign-up first
+      parameters:
+        - { name: gameId, in: query, description: One game's list (each game keeps its own), schema: { type: string } }
       responses:
         "200": { description: "{ data: [{ playerId, position, rank, createdAt, player }] }" }
   /api/v1/special/reserve/private:
     get:
       tags: [Special]
       summary: The substitutes list with Facebook, phone and Discord account (admin)
+      parameters:
+        - { name: gameId, in: query, schema: { type: string } }
       responses:
         "200": { description: "{ data }" }
   /api/v1/special/reserve/{playerId}:

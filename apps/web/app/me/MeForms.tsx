@@ -87,20 +87,33 @@ export function EditMyPlayer({ player }: { player: Player }) {
 }
 
 /** Sign up as a substitute for the special "เล่นเก่งปากเก่ง" events, or change the details. */
-export function ReserveForm({ characters, current, ranks }: { characters: Pick<Player, "id" | "name" | "uid">[]; current: ReservePlayer | null; ranks: GameRank[] }) {
+export function ReserveForm({
+  characters,
+  current,
+  ranks,
+  game,
+  anchor,
+}: {
+  characters: Pick<Player, "id" | "name" | "uid">[];
+  current: ReservePlayer | null;
+  ranks: GameRank[];
+  /** The game this list is for: each game keeps its own list. */
+  game: { id: string; name: string } | null;
+  anchor?: boolean;
+}) {
   const [state, onSubmit, pending] = useSubmit(saveMyReserve);
   const [left, setLeft] = useState<MeState>();
   const [leaving, setLeaving] = useState(false);
   const leave = async () => {
     if (!confirm("ถอนชื่อออกจากรายชื่อตัวสำรอง?")) return;
     setLeaving(true);
-    setLeft(await leaveMyReserve());
+    setLeft(await leaveMyReserve(game?.id ?? null));
     setLeaving(false);
   };
   return (
-    <form onSubmit={onSubmit} className="form card" id="reserve" style={{ marginBottom: 24 }}>
+    <form onSubmit={onSubmit} className="form card" id={anchor ? "reserve" : undefined} data-game={game?.id ?? ""} style={{ marginBottom: 24 }}>
       <div>
-        <h2 style={{ margin: 0 }}>⭐ ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง</h2>
+        <h2 style={{ margin: 0 }}>⭐ ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง{game ? <span className="muted"> · {game.name}</span> : null}</h2>
         <p className="muted small" style={{ margin: 0 }}>
           เปิดรับตลอด ใช้ได้ทุกงาน ผู้จัดจะสุ่มคนจากรายชื่อนี้ไปช่วยแข่ง สถิติและ MMR ของรายการนี้แยกจากรายการหลัก
           Facebook และเบอร์โทรเห็นเฉพาะผู้จัด

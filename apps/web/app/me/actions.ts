@@ -193,10 +193,10 @@ export async function saveMyReserve(_: MeState, form: FormData): Promise<MeState
   return { ok: "บันทึกแล้ว คุณอยู่ในรายชื่อตัวสำรองแล้ว" };
 }
 
-export async function leaveMyReserve(): Promise<MeState> {
+export async function leaveMyReserve(gameId: string | null): Promise<MeState> {
   const m = await member();
   try {
-    await api(`/members/${m.id}/reserve`, { method: "DELETE" });
+    await api(`/members/${m.id}/reserve${typeof gameId === "string" && gameId ? `?gameId=${encodeURIComponent(gameId)}` : ""}`, { method: "DELETE" });
   } catch (e) {
     return { error: explain(e) };
   }

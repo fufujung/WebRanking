@@ -207,7 +207,7 @@ model SoloSignup {
 model ReservePlayer {
   id        String   @id @default(cuid())
   playerId  String   @unique
-  discordId String?  @unique // one sign-up per Discord account
+  discordId String? // one sign-up per Discord account in each game (the list is kept per game)
   position  String? // GUARD | FORWARD | CENTER | ALL; null only for sign-ups carried over from the old Discord list
   rank      String? // in-game rank, used by the random draws in Discord
   facebook  String?
@@ -216,6 +216,8 @@ model ReservePlayer {
   updatedAt DateTime @updatedAt
 
   player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([discordId])
 }
 
 /// A player registered to play for a team in one tournament.

@@ -255,4 +255,40 @@ describe("special events (เล่นเก่งปากเก่ง)", () =>
     await ok("PATCH", `/tournaments/${fun.id}`, { special: true });
     assert.equal((await prisma.player.findUnique({ where: { id: bankPlayer } }))!.mmr, before.mmr);
   });
+
+  test("each game keeps its own list: a character only shows in its own game, one sign-up per account in each game", async () => {
+    const kuroko = (await ok("POST", "/games", { name: "Kuroko Street Rivals" })).id;
+    const dunk = (await ok("POST", "/games", { name: "Dunk City Dynasty" })).id;
+    await ok("PATCH", `/games/${kuroko}`, { ranks: ["ฟ้า", "โซน"].map((name) => ({ name, iconUrl: null })) });
+    await ok("PATCH", `/games/${dunk}`, { ranks: ["Rookie", "Pro"].map((name) => ({ name, iconUrl: null })) });
+    const fon = "777777777777777777";
+    const kChar = (await ok("POST", `/players/discord/${fon}/claim`, { uid: "K-1", name: "Fon Kuroko", gameId: kuroko })).id;
+    const dChar = (await ok("POST", `/players/discord/${fon}/claim`, { uid: "D-1", name: "Fon Dunk", gameId: dunk })).id;
+
+    await ok("POST", `/members/${fon}/reserve`, { playerId: kChar, position: "GUARD", facebook: "Fon", rank: "โซน" });
+    // Ranks are the character's own game's ranks.
+    const wrongGame = await call("POST", `/members/${fon}/reserve`, { playerId: dChar, position: "CENTER", facebook: "Fon", rank: "โซน" });
+    assert.equal(wrongGame.status, 400);
+    assert.match(wrongGame.body.details.th, /Rookie, Pro/);
+    await ok("POST", `/members/${fon}/reserve`, { playerId: dChar, position: "CENTER", facebook: "Fon", rank: "Pro" });
+    assert.equal((await ok("GET", `/members/${fon}/reserves`)).data.length, 2, "one sign-up in each game");
+
+    const names = async (gameId: string) => (await ok("GET", `/special/reserve?gameId=${gameId}`)).data.map((r: { player: { name: string } }) => r.player.name);
+    assert.deepEqual(await names(kuroko), ["Fon Kuroko"]);
+    assert.deepEqual(await names(dunk), ["Fon Dunk"]);
+    assert.deepEqual((await ok("GET", `/special?gameId=${dunk}`)).reserve.map((r: { player: { name: string } }) => r.player.name), ["Fon Dunk"]);
+    assert.deepEqual((await ok("GET", `/special?gameId=${dunk}`)).ranks.map((r: { name: string }) => r.name), ["Rookie", "Pro"]);
+    assert.equal((await ok("GET", `/members/${fon}/reserve?gameId=${dunk}`)).data.player.name, "Fon Dunk");
+
+    // A new character signed up by UID joins the game asked for.
+    const gai = "888888888888888888";
+    const byUid = (await ok("POST", `/members/${gai}/reserve`, { uid: "D-2", name: "Gai", gameId: dunk, position: "ALL", facebook: "Gai", rank: "Rookie" })).data;
+    assert.deepEqual(await names(dunk), ["Fon Dunk", "Gai"]);
+    assert.equal((await prisma.player.findUnique({ where: { id: byUid.playerId } }))!.gameId, dunk);
+
+    // Leaving one game keeps the other.
+    assert.equal((await call("DELETE", `/members/${fon}/reserve?gameId=${dunk}`)).status, 204);
+    assert.deepEqual(await names(dunk), ["Gai"]);
+    assert.deepEqual(await names(kuroko), ["Fon Kuroko"]);
+  });
 });

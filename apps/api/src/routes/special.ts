@@ -20,12 +20,15 @@ special.get("/ranks", async (req, res) => {
   res.json({ data: await reserveRanks(q.gameId) });
 });
 
-special.get("/reserve", async (_req, res) => {
-  res.json({ data: await reserveList() });
+const gameQuery = z.object({ gameId: z.string().trim().min(1).max(40).optional() });
+
+/** One game's list with ?gameId= (each game keeps its own), or every game's. */
+special.get("/reserve", async (req, res) => {
+  res.json({ data: await reserveList(false, gameQuery.parse(req.query).gameId) });
 });
 
-special.get("/reserve/private", requireAdmin, async (_req, res) => {
-  res.json({ data: await reserveList(true) });
+special.get("/reserve/private", requireAdmin, async (req, res) => {
+  res.json({ data: await reserveList(true, gameQuery.parse(req.query).gameId) });
 });
 
 special.patch("/reserve/:playerId", requireAdmin, async (req, res) => {
