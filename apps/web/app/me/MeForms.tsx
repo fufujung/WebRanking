@@ -3,7 +3,7 @@
 import { startTransition, useActionState, useState } from "react";
 import { claimPlayer, leaveMyReserve, saveMyReserve, unlinkMyPlayer, updateMyPlayer, type MeState } from "./actions";
 import { ImageDrop } from "@/components/ImageDrop";
-import type { Game, Player, ReservePlayer } from "@/lib/types";
+import type { Game, Player, ReservePlayer, GameRank } from "@/lib/types";
 import { PositionSelect } from "@/components/PositionSelect";
 
 function useSubmit(action: (s: MeState, f: FormData) => Promise<MeState>) {
@@ -87,20 +87,33 @@ export function EditMyPlayer({ player }: { player: Player }) {
 }
 
 /** Sign up as a substitute for the special "เล่นเก่งปากเก่ง" events, or change the details. */
-export function ReserveForm({ characters, current }: { characters: Pick<Player, "id" | "name" | "uid">[]; current: ReservePlayer | null }) {
+export function ReserveForm({
+  characters,
+  current,
+  ranks,
+  game,
+  anchor,
+}: {
+  characters: Pick<Player, "id" | "name" | "uid">[];
+  current: ReservePlayer | null;
+  ranks: GameRank[];
+  /** The game this list is for: each game keeps its own list. */
+  game: { id: string; name: string } | null;
+  anchor?: boolean;
+}) {
   const [state, onSubmit, pending] = useSubmit(saveMyReserve);
   const [left, setLeft] = useState<MeState>();
   const [leaving, setLeaving] = useState(false);
   const leave = async () => {
     if (!confirm("ถอนชื่อออกจากรายชื่อตัวสำรอง?")) return;
     setLeaving(true);
-    setLeft(await leaveMyReserve());
+    setLeft(await leaveMyReserve(game?.id ?? null));
     setLeaving(false);
   };
   return (
-    <form onSubmit={onSubmit} className="form card" id="reserve" style={{ marginBottom: 24 }}>
+    <form onSubmit={onSubmit} className="form card" id={anchor ? "reserve" : undefined} data-game={game?.id ?? ""} style={{ marginBottom: 24 }}>
       <div>
-        <h2 style={{ margin: 0 }}>⭐ ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง</h2>
+        <h2 style={{ margin: 0 }}>⭐ ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง{game ? <span className="muted"> · {game.name}</span> : null}</h2>
         <p className="muted small" style={{ margin: 0 }}>
           เปิดรับตลอด ใช้ได้ทุกงาน ผู้จัดจะสุ่มคนจากรายชื่อนี้ไปช่วยแข่ง สถิติและ MMR ของรายการนี้แยกจากรายการหลัก
           Facebook และเบอร์โทรเห็นเฉพาะผู้จัด
@@ -109,7 +122,7 @@ export function ReserveForm({ characters, current }: { characters: Pick<Player, 
       {current && (
         <div className="notice small">
           ลงชื่อไว้แล้วด้วย <strong>{current.player.nickname || current.player.name}</strong>
-          {current.rank ? ` · แรงค์${current.rank}` : " · ยังไม่เลือกแรงค์ (เลือกได้ในห้องลงชื่อ Discord)"}
+          {current.rank ? ` · แรงค์ ${current.rank}` : " · ยังไม่ได้เลือกแรงค์ เลือกด้านล่างแล้วกดบันทึก"}
         </div>
       )}
       <div className="form-row">
@@ -123,6 +136,20 @@ export function ReserveForm({ characters, current }: { characters: Pick<Player, 
         <label>Facebook *<input name="facebook" required minLength={2} maxLength={200} defaultValue={current?.facebook ?? ""} placeholder="ชื่อ Facebook หรือลิงก์ facebook.com" /></label>
         <label>เบอร์โทร (ไม่ใส่ก็ได้)<input name="phone" maxLength={20} inputMode="tel" defaultValue={current?.phone ?? ""} placeholder="เช่น 0812345678" /></label>
       </div>
+      <fieldset className="rank-field">
+        <legend>แรงค์ในเกมตอนนี้ *</legend>
+        <div className="rank-pick">
+          {ranks.map((r, i) => (
+            <label key={r.name}>
+              <input type="radio" name="rank" value={r.name} required defaultChecked={current?.rank === r.name} />
+              {r.iconUrl && <img src={r.iconUrl} alt="" />}
+              <span>{r.name}</span>
+              {i === 0 && <span className="muted small">ต่ำสุด</span>}
+              {i === ranks.length - 1 && ranks.length > 1 && <span className="muted small">สูงสุด</span>}
+            </label>
+          ))}
+        </div>
+      </fieldset>
       {(state?.error || left?.error) && <div className="error">{state?.error ?? left?.error}</div>}
       {(state?.ok || left?.ok) && <div className="success">{left?.ok ?? state?.ok}</div>}
       <div className="row">

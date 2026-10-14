@@ -284,9 +284,17 @@ step("free reader tried the picture and explained it is not a scoreboard");
 await page.click("button:has-text('ใช้รูปนี้แล้วกรอกเอง')");
 const game = (n) => page.locator(`section[aria-label="เกม ${n}"]`);
 await game(1).waitFor();
+// Both rosters load after the teams are picked; wait for them rather than read a half-filled game.
+const roster1 = [`P01-${uniq}`, `P02-${uniq}`, `P11-${uniq}`, `P12-${uniq}`];
+await page
+  .waitForFunction((want) => {
+    const values = [...document.querySelectorAll('section[aria-label="เกม 1"] input[list]')].map((e) => e.value);
+    return want.every((n) => values.includes(n));
+  }, roster1, { timeout: 15000 })
+  .catch(() => {});
 const names1 = await game(1).locator('input[list]').evaluateAll((els) => els.map((e) => e.value));
 if (names1.length !== 6) throw new Error("expected 3 rows per side, got " + names1.length);
-for (const n of [`P01-${uniq}`, `P02-${uniq}`, `P11-${uniq}`, `P12-${uniq}`]) if (!names1.includes(n)) throw new Error(`roster ${n} not filled: ${names1}`);
+for (const n of roster1) if (!names1.includes(n)) throw new Error(`roster ${n} not filled: ${names1}`);
 if (!(await game(1).locator("img.drop-preview, .drop img").first().isVisible())) throw new Error("game 1 screenshot not attached");
 step("game 1 created from the screenshot with both rosters filled (2 + 1 empty row per side)");
 
@@ -1027,10 +1035,14 @@ if (!(await page.locator(".btn-discord").count())) {
   step("organizer drew 2 balanced teams (every team has G/F/C), redrew and saved; the page shows the teams");
 
   console.log("— เล่นเก่งปากเก่ง (substitutes list)");
-  await page.goto(base + "/me");
+  await page.goto(base + "/special");
+  await page.locator(".special-cta a:has-text('ลงชื่อตัวสำรอง')").click();
+  await page.waitForURL(/\/me#reserve$/);
   const reserve = page.locator("#reserve");
   if (await reserve.locator('select[name="playerId"]').count()) await reserve.locator('select[name="playerId"]').selectOption({ label: `Disc-${uniq} (UID 77${uniq})` });
   await reserve.locator('select[name="position"]').selectOption("GUARD");
+  const reserveRank = (await reserve.locator(".rank-pick label").last().textContent()).replace("สูงสุด", "").trim();
+  await reserve.locator(".rank-pick label").last().click();
   await reserve.locator('input[name="facebook"]').fill("https://evil.example/login");
   await reserve.locator("button:has-text('ลงชื่อตัวสำรอง')").click();
   await reserve.locator(".error:has-text('facebook.com')").waitFor();
@@ -1040,13 +1052,14 @@ if (!(await page.locator(".btn-discord").count())) {
   await reserve.locator(".success:has-text('รายชื่อตัวสำรอง')").waitFor();
   await page.reload();
   await page.locator("#reserve .notice:has-text('ลงชื่อไว้แล้ว')").waitFor();
+  await page.locator("#reserve").screenshot({ path: OUT + "/reserve-form.png" });
   await page.goto(base + "/special");
   await page.locator("h1:has-text('เล่นเก่งปากเก่ง')").waitFor();
-  await page.locator(`#reserve .card:has-text('บอลหลัก') li:has-text('UID 77${uniq}')`).waitFor();
+  await page.locator(`#reserve .card:has-text('บอลหลัก') li:has-text('UID 77${uniq}') .rank-badge:has-text('${reserveRank}')`).waitFor();
   const publicText = await page.locator("main").textContent();
   if (publicText.includes(`disc${uniq}`) || publicText.includes("0812345678")) throw new Error("Facebook or phone shown on the public page");
   await page.screenshot({ path: OUT + "/special.png", fullPage: true });
-  step("player signed up as a substitute on /me (a non-Facebook link is refused); /special lists them without contact details");
+  step("player signed up as a substitute on /me with their rank (a non-Facebook link is refused); /special lists them with the rank and without contact details");
 
   const rAdminCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const rAdmin = await rAdminCtx.newPage();
@@ -1061,11 +1074,12 @@ if (!(await page.locator(".btn-discord").count())) {
   await row.locator("a[href='tel:0812345678']").waitFor();
   await row.locator("button:has-text('แก้ไข')").click();
   await row.locator('select[name="position"]').selectOption("ALL");
-  await row.locator('input[name="rank"]').fill("โซน");
+  const firstRank = (await row.locator('select[name="rank"] option').nth(1).textContent()).trim();
+  await row.locator('select[name="rank"]').selectOption(firstRank);
   await row.locator("button:has-text('บันทึก')").click();
   await row.locator(".success:has-text('บันทึกแล้ว')").waitFor();
   await rAdmin.reload();
-  await rAdmin.locator(`tr:has-text('UID 77${uniq}'):has-text('All Around'):has-text('แรงค์โซน')`).waitFor();
+  await rAdmin.locator(`tr:has-text('UID 77${uniq}'):has-text('All Around'):has-text('แรงค์ ${firstRank}')`).waitFor();
   await rAdmin.screenshot({ path: OUT + "/reserve-admin.png", fullPage: true });
   await rAdmin.goto(base + "/admin/tournaments/new");
   await rAdmin.locator('input[name="special"]').waitFor();

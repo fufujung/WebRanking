@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { api } from "@/lib/api";
+import { api, qs } from "@/lib/api";
 import { getMember } from "@/lib/member";
 import { discordEnabled } from "@/lib/discord";
-import type { MyCharacter, ReservePlayer } from "@/lib/types";
+import type { MyCharacter, ReservePlayer, GameRank } from "@/lib/types";
 import { siteOrigin } from "@/lib/site";
 import { allGames } from "@/lib/games";
 import { Avatar } from "@/components/ui";
@@ -58,12 +58,22 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
     );
   }
 
-  const [{ data: mine }, games, origin, { data: reserve }] = await Promise.all([
+  const [{ data: mine }, games, origin, { data: reserves }] = await Promise.all([
     api<{ data: MyCharacter[] }>(`/members/${me.id}`),
     allGames(),
     siteOrigin(),
-    api<{ data: ReservePlayer | null }>(`/members/${me.id}/reserve`),
+    api<{ data: (ReservePlayer & { player: { gameId: string | null } })[] }>(`/members/${me.id}/reserves`),
   ]);
+  // เล่นเก่งปากเก่ง keeps a list per game (UIDs and names differ between games): one form for each game the member plays.
+  const byGame = [...new Map(mine.map((c) => [c.game?.id ?? "", c.game])).values()];
+  const reserveForms = await Promise.all(
+    byGame.map(async (game) => ({
+      game,
+      characters: mine.filter((c) => (c.game?.id ?? "") === (game?.id ?? "")),
+      current: reserves.find((r) => (r.player.gameId ?? "") === (game?.id ?? "")) ?? null,
+      ranks: (await api<{ data: GameRank[] }>(`/special/ranks${qs({ gameId: game?.id })}`)).data,
+    })),
+  );
   return (
     <>
       <div className="page-head">
@@ -105,7 +115,14 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
           ))}
         </section>
       )}
-      {mine.length > 0 && <ReserveForm characters={mine} current={reserve} />}
+      {mine.length > 0 ? (
+        reserveForms.map((f, n) => <ReserveForm key={f.game?.id ?? "none"} anchor={n === 0} game={games.length > 1 ? f.game : null} characters={f.characters} current={f.current} ranks={f.ranks} />)
+      ) : (
+        <section id="reserve" className="card mt">
+          <h2 style={{ marginTop: 0 }}>📝 ลงชื่อตัวสำรอง เล่นเก่งปากเก่ง</h2>
+          <p className="muted" style={{ margin: 0 }}>ผูกตัวละครของคุณด้านล่างก่อน (ใส่ชื่อในเกมและ UID) แล้วฟอร์มลงชื่อตัวสำรองจะขึ้นตรงนี้</p>
+        </section>
+      )}
       <ClaimForm first={mine.length === 0} games={games} />
       <p className="muted small mt">ชื่อในเกม ทีม และสถิติ อัปเดตจากผลการแข่งและบอท Discord อัตโนมัติ ถ้าข้อมูลผิด แจ้งผู้จัดได้เลย</p>
     </>

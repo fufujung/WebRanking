@@ -593,6 +593,8 @@ export interface ReservePlayer {
 }
 
 export interface SpecialBoard {
+  /** The ranks substitutes pick from: the game's in-game ranks, lowest first. */
+  ranks: GameRank[];
   ranked: LadderPlayer[];
   placing: MmrLadder["placing"];
   tiers: MmrLadder["tiers"];

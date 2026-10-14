@@ -1,10 +1,11 @@
 import { Router } from "express";
+import { z } from "zod";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { discordId } from "../lib/members.js";
 import { notFound } from "../lib/errors.js";
 import { leaveSolo, signUp } from "../lib/solo.js";
 import { setOwnPosition } from "../lib/players.js";
-import { joinReserve, leaveReserve, myReserve } from "../lib/special.js";
+import { checkReserve, joinReserve, leaveReserve, myReserve, myReserves } from "../lib/special.js";
 import { acceptInvite, cancelInvite, createGuild, declineInvite, editGuild, inviteToGuild, kickFromGuild, leaveGuild, passLeader } from "../lib/guilds.js";
 import { createTeam, inviteInfo, joinTeam, kickMember, leaveTeam, makeCaptain, memberView, resetInvite } from "../lib/teamSelf.js";
 
@@ -56,14 +57,25 @@ members.delete("/:discordId/solo/:tournamentId", async (req, res) => {
 });
 
 /** The standing "เล่นเก่งปากเก่ง" substitutes list: the member's own sign-up (with their own contact details), join or edit, and leave. */
+const gameQuery = z.object({ gameId: z.string().trim().min(1).max(40).optional() });
+/** The member's sign-up in one game (?gameId=, default: the busiest game). */
 members.get("/:discordId/reserve", async (req, res) => {
-  res.json({ data: await myReserve(who(req.params.discordId)) });
+  res.json({ data: await myReserve(who(req.params.discordId), gameQuery.parse(req.query).gameId) });
+});
+/** All the member's sign-ups, one per game. */
+members.get("/:discordId/reserves", async (req, res) => {
+  res.json({ data: await myReserves(who(req.params.discordId)) });
 });
 members.post("/:discordId/reserve", async (req, res) => {
   res.json({ data: await joinReserve(who(req.params.discordId), req.body) });
 });
+/** Checks the form without saving it, rank optional: the bot asks for the rank after the form. */
+members.post("/:discordId/reserve/check", async (req, res) => {
+  await checkReserve(who(req.params.discordId), req.body);
+  res.status(204).end();
+});
 members.delete("/:discordId/reserve", async (req, res) => {
-  await leaveReserve(who(req.params.discordId));
+  await leaveReserve(who(req.params.discordId), gameQuery.parse(req.query).gameId);
   res.status(204).end();
 });
 

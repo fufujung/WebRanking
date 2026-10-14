@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAdmin } from "../lib/apiKeys.js";
-import { editReserve, importReserve, removeReserve, reserveList, specialBoard } from "../lib/special.js";
+import { editReserve, importReserve, removeReserve, reserveList, reserveRanks, specialBoard } from "../lib/special.js";
 
 /**
  * The special "เล่นเก่งปากเก่ง" events: the separate MMR and stats board, and the standing list of substitutes.
@@ -14,12 +14,21 @@ special.get("/", async (req, res) => {
   res.json(await specialBoard(q.gameId));
 });
 
-special.get("/reserve", async (_req, res) => {
-  res.json({ data: await reserveList() });
+/** The ranks substitutes pick from: the game's in-game ranks, lowest first. */
+special.get("/ranks", async (req, res) => {
+  const q = z.object({ gameId: z.string().trim().min(1).max(40).optional() }).parse(req.query);
+  res.json({ data: await reserveRanks(q.gameId) });
 });
 
-special.get("/reserve/private", requireAdmin, async (_req, res) => {
-  res.json({ data: await reserveList(true) });
+const gameQuery = z.object({ gameId: z.string().trim().min(1).max(40).optional() });
+
+/** One game's list with ?gameId= (each game keeps its own), or every game's. */
+special.get("/reserve", async (req, res) => {
+  res.json({ data: await reserveList(false, gameQuery.parse(req.query).gameId) });
+});
+
+special.get("/reserve/private", requireAdmin, async (req, res) => {
+  res.json({ data: await reserveList(true, gameQuery.parse(req.query).gameId) });
 });
 
 special.patch("/reserve/:playerId", requireAdmin, async (req, res) => {
