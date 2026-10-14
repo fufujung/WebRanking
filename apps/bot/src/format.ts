@@ -65,6 +65,13 @@ export function previewEmbed(d: Draft, opts: { tournament: string | null }): API
     name: `เกม ${i + 1} · ${a} ${g.scoreA} - ${g.scoreB} ${b}`,
     value: "```\n" + scoreboardBlock(a, g.players.filter((p) => p.side === "A")) + "\n\n" + scoreboardBlock(b, g.players.filter((p) => p.side === "B")) + "\n```",
   })));
+  // Names taken from the tournament rosters, written as the sign-up post shows them.
+  const listed = (side: "A" | "B") => [
+    ...new Set(d.games.flatMap((g) => g.players.filter((p) => p.side === side && p.uid).map((p) => `• ${p.name} (UID ${p.uid})`))),
+  ];
+  if (listed("A").length || listed("B").length) {
+    fields.push({ name: "ผู้เล่นตามรายชื่อทีม", value: [`**${a}**`, ...listed("A"), `**${b}**`, ...listed("B")].join("\n") });
+  }
   if (d.notes) fields.push({ name: "หมายเหตุจาก AI", value: d.notes });
   return fitEmbed({
     title: `📋 ${a} ${d.scoreA} - ${d.scoreB} ${b}`,

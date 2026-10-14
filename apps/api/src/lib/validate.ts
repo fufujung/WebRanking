@@ -100,6 +100,31 @@ const optionalCount = z.preprocess((v) => (v === "" || v === null ? undefined : 
 /** Lower-cases and drops spaces/punctuation so "EGOIST<1>" and "egoist 1" compare equal. */
 export const normaliseName = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 
+export function levenshtein(a: string, b: string) {
+  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0];
+    d[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = d[j];
+      d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return d[b.length];
+}
+
+/** How unlike two player names are, from 0 (the same once normalised) to 1 (nothing in common). */
+export function nameDistance(a: string, b: string) {
+  const x = [...normaliseName(a)];
+  const y = [...normaliseName(b)];
+  if (!x.length || !y.length) return 1;
+  // A guild tag in front ("OT_Aomyasu" for Aomyasu) still counts as the same name.
+  const [short, long] = x.length <= y.length ? [x.join(""), y.join("")] : [y.join(""), x.join("")];
+  if (short.length >= 4 && long.endsWith(short)) return 0.1;
+  return levenshtein(x.join(""), y.join("")) / Math.max(x.length, y.length);
+}
+
 export const awards = ["MVP", "SVP"] as const;
 
 /** An id that may be left out, null or blank. */

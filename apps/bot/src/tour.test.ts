@@ -821,7 +821,8 @@ describe("a whole tournament from Discord", () => {
     assert.equal(done.status, "DONE");
     assert.equal(done.winnerId, teamIds.Red);
     const stats = await api.get<any>(`/matches/${done.matchId}`);
-    assert.equal(stats.players.find((p: any) => p.player.name === "Gold1").pts, 20, "stats land on the registered players");
+    assert.equal(stats.players.find((p: any) => p.player.name === "Gold One").pts, 20, "a name read as Gold1 is Gold One of the roster: nobody new is made");
+    assert.equal(stats.players.length, 6);
     assert.equal(stats.players.find((p: any) => p.player.name === "Red One").pts, 8);
     assert.equal(stats.players.find((p: any) => p.player.name === "Red One").player.id, (await bracket()).teams.find((t: any) => t.name === "Red").roster[0].playerId);
     assert.equal(stats.source, "discord");

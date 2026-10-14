@@ -535,6 +535,52 @@ describe("reading results from images", () => {
     assert.deepEqual([res.body.draft.scoreA, res.body.draft.scoreB], [1, 0], "series score counted from games when the text has none");
   });
 
+  test("a bracket match only uses the two tournament rosters: misread names, guild tags, sides, wrong screenshot", async () => {
+    const tour = (await call("POST", "/api/v1/tournaments", { name: "Roster Lock Cup", startDate: "2026-10-01" })).body;
+    const one = (await call("POST", "/api/v1/teams", { name: "Lock ทีม 1" })).body;
+    const two = (await call("POST", "/api/v1/teams", { name: "Lock ทีม 2" })).body;
+    for (const [team, players] of [
+      [one, [["DN1_leng0234", "100638445"], ["surtain.", "100928319"], ["Aomyasu", "6910450116"]]],
+      [two, [["Xerneas", "101396639"], ["Pa'nin", "100592259"], ["Äkashiji", "101660446"]]],
+    ] as const) {
+      await call("POST", `/api/v1/tournaments/${tour.id}/entries`, { teamId: team.id });
+      const r = await call("PUT", `/api/v1/tournaments/${tour.id}/entries/${team.id}/roster`, { players: players.map(([name, uid]) => ({ name, uid })), override: true });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+    }
+    let known: string[] = [];
+    imageReader.read = async (_images, _text, ctx) => {
+      known = ctx.teams.flatMap((t) => t.players);
+      return {
+        teamA: "", teamB: "", seriesScoreA: null, seriesScoreB: null,
+        games: [
+          // What the free reader made of Bank's screenshot: ทีม 1 is Ally and lost 12-24.
+          board(["DN1_leng0234", "(ON _/ANaIRIL ERY)", "OT Slyz"], ["erpess", "Pa'nin", "Aliashill"], 12, 24, "LOSE"),
+          // A screenshot of another game from DN1's history.
+          board(["DN1_leng0234", "BlackInwza08", "SIM_Teen"], ["C.Monarch", "HeaVenSent", "Jakkuxz"], 24, 22, "WIN"),
+        ],
+        notes: "",
+      } satisfies Read;
+    };
+    const players = (await call("GET", "/api/v1/players?limit=200")).body.total;
+    // The bracket lists ทีม 2 first.
+    const res = await call("POST", "/api/v1/extract/series", { imageUrls: [await upload(), await upload()], text: "", teamAId: two.id, teamBId: one.id, tournamentId: tour.id });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(known.sort(), ["Aomyasu", "DN1_leng0234", "Pa'nin", "Xerneas", "surtain.", "Äkashiji"], "the reader is only told the two rosters");
+    const d = res.body.draft;
+    const g1 = d.games[0];
+    assert.deepEqual([g1.scoreA, g1.scoreB], [24, 12], "ทีม 2 won game 1, whichever side it was on");
+    const rows = (g: any, side: string) => g.players.filter((x: any) => x.side === side).map((x: any) => `${x.name} (UID ${x.uid})`).sort();
+    assert.deepEqual(rows(g1, "A"), ["Pa'nin (UID 100592259)", "Xerneas (UID 101396639)", "Äkashiji (UID 101660446)"]);
+    assert.deepEqual(rows(g1, "B"), ["Aomyasu (UID 6910450116)", "DN1_leng0234 (UID 100638445)", "surtain. (UID 100928319)"]);
+    assert.ok(d.games.every((g: any) => g.players.every((x: any) => x.playerId)), "every row is a roster player");
+    assert.equal(g1.players.find((x: any) => x.name === "Äkashiji").pts, 3, "stats stay with their row");
+    const w = d.warnings.join("\n");
+    assert.match(w, /^รูปเกม 2 ชื่อผู้เล่นแทบไม่ตรงกับทั้งสองทีม/);
+    assert.doesNotMatch(w, /รูปเกม 1/);
+    assert.doesNotMatch(w, /ผู้เล่นใหม่/);
+    assert.equal((await call("GET", "/api/v1/players?limit=200")).body.total, players, "reading creates nobody");
+  });
+
   test("reader errors are passed through", async () => {
     const { HttpError } = await import("./lib/errors.js");
     imageReader.read = async () => {

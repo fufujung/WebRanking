@@ -4,7 +4,7 @@ import sharp from "sharp";
 import Tesseract from "tesseract.js";
 import { fail } from "./errors.js";
 import type { ExtractedSeries, ReadGame } from "./extract.js";
-import { normaliseName } from "./validate.js";
+import { levenshtein, normaliseName } from "./validate.js";
 
 /**
  * The free image reader: no AI and no API key. It reads the game's MATCH HISTORY
@@ -126,20 +126,6 @@ function findRows(img: Raw, x: number, fromY: number, minHeight: number): Row[] 
     run = side ? { side, y0: y } : null;
   }
   return rows;
-}
-
-function levenshtein(a: string, b: string) {
-  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    let prev = d[0];
-    d[0] = i;
-    for (let j = 1; j <= b.length; j++) {
-      const tmp = d[j];
-      d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
-      prev = tmp;
-    }
-  }
-  return d[b.length];
 }
 
 /** The registered player whose name is closest to what was read, if it is close enough. */

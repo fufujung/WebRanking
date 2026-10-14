@@ -179,7 +179,7 @@ export function MatchForm({ match, tournaments: allTournaments, teams, players, 
       const res = await fetch("/api/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrls: shots, text: postText, teamAId: teamA.id ?? undefined, teamBId: teamB.id ?? undefined }),
+        body: JSON.stringify({ imageUrls: shots, text: postText, teamAId: teamA.id ?? undefined, teamBId: teamB.id ?? undefined, tournamentId: tournamentId || undefined }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.details?.th ?? body.error ?? "อ่านรูปไม่สำเร็จ");

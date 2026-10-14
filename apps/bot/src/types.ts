@@ -6,6 +6,8 @@ export type Award = "MVP" | "SVP";
 export interface DraftPlayer extends Record<StatKey, number> {
   playerId: string | null;
   name: string;
+  /** In-game UID, when the name was taken from the tournament roster. */
+  uid?: string | null;
   side: "A" | "B";
   rating: number | null;
   award: Award | null;
