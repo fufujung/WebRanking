@@ -299,6 +299,12 @@ describe("live bracket", () => {
 
     const again = await ok("POST", `/tournaments/${t.id}/bracket/matches/${semi.id}/result`, { ...series(["A", "B", "A"], { A: "Q1", B: "Q4" }), sourceRef: "discord-msg-1" });
     assert.equal(again.matchId, r1.matchId, "the same post twice is recorded once");
+    // An organizer corrects that series on the website: the form sends the post's ref back, and the change still counts.
+    const fixed = await ok("POST", `/tournaments/${t.id}/bracket/matches/${semi.id}/result`, { ...series(["A", "A"], { A: "Q1", B: "Q4" }), sourceRef: "discord-msg-1", source: "discord", replace: true });
+    assert.deepEqual([fixed.scoreA, fixed.scoreB], [2, 0], "the correction is saved");
+    const after = await ok("GET", `/matches/${r1.matchId}`);
+    assert.equal(after.games.length, 2);
+    assert.equal(after.sourceRef, "discord-msg-1", "the post stays recorded, so the bot won't save it twice");
 
     const final0 = await byCode(t.id, "W2-0");
     assert.equal(final0.teamA.name, "Q1");
