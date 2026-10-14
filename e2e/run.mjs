@@ -284,9 +284,17 @@ step("free reader tried the picture and explained it is not a scoreboard");
 await page.click("button:has-text('ใช้รูปนี้แล้วกรอกเอง')");
 const game = (n) => page.locator(`section[aria-label="เกม ${n}"]`);
 await game(1).waitFor();
+// Both rosters load after the teams are picked; wait for them rather than read a half-filled game.
+const roster1 = [`P01-${uniq}`, `P02-${uniq}`, `P11-${uniq}`, `P12-${uniq}`];
+await page
+  .waitForFunction((want) => {
+    const values = [...document.querySelectorAll('section[aria-label="เกม 1"] input[list]')].map((e) => e.value);
+    return want.every((n) => values.includes(n));
+  }, roster1, { timeout: 15000 })
+  .catch(() => {});
 const names1 = await game(1).locator('input[list]').evaluateAll((els) => els.map((e) => e.value));
 if (names1.length !== 6) throw new Error("expected 3 rows per side, got " + names1.length);
-for (const n of [`P01-${uniq}`, `P02-${uniq}`, `P11-${uniq}`, `P12-${uniq}`]) if (!names1.includes(n)) throw new Error(`roster ${n} not filled: ${names1}`);
+for (const n of roster1) if (!names1.includes(n)) throw new Error(`roster ${n} not filled: ${names1}`);
 if (!(await game(1).locator("img.drop-preview, .drop img").first().isVisible())) throw new Error("game 1 screenshot not attached");
 step("game 1 created from the screenshot with both rosters filled (2 + 1 empty row per side)");
 
