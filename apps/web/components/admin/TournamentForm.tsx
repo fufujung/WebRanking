@@ -31,6 +31,11 @@ export function TournamentForm({ tournament, games }: { tournament?: Tournament;
         <label>วันจบ<input type="date" name="endDate" defaultValue={toDateInput(tournament?.endDate)} /></label>
       </div>
       <label>รายละเอียด<textarea name="description" rows={3} maxLength={2000} defaultValue={tournament?.description ?? ""} /></label>
+      <input type="hidden" name="specialPresent" value="1" />
+      <label className="row" style={{ gap: 6 }}>
+        <input type="checkbox" name="special" defaultChecked={tournament?.special ?? false} />
+        <span>⭐ รายการพิเศษ เล่นเก่งปากเก่ง <span className="muted small">(สถิติและ MMR แยก ไม่รวมกับ Ranking หลัก ดูที่หน้า <a href="/special">เล่นเก่งปากเก่ง</a>)</span></span>
+      </label>
 
       <h3 style={{ margin: "8px 0 0" }}>การจัดสายแข่ง</h3>
       <div className="form-row">

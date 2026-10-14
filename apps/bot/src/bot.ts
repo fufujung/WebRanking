@@ -126,7 +126,7 @@ export class TournamentBot {
     this.pending = new JsonStore(path.join(opts.dataDir, "pending.json"));
     this.pending.prune((p) => Date.now() - p.createdAt < 4 * WEEK);
     this.tour = new TourManager({ api: this.api, dataDir: opts.dataDir, siteUrl: opts.siteUrl, log: this.log, now: opts.now });
-    this.pool = new PoolManager({ dataDir: opts.dataDir, log: this.log, random: opts.random });
+    this.pool = new PoolManager({ api: this.api, dataDir: opts.dataDir, siteUrl: opts.siteUrl, log: this.log, random: opts.random });
     this.blacklist = new BlacklistCommands(this.api, opts.siteUrl);
   }
 

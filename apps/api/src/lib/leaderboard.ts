@@ -30,17 +30,21 @@ const tierInfo = (rating: number) => {
  * Every player with their MMR, tier, series played, last five results (newest first),
  * the change from their latest series, and rank movement over the last week.
  * Players need PLACEMENT_SERIES series to be ranked; the rest are still placing.
+ * special = true gives the same board for the special events' separate rating.
  */
-export async function playerBoard(gameId?: string | null, now = new Date()) {
+export async function playerBoard(gameId?: string | null, now = new Date(), special = false) {
   const since = new Date(now.getTime() - MOVEMENT_DAYS * 86400_000);
-  const [players, changes, blacklisted] = await Promise.all([
+  const [found, changes, blacklisted] = await Promise.all([
     prisma.player.findMany({ where: gameId ? { gameId } : {}, include: { team: teamSummary } }),
     prisma.playerMmrChange.findMany({
+      where: { match: { tournament: { special } } },
       select: { playerId: true, delta: true, result: true, match: { select: { playedAt: true } } },
       orderBy: [{ match: { playedAt: "desc" } }, { match: { createdAt: "desc" } }],
     }),
     prisma.blacklistEntry.findMany({ where: { liftedAt: null }, select: { playerId: true }, distinct: ["playerId"] }),
   ]);
+  // The special board ranks the special rating; everything else about the board works the same.
+  const players = special ? found.map((p) => ({ ...p, mmr: p.specialMmr, peakMmr: p.specialPeakMmr })) : found;
   const banned = new Set(blacklisted.map((b) => b.playerId));
   const empty = () => ({ series: 0, wins: 0, losses: 0, seriesBefore: 0, recentDelta: 0, form: [] as SeriesResult[], lastDelta: null as number | null });
   const info = new Map<string, ReturnType<typeof empty>>();
@@ -82,6 +86,7 @@ export async function teamMovement(gameId?: string | null, now = new Date()) {
   const [teams, matches] = await Promise.all([
     prisma.team.findMany({ where: gameId ? { gameId } : {}, select: { id: true, rating: true } }),
     prisma.match.findMany({
+      where: { tournament: { special: false } },
       select: { teamAId: true, teamBId: true, winnerId: true, ratingDeltaA: true, ratingDeltaB: true, playedAt: true },
       orderBy: [{ playedAt: "desc" }, { createdAt: "desc" }],
     }),

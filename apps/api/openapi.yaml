@@ -34,6 +34,8 @@ tags:
   - name: Teams
   - name: Guilds
   - name: Blacklist
+  - name: Special
+    description: "The special \"เล่นเก่งปากเก่ง\" events: a standing substitutes list and a separate MMR and stats board"
   - name: Players
   - name: Tournaments
   - name: Brackets
@@ -213,6 +215,91 @@ paths:
       summary: Withdraw from a SOLO tournament before the draw (admin)
       responses:
         "200": { description: The sign-up view }
+  /api/v1/members/{discordId}/reserve:
+    parameters: [{ $ref: "#/components/parameters/discordId" }]
+    get:
+      tags: [Members]
+      summary: This member's own sign-up on the "เล่นเก่งปากเก่ง" substitutes list, with their own contact details (admin)
+      responses:
+        "200": { description: "{ data } (null when not signed up)" }
+    post:
+      tags: [Members]
+      summary: Sign up as a substitute for the special "เล่นเก่งปากเก่ง" events, or change the details (admin). Always open.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [playerId, position, facebook]
+              properties:
+                playerId: { type: string, description: One of this member's characters }
+                position: { type: string, enum: [GUARD, FORWARD, CENTER, ALL], description: "GUARD = บอลหลัก, FORWARD = บอลรอง" }
+                facebook: { type: string, maxLength: 200, description: A Facebook name or a facebook.com link (private) }
+                phone: { type: string, nullable: true, maxLength: 20, description: Optional (private) }
+                rank: { type: string, nullable: true, maxLength: 30, description: In-game rank for the Discord random draws }
+      responses:
+        "200": { description: "{ data }: the sign-up" }
+        "400": { description: "Invalid field; details.th says which in Thai" }
+        "403": { description: Not this member's character }
+    delete:
+      tags: [Members]
+      summary: Leave the substitutes list (admin)
+      responses:
+        "204": { description: Removed }
+        "404": { description: Not signed up }
+  /api/v1/special:
+    get:
+      tags: [Special]
+      summary: "The special \"เล่นเก่งปากเก่ง\" board: separate MMR ladder, players still placing, tiers, per-player stats, the special events and the public substitutes list"
+      description: Results of tournaments with special = true move only this rating (specialMmr) and never the main ranking, team ratings or main stats.
+      parameters:
+        - { name: gameId, in: query, schema: { type: string } }
+      responses:
+        "200": { description: "{ ranked, placing, tiers, stats, events, reserve, rules }" }
+  /api/v1/special/reserve:
+    get:
+      tags: [Special]
+      summary: The substitutes list without contact details, oldest sign-up first
+      responses:
+        "200": { description: "{ data: [{ playerId, position, rank, createdAt, player }] }" }
+  /api/v1/special/reserve/private:
+    get:
+      tags: [Special]
+      summary: The substitutes list with Facebook, phone and Discord account (admin)
+      responses:
+        "200": { description: "{ data }" }
+  /api/v1/special/reserve/{playerId}:
+    parameters:
+      - { name: playerId, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Special]
+      summary: Fix a substitute's position, rank, Facebook or phone (admin)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                position: { type: string, nullable: true, enum: [GUARD, FORWARD, CENTER, ALL] }
+                rank: { type: string, nullable: true }
+                facebook: { type: string, nullable: true }
+                phone: { type: string, nullable: true }
+      responses:
+        "200": { description: The sign-up }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Special]
+      summary: Take a substitute off the list (admin)
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/special/reserve/import:
+    post:
+      tags: [Special]
+      summary: Carry the Discord bot's old list over, linking each person to their character by UID (admin)
+      responses:
+        "200": { description: "{ added, skipped[] }" }
   /api/v1/members/{discordId}/guild/{action}:
     parameters:
       - { $ref: "#/components/parameters/discordId" }
@@ -1364,6 +1451,7 @@ components:
         grandFinalReset: { type: boolean, default: true, description: "Double elimination: a second final if the losers-bracket team wins the first" }
         entryMode: { type: string, enum: [TEAM, SOLO], default: TEAM, description: "SOLO = players sign up alone and are drawn into teams" }
         teamSize: { type: integer, default: 3, description: Players per drawn team (SOLO) }
+        special: { type: boolean, default: false, description: "A special \"เล่นเก่งปากเก่ง\" event: results move only the separate special MMR and stats" }
     RosterInput:
       type: object
       required: [players]

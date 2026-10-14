@@ -12,6 +12,7 @@ import { recomputeRatings } from "../lib/elo.js";
 import { gameIdOrNull } from "../lib/games.js";
 import { playerBoard, tierInfo } from "../lib/leaderboard.js";
 import { PLACEMENT_SERIES } from "../lib/mmr.js";
+import { specialSummary } from "../lib/special.js";
 import { claimByUid, claimInput, discordId, playersOfDiscord, unlinkDiscord } from "../lib/members.js";
 
 export const players = Router();
@@ -75,7 +76,7 @@ async function playerDetail(id: string) {
   if (!player) throw notFound("Player");
   const [lines, history, board] = await Promise.all([
     prisma.matchPlayerStat.findMany({
-      where: { playerId: player.id },
+      where: { playerId: player.id, match: { tournament: { special: false } } },
       select: {
         ...statLineSelect,
         game: { select: { number: true, scoreA: true, scoreB: true } },
@@ -85,12 +86,13 @@ async function playerDetail(id: string) {
       orderBy: [{ match: { playedAt: "desc" } }, { match: { createdAt: "desc" } }, { game: { number: "asc" } }],
     }),
     prisma.playerMmrChange.findMany({
-      where: { playerId: player.id },
+      where: { playerId: player.id, match: { tournament: { special: false } } },
       select: { before: true, delta: true, result: true, match: { include: matchInclude } },
       orderBy: [{ match: { playedAt: "asc" } }, { match: { createdAt: "asc" } }],
     }),
     playerBoard(player.gameId),
   ]);
+  const special = await specialSummary(player.id);
   const blacklist = await blacklistOf(player.id);
   const onBoard = board.ranked.find((p) => p.id === player.id);
   return {
@@ -103,6 +105,8 @@ async function playerDetail(id: string) {
     rankedPlayers: board.ranked.length,
     rankChange: onBoard?.rankChange ?? null,
     blacklist,
+    /** The separate "เล่นเก่งปากเก่ง" record, null when the player never played a special event. */
+    special,
     /** Oldest first, one point per series. */
     mmrHistory: history.map(({ match, before, delta, result }) => ({ match, before, delta, after: before + delta, result })),
     stats: statsByPlayer(lines).get(player.id) ?? emptyPlayerStats(),

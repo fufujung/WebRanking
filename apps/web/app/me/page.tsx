@@ -2,12 +2,12 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { getMember } from "@/lib/member";
 import { discordEnabled } from "@/lib/discord";
-import type { MyCharacter } from "@/lib/types";
+import type { MyCharacter, ReservePlayer } from "@/lib/types";
 import { siteOrigin } from "@/lib/site";
 import { allGames } from "@/lib/games";
 import { Avatar } from "@/components/ui";
 import { TierBadge } from "@/components/Tier";
-import { ClaimForm, EditMyPlayer } from "./MeForms";
+import { ClaimForm, EditMyPlayer, ReserveForm } from "./MeForms";
 import { TeamPanel } from "./TeamPanel";
 import { GuildPanel } from "./GuildPanel";
 import { memberLogout } from "./actions";
@@ -58,7 +58,12 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
     );
   }
 
-  const [{ data: mine }, games, origin] = await Promise.all([api<{ data: MyCharacter[] }>(`/members/${me.id}`), allGames(), siteOrigin()]);
+  const [{ data: mine }, games, origin, { data: reserve }] = await Promise.all([
+    api<{ data: MyCharacter[] }>(`/members/${me.id}`),
+    allGames(),
+    siteOrigin(),
+    api<{ data: ReservePlayer | null }>(`/members/${me.id}/reserve`),
+  ]);
   return (
     <>
       <div className="page-head">
@@ -100,6 +105,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
           ))}
         </section>
       )}
+      {mine.length > 0 && <ReserveForm characters={mine} current={reserve} />}
       <ClaimForm first={mine.length === 0} games={games} />
       <p className="muted small mt">ชื่อในเกม ทีม และสถิติ อัปเดตจากผลการแข่งและบอท Discord อัตโนมัติ ถ้าข้อมูลผิด แจ้งผู้จัดได้เลย</p>
     </>

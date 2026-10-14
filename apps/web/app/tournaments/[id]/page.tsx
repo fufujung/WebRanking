@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiOrNull } from "@/lib/api";
 import type { Bracket, TournamentDetail } from "@/lib/types";
@@ -16,7 +17,10 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
     <>
       <div className="page-head">
         <div>
-          <div className="row" style={{ marginBottom: 8 }}><StatusBadge status={t.status} /></div>
+          <div className="row" style={{ marginBottom: 8 }}>
+            <StatusBadge status={t.status} />
+            {t.special && <Link href="/special" className="badge badge-accent" title="สถิติและ MMR แยกจาก Ranking หลัก">⭐ รายการพิเศษ เล่นเก่งปากเก่ง</Link>}
+          </div>
           <h1>{t.name}</h1>
           <span className="muted">
             {[t.game, t.location, `${t.format ? fmtThaiTime(t.startDate) : fmtDate(t.startDate)}${t.endDate ? ` – ${fmtDate(t.endDate)}` : ""}`].filter(Boolean).join(" · ")}

@@ -94,6 +94,8 @@ tournaments.patch("/:id", requireAdmin, async (req, res) => {
     return tx.tournament.update({ where: { id: existing.id }, data: input });
   });
   await adoptGame(updated.id);
+  // Moving an event in or out of the special list moves its results between the two ratings.
+  if (input.special !== undefined && input.special !== existing.special) await recomputeRatings();
   res.json(updated);
 });
 

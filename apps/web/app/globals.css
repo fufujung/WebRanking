@@ -771,3 +771,19 @@ h4 { font-size: 15px; font-weight: 700; }
 .blacklist-banner { border: 1px solid var(--danger-border); background: var(--accent-soft); border-radius: 12px; padding: 14px 16px; margin: 16px 0; }
 .blacklist-banner ul { margin: 8px 0 0; padding-left: 20px; }
 .blacklist-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--accent-ink); background: var(--accent); white-space: nowrap; }
+
+/* The special "เล่นเก่งปากเก่ง" events */
+.special-jump { flex-wrap: wrap; gap: 8px; }
+.special-card { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; color: inherit; border-color: color-mix(in srgb, var(--tier) 40%, var(--border)); }
+.special-card:hover { border-color: var(--tier); }
+.special-card-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; color: var(--muted); }
+.special-card-facts strong { color: var(--text); }
+.reserve-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.reserve-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.reserve-list .entity { min-width: 0; }
+.reserve-edit { width: 100%; min-width: 220px; margin-top: 8px; text-align: left; }
+@media (max-width: 640px) {
+  .special-card { flex-wrap: wrap; }
+}
+.reserve-list li > .muted { white-space: nowrap; }
+.special-card > .grow { flex: 1; min-width: 0; }

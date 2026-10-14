@@ -4,6 +4,7 @@ import { discordId } from "../lib/members.js";
 import { notFound } from "../lib/errors.js";
 import { leaveSolo, signUp } from "../lib/solo.js";
 import { setOwnPosition } from "../lib/players.js";
+import { joinReserve, leaveReserve, myReserve } from "../lib/special.js";
 import { acceptInvite, cancelInvite, createGuild, declineInvite, editGuild, inviteToGuild, kickFromGuild, leaveGuild, passLeader } from "../lib/guilds.js";
 import { createTeam, inviteInfo, joinTeam, kickMember, leaveTeam, makeCaptain, memberView, resetInvite } from "../lib/teamSelf.js";
 
@@ -52,6 +53,18 @@ members.post("/:discordId/solo/:tournamentId", async (req, res) => {
 });
 members.delete("/:discordId/solo/:tournamentId", async (req, res) => {
   res.json(await leaveSolo(who(req.params.discordId), String(req.params.tournamentId)));
+});
+
+/** The standing "เล่นเก่งปากเก่ง" substitutes list: the member's own sign-up (with their own contact details), join or edit, and leave. */
+members.get("/:discordId/reserve", async (req, res) => {
+  res.json({ data: await myReserve(who(req.params.discordId)) });
+});
+members.post("/:discordId/reserve", async (req, res) => {
+  res.json({ data: await joinReserve(who(req.params.discordId), req.body) });
+});
+members.delete("/:discordId/reserve", async (req, res) => {
+  await leaveReserve(who(req.params.discordId));
+  res.status(204).end();
 });
 
 /** Guilds: anyone starts one; the leader invites by UID, edits, kicks and hands over; invited players accept or decline. */

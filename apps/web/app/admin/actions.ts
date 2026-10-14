@@ -146,7 +146,7 @@ function bracketSettings(form: FormData) {
   if (form.has("entryMode")) out.entryMode = text(form, "entryMode") === "SOLO" ? "SOLO" : "TEAM";
   if (n("teamSize") !== undefined) out.teamSize = n("teamSize");
   // Checkboxes: a hidden "present" marker tells unchecked apart from locked.
-  for (const k of ["registrationOpen", "thirdPlaceMatch", "grandFinalReset"]) if (form.has(`${k}Present`)) out[k] = form.get(k) === "on";
+  for (const k of ["registrationOpen", "thirdPlaceMatch", "grandFinalReset", "special"]) if (form.has(`${k}Present`)) out[k] = form.get(k) === "on";
   return out;
 }
 
@@ -423,6 +423,30 @@ export async function changeBlacklist(id: string, change: "lift" | "restore" | "
   if (result) return result;
   revalidatePath("/", "layout");
   return { ok: change === "lift" ? "ยกเลิกโทษแล้ว คืน MMR ให้แล้ว" : change === "restore" ? "ใส่โทษกลับแล้ว" : "ลบแล้ว" };
+}
+
+// The "เล่นเก่งปากเก่ง" substitutes list
+export async function saveReserve(playerId: string, _: FormState, form: FormData): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/special/reserve/${encodeURIComponent(playerId)}`, {
+      method: "PATCH",
+      json: { position: orNull(text(form, "position")), rank: orNull(text(form, "rank")), facebook: orNull(text(form, "facebook")), phone: orNull(text(form, "phone")) },
+    });
+  });
+  if (result) return result;
+  revalidatePath("/admin/reserve");
+  revalidatePath("/special");
+  return { ok: "บันทึกแล้ว" };
+}
+
+export async function removeReserve(playerId: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/special/reserve/${encodeURIComponent(playerId)}`, { method: "DELETE" });
+  });
+  if (result) return result;
+  revalidatePath("/admin/reserve");
+  revalidatePath("/special");
+  return { ok: "เอาออกจากรายชื่อแล้ว" };
 }
 
 // Deletes

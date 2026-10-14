@@ -1,9 +1,9 @@
 "use client";
 
 import { startTransition, useActionState, useState } from "react";
-import { claimPlayer, unlinkMyPlayer, updateMyPlayer, type MeState } from "./actions";
+import { claimPlayer, leaveMyReserve, saveMyReserve, unlinkMyPlayer, updateMyPlayer, type MeState } from "./actions";
 import { ImageDrop } from "@/components/ImageDrop";
-import type { Game, Player } from "@/lib/types";
+import type { Game, Player, ReservePlayer } from "@/lib/types";
 import { PositionSelect } from "@/components/PositionSelect";
 
 function useSubmit(action: (s: MeState, f: FormData) => Promise<MeState>) {
@@ -81,6 +81,53 @@ export function EditMyPlayer({ player }: { player: Player }) {
         >
           ยกเลิกการผูก
         </button>
+      </div>
+    </form>
+  );
+}
+
+/** Sign up as a substitute for the special "เล่นเก่งปากเก่ง" events, or change the details. */
+export function ReserveForm({ characters, current }: { characters: Pick<Player, "id" | "name" | "uid">[]; current: ReservePlayer | null }) {
+  const [state, onSubmit, pending] = useSubmit(saveMyReserve);
+  const [left, setLeft] = useState<MeState>();
+  const [leaving, setLeaving] = useState(false);
+  const leave = async () => {
+    if (!confirm("ถอนชื่อออกจากรายชื่อตัวสำรอง?")) return;
+    setLeaving(true);
+    setLeft(await leaveMyReserve());
+    setLeaving(false);
+  };
+  return (
+    <form onSubmit={onSubmit} className="form card" id="reserve" style={{ marginBottom: 24 }}>
+      <div>
+        <h2 style={{ margin: 0 }}>⭐ ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง</h2>
+        <p className="muted small" style={{ margin: 0 }}>
+          เปิดรับตลอด ใช้ได้ทุกงาน ผู้จัดจะสุ่มคนจากรายชื่อนี้ไปช่วยแข่ง สถิติและ MMR ของรายการนี้แยกจากรายการหลัก
+          Facebook และเบอร์โทรเห็นเฉพาะผู้จัด
+        </p>
+      </div>
+      {current && (
+        <div className="notice small">
+          ลงชื่อไว้แล้วด้วย <strong>{current.player.nickname || current.player.name}</strong>
+          {current.rank ? ` · แรงค์${current.rank}` : " · ยังไม่เลือกแรงค์ (เลือกได้ในห้องลงชื่อ Discord)"}
+        </div>
+      )}
+      <div className="form-row">
+        <label>
+          ตัวละคร *
+          <select name="playerId" required defaultValue={current?.playerId ?? characters[0]?.id}>
+            {characters.map((c) => <option key={c.id} value={c.id}>{c.name}{c.uid ? ` (UID ${c.uid})` : ""}</option>)}
+          </select>
+        </label>
+        <PositionSelect value={current?.position} name="position" />
+        <label>Facebook *<input name="facebook" required minLength={2} maxLength={200} defaultValue={current?.facebook ?? ""} placeholder="ชื่อ Facebook หรือลิงก์ facebook.com" /></label>
+        <label>เบอร์โทร (ไม่ใส่ก็ได้)<input name="phone" maxLength={20} inputMode="tel" defaultValue={current?.phone ?? ""} placeholder="เช่น 0812345678" /></label>
+      </div>
+      {(state?.error || left?.error) && <div className="error">{state?.error ?? left?.error}</div>}
+      {(state?.ok || left?.ok) && <div className="success">{left?.ok ?? state?.ok}</div>}
+      <div className="row">
+        <button className="btn btn-primary" disabled={pending}>{pending ? "กำลังบันทึก…" : current ? "บันทึกการแก้ไข" : "ลงชื่อตัวสำรอง"}</button>
+        {current && <button type="button" className="btn" disabled={leaving} onClick={leave}>ถอนชื่อ</button>}
       </div>
     </form>
   );

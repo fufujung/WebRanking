@@ -71,6 +71,9 @@ model Player {
   discordId String? // Discord account that logged in on the website as this player (one account may play several characters)
   mmr       Int      @default(1000) // personal rating, replayed from every series the player appeared in
   peakMmr   Int      @default(1000)
+  /// The separate rating of the special "เล่นเก่งปากเก่ง" events (tournaments with special = true).
+  specialMmr     Int @default(1000)
+  specialPeakMmr Int @default(1000)
   gameId    String? // the game this character plays; MMR and ranks are per game
   guildId   String? // the guild (club) this character belongs to, separate from the team it plays for
   createdAt DateTime @default(now())
@@ -86,6 +89,7 @@ model Player {
   names        PlayerName[]
   mmrLog       PlayerMmrChange[]
   blacklist    BlacklistEntry[]
+  reserve      ReservePlayer?
 
   @@index([teamId])
   @@index([uid])
@@ -151,6 +155,8 @@ model Tournament {
 
   /// TEAM = teams sign up; SOLO = players sign up alone and the organizer draws them into teams.
   entryMode String @default("TEAM")
+  /// A special "เล่นเก่งปากเก่ง" event: its results move the separate special MMR and stats, never the main ranking.
+  special   Boolean @default(false)
   /// Players per drawn team (SOLO).
   teamSize  Int    @default(3)
 
@@ -194,6 +200,22 @@ model SoloSignup {
   player     Player     @relation(fields: [playerId], references: [id], onDelete: Cascade)
 
   @@unique([tournamentId, playerId])
+}
+
+/// A standing substitute for the special "เล่นเก่งปากเก่ง" events. The list is always open and serves every event.
+/// Facebook and phone are private: only admins and organizers see them.
+model ReservePlayer {
+  id        String   @id @default(cuid())
+  playerId  String   @unique
+  discordId String?  @unique // one sign-up per Discord account
+  position  String? // GUARD | FORWARD | CENTER | ALL; null only for sign-ups carried over from the old Discord list
+  rank      String? // in-game rank, used by the random draws in Discord
+  facebook  String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
 }
 
 /// A player registered to play for a team in one tournament.

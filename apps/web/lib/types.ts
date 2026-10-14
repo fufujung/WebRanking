@@ -132,6 +132,8 @@ export interface Tournament {
   /** TEAM: teams sign up. SOLO: players sign up alone and are drawn into teams. */
   entryMode?: "TEAM" | "SOLO";
   teamSize?: number;
+  /** A special "เล่นเก่งปากเก่ง" event: results move only the separate special MMR and stats. */
+  special?: boolean;
   location: string | null;
   description: string | null;
   status: Status;
@@ -332,6 +334,8 @@ export interface PlayerDetail extends Player {
   /** Oldest first, one point per series. */
   mmrHistory: { match: Match; before: number; delta: number; after: number; result: SeriesResult }[];
   stats: PlayerStats;
+  /** The separate "เล่นเก่งปากเก่ง" record; null when the player never played a special event. */
+  special?: SpecialSummary | null;
   recentGames: ({ match: Match; game: { number: number; scoreA: number; scoreB: number }; team: TeamSummary; rating: number | null; award: Award | null } & Record<StatKey, number>)[];
 }
 
@@ -558,4 +562,42 @@ export interface SoloView {
 export interface SoloDraw {
   teams: { players: SoloSignup[]; rankTotal: number; mmrAverage: number; positionsOk: boolean }[];
   reserves: SoloSignup[];
+}
+
+/** A player's record in the special "เล่นเก่งปากเก่ง" events, kept apart from the main ranking. */
+export interface SpecialSummary {
+  mmr: number;
+  peakMmr: number;
+  tier: Tier;
+  tierProgress: number;
+  toNextTier: number;
+  series: number;
+  placed: boolean;
+  rank: number | null;
+  rankedPlayers: number;
+  stats: PlayerStats;
+}
+
+/** One person on the always-open substitutes list. Facebook, phone and Discord only come with the admin list. */
+export interface ReservePlayer {
+  id: string;
+  playerId: string;
+  position: SoloPosition | null;
+  rank: string | null;
+  createdAt: string;
+  updatedAt: string;
+  player: { id: string; name: string; nickname: string | null; avatarUrl: string | null; uid: string | null; server: string | null; role: string | null; specialMmr: number; team: TeamSummary | null };
+  facebook?: string | null;
+  phone?: string | null;
+  discordId?: string | null;
+}
+
+export interface SpecialBoard {
+  ranked: LadderPlayer[];
+  placing: MmrLadder["placing"];
+  tiers: MmrLadder["tiers"];
+  stats: (Player & { rank: number; mmr: number; tier: Tier; stats: PlayerStats })[];
+  events: { id: string; name: string; status: Status; startDate: string; matches: number }[];
+  reserve: ReservePlayer[];
+  rules: MmrLadder["rules"];
 }
