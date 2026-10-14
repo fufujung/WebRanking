@@ -3,8 +3,8 @@ import type { SoloPosition } from "./types";
 export const POSITIONS: SoloPosition[] = ["GUARD", "FORWARD", "CENTER", "ALL"];
 
 export const positionLabel: Record<SoloPosition, string> = {
-  GUARD: "Guard (การ์ด)",
-  FORWARD: "Forward (ฟอร์เวิร์ด)",
+  GUARD: "Guard (การ์ด บอลหลัก)",
+  FORWARD: "Forward (ฟอร์เวิร์ด บอลรอง)",
   CENTER: "Center (เซ็นเตอร์)",
   ALL: "All Around (ได้ทุกตำแหน่ง)",
 };
