@@ -1062,6 +1062,7 @@ paths:
                 text: { type: string, description: 'The post text, e.g. "WD 2-0 Pai Nai"' }
                 teamAId: { type: string }
                 teamBId: { type: string }
+                tournamentId: { type: string, description: "With teamAId and teamBId: players are only taken from these two teams' rosters in this tournament (no new names); each draft player then carries its uid" }
       responses:
         "200": { description: "{ raw, draft }" }
         "503": { description: Image reading not configured }

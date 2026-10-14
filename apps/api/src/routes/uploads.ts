@@ -5,7 +5,7 @@ import { HttpError, notFound } from "../lib/errors.js";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { imageUpload, mediaTypeOf, uploadedFilePath } from "../lib/uploads.js";
 import { imageReader } from "../lib/extract.js";
-import { buildDraft } from "../lib/draft.js";
+import { buildDraft, type RosterName } from "../lib/draft.js";
 
 export const uploads = Router();
 
@@ -31,6 +31,7 @@ uploads.post("/extract/series", requireAdmin, async (req, res) => {
       text: z.string().max(2000).default(""),
       teamAId: z.string().optional(),
       teamBId: z.string().optional(),
+      tournamentId: z.string().optional(),
     })
     .parse(req.body);
   const images = input.imageUrls.map((url) => {
@@ -39,12 +40,29 @@ uploads.post("/extract/series", requireAdmin, async (req, res) => {
     if (!file || !mediaType) throw notFound("Uploaded image");
     return { file, mediaType };
   });
-  const teams = await prisma.team.findMany({
-    select: { name: true, players: { select: { name: true } } },
-    orderBy: { rating: "desc" },
-  });
-  const read = await imageReader.read(images, input.text, {
-    teams: teams.map((t) => ({ name: t.name, players: t.players.map((p) => p.name) })),
-  });
-  res.json({ raw: read, draft: await buildDraft(read, input.text, input.imageUrls, input) });
+  // A bracket match: the names may only come from the two teams' tournament rosters.
+  const rosters = input.teamAId && input.teamBId ? { A: await rosterOf(input.teamAId, input.tournamentId), B: await rosterOf(input.teamBId, input.tournamentId) } : undefined;
+  const teams = rosters
+    ? [rosters.A, rosters.B].map((r) => ({ name: "", players: r.map((p) => p.name) }))
+    : (await prisma.team.findMany({ select: { name: true, players: { select: { name: true } } }, orderBy: { rating: "desc" } })).map((t) => ({
+        name: t.name,
+        players: t.players.map((p) => p.name),
+      }));
+  const read = await imageReader.read(images, input.text, { teams });
+  res.json({ raw: read, draft: await buildDraft(read, input.text, input.imageUrls, { ...input, rosters }) });
 });
+
+/**
+ * The players a team is registered with in a tournament (that tournament's entry, else the
+ * team's latest), with their UIDs; a team with no roster falls back to its own members.
+ */
+async function rosterOf(teamId: string, tournamentId?: string): Promise<RosterName[]> {
+  const entry = await prisma.tournamentEntry.findFirst({
+    where: { teamId, ...(tournamentId ? { tournamentId } : {}) },
+    orderBy: { createdAt: "desc" },
+    select: { roster: { orderBy: { order: "asc" }, select: { uid: true, player: { select: { id: true, name: true, uid: true } } } } },
+  });
+  if (entry?.roster.length) return entry.roster.map((r) => ({ playerId: r.player.id, name: r.player.name, uid: r.uid ?? r.player.uid }));
+  const members = await prisma.player.findMany({ where: { teamId }, select: { id: true, name: true, uid: true } });
+  return members.map((p) => ({ playerId: p.id, name: p.name, uid: p.uid }));
+}

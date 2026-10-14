@@ -182,7 +182,7 @@ export class TournamentBot {
     }
     const reacting = message.react("👀").catch(() => null);
     try {
-      const teams = slot ? { teamAId: slot.teamA!.id, teamBId: slot.teamB!.id } : undefined;
+      const teams = slot && bracket ? { teamAId: slot.teamA!.id, teamBId: slot.teamB!.id, tournamentId: bracket.tournamentId } : undefined;
       let draft: Draft | null;
       let imageUrl: string | null = null;
       try {

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allySides, parseResultText } from "./lib/draft.js";
+import { allySides, assignRoster, parseResultText } from "./lib/draft.js";
+import { nameDistance } from "./lib/validate.js";
 import { announcementFor } from "./lib/announce.js";
 
 test("reads teams and series score from a post", () => {
@@ -58,4 +59,13 @@ test("the announcement shows the series, games, MVPs and rating changes", () => 
   assert.match(embed.description, /Cup · Final/);
   assert.match(embed.fields[0].value, /เกม 1: \*\*26 - 13\*\* · MVP NinOverlord/);
   assert.match(embed.fields[1].value, /WD 1016 \(\+16\)\nLate 984 \(-16\)/);
+});
+
+test("misread names go to the most alike roster players, one each", () => {
+  const roster = ["Xerneas", "Pa'nin", "Äkashiji"].map((name, i) => ({ playerId: `p${i}`, name, uid: null }));
+  assert.deepEqual(assignRoster(["erpess", "Pa'nin", "Aliashill"], roster).picks, [0, 1, 2]);
+  assert.deepEqual(assignRoster(["Aliashill", "Xernea5"], roster).picks, [2, 0], "fewer rows than players");
+  assert.deepEqual(assignRoster(["a", "b", "c", "d"], roster).picks.filter((k) => k < 0).length, 1, "a row beyond the roster stays unmatched");
+  assert.ok(nameDistance("OT_Aomyasu", "Aomyasu") <= 0.1, "a guild tag in front is the same player");
+  assert.equal(nameDistance("", "x"), 1);
 });

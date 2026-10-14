@@ -74,7 +74,7 @@ export async function readPost(
   api: Api,
   post: { content: string; attachments: Attachment[] },
   download: Download = downloadWithFetch,
-  teams?: { teamAId: string; teamBId: string },
+  teams?: { teamAId: string; teamBId: string; tournamentId?: string },
 ): Promise<Draft | null> {
   const images = imageAttachments(post.attachments);
   if (!images.length) return null;

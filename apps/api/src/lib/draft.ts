@@ -1,5 +1,5 @@
 import { prisma } from "./db.js";
-import { normaliseName } from "./validate.js";
+import { nameDistance, normaliseName } from "./validate.js";
 import type { ExtractedSeries, ReadGame } from "./extract.js";
 
 /**
@@ -9,6 +9,8 @@ import type { ExtractedSeries, ReadGame } from "./extract.js";
 export interface DraftPlayer {
   playerId: string | null;
   name: string;
+  /** In-game UID from the tournament roster, when the player was taken from it. */
+  uid: string | null;
   side: "A" | "B";
   pts: number;
   reb: number;
@@ -97,8 +99,59 @@ export function allySides(
   return { sides: best.sides, confident: same || a.score !== b.score };
 }
 
+/** A player on a team's tournament roster: the only names a bracket match result may use. */
+export interface RosterName {
+  playerId: string;
+  name: string;
+  uid: string | null;
+}
+
+/**
+ * Gives each name read off the scoreboard a different player of the roster, the pairing
+ * whose names are most alike overall. Rows beyond the roster's size get -1.
+ */
+export function assignRoster(read: string[], roster: RosterName[]): { picks: number[]; cost: number } {
+  const dist = read.map((r) => roster.map((p) => nameDistance(r, p.name)));
+  let best = { picks: read.map(() => -1), cost: Infinity };
+  const used = new Array<boolean>(roster.length).fill(false);
+  const picks: number[] = [];
+  const walk = (i: number, cost: number) => {
+    if (cost >= best.cost) return;
+    if (i === read.length) {
+      best = { picks: [...picks], cost };
+      return;
+    }
+    let placed = false;
+    for (let k = 0; k < roster.length; k++) {
+      if (used[k]) continue;
+      placed = true;
+      used[k] = true;
+      picks.push(k);
+      walk(i + 1, cost + dist[i][k]);
+      picks.pop();
+      used[k] = false;
+    }
+    // More rows than players on the roster: this row stays unmatched.
+    if (!placed || read.length - i > roster.length - used.filter(Boolean).length) {
+      picks.push(-1);
+      walk(i + 1, cost + 1);
+      picks.pop();
+    }
+  };
+  walk(0, 0);
+  return best;
+}
+
+/** Above this, a row's name is too unlike the roster player it was given to pass without a look. */
+const DOUBTFUL = 0.5;
+
 /** Matches the read result against the database and returns a reviewable draft. */
-export async function buildDraft(read: ExtractedSeries, text: string, imageUrls: string[], hint: { teamAId?: string; teamBId?: string } = {}): Promise<Draft> {
+export async function buildDraft(
+  read: ExtractedSeries,
+  text: string,
+  imageUrls: string[],
+  hint: { teamAId?: string; teamBId?: string; rosters?: { A: RosterName[]; B: RosterName[] } } = {},
+): Promise<Draft> {
   const warnings: string[] = [];
   const parsed = parseResultText(text);
   const [teams, players] = await Promise.all([
@@ -131,7 +184,22 @@ export async function buildDraft(read: ExtractedSeries, text: string, imageUrls:
   const roster = (teamId?: string) =>
     new Set(players.filter((p) => teamId && p.teamId === teamId).flatMap((p) => [p.name, p.nickname].filter((n): n is string => Boolean(n)).map(normaliseName)));
   const series = parsed ? { scoreA: parsed.scoreA, scoreB: parsed.scoreB } : read.seriesScoreA !== null && read.seriesScoreB !== null ? { scoreA: read.seriesScoreA, scoreB: read.seriesScoreB } : null;
-  const { sides, confident } = allySides(read.games, roster(teamA?.id), roster(teamB?.id), series);
+  const rosterOf = (side: Side) => hint.rosters?.[side] ?? [];
+  // In a bracket match the two rosters are known: every row is one of those players, never a new name.
+  const locked = Boolean(teamA && teamB && rosterOf("A").length && rosterOf("B").length);
+  const rowNames = (g: ReadGame, s: "ally" | "rival") => g.players.filter((p) => p.side === s).map((p) => p.name);
+  const fit = (g: ReadGame, allySide: Side) =>
+    assignRoster(rowNames(g, "ally"), rosterOf(allySide)).cost + assignRoster(rowNames(g, "rival"), rosterOf(flip(allySide))).cost;
+  let { sides, confident } = allySides(read.games, roster(teamA?.id), roster(teamB?.id), series);
+  if (locked) {
+    // The side whose rows read most like a team's roster is that team; a near tie keeps the other evidence.
+    sides = read.games.map((g, i) => {
+      const asA = fit(g, "A");
+      const asB = fit(g, "B");
+      return Math.abs(asA - asB) < 0.3 ? sides[i] : asA < asB ? "A" : "B";
+    });
+    confident = read.games.every((g) => Math.abs(fit(g, "A") - fit(g, "B")) >= 0.3) || confident;
+  }
   if (read.games.length > 1 && !confident) warnings.push("ไม่แน่ใจว่าทีมไหนเป็นฝั่ง Ally ในแต่ละเกม กรุณาตรวจฝั่งทีม");
 
   let unreadable = false;
@@ -140,11 +208,51 @@ export async function buildDraft(read: ExtractedSeries, text: string, imageUrls:
     return n ?? 0;
   };
   const newPlayers = new Set<string>();
+  const doubtful: string[] = [];
+  const wrongGames: number[] = [];
   const games = read.games.map((g, i) => {
     const allySide = sides[i];
     const teamIdOf = (side: Side) => (side === "A" ? teamA?.id : teamB?.id);
-    const gamePlayers = g.players.map((p): DraftPlayer => {
+    // Locked to the rosters: which roster player each row is.
+    const chosen = new Map<ReadGame["players"][number], RosterName | null>();
+    let strangers = 0;
+    if (locked) {
+      for (const s of ["ally", "rival"] as const) {
+        const rows = g.players.filter((p) => p.side === s);
+        const team = rosterOf(s === "ally" ? allySide : flip(allySide));
+        const { picks } = assignRoster(rows.map((p) => p.name), team);
+        rows.forEach((p, k) => {
+          if (picks[k] >= 0 && nameDistance(p.name, team[picks[k]].name) > DOUBTFUL) strangers++;
+          const who = picks[k] >= 0 ? team[picks[k]] : null;
+          chosen.set(p, who);
+          if (!who) doubtful.push(`เกม ${i + 1}: แถว "${p.name}" เกินจำนวนคนในรายชื่อทีม ไม่ได้ใส่`);
+          else if (nameDistance(p.name, who.name) > DOUBTFUL) doubtful.push(`เกม ${i + 1}: อ่านได้ "${p.name}" ใส่เป็น ${who.name}${who.uid ? ` (UID ${who.uid})` : ""}`);
+        });
+      }
+    }
+    // Most names unlike both rosters: likely a screenshot of another game.
+    if (locked && strangers * 2 > g.players.length) wrongGames.push(i + 1);
+    // Locked: a row no roster player is left for is dropped rather than saved as a new name.
+    const rows = locked ? g.players.filter((p) => chosen.get(p)) : g.players;
+    const gamePlayers = rows.map((p): DraftPlayer => {
       const side = p.side === "ally" ? allySide : flip(allySide);
+      if (locked) {
+        const who = chosen.get(p)!;
+        return {
+          playerId: who.playerId,
+          name: who.name,
+          uid: who.uid,
+          side,
+          pts: num(p.pts),
+          reb: num(p.reb),
+          blk: num(p.blk),
+          stl: num(p.stl),
+          ast: num(p.ast),
+          lbr: num(p.lbr),
+          rating: p.rating,
+          award: p.award,
+        };
+      }
       const key = normaliseName(p.name);
       const same = (x: (typeof players)[number]) => normaliseName(x.name) === key || (x.nickname !== null && normaliseName(x.nickname) === key);
       // A name the player used before a rename still finds them.
@@ -156,6 +264,7 @@ export async function buildDraft(read: ExtractedSeries, text: string, imageUrls:
       return {
         playerId: found?.id ?? null,
         name: found?.name ?? p.name,
+        uid: null,
         side,
         pts: num(p.pts),
         reb: num(p.reb),
@@ -184,6 +293,8 @@ export async function buildDraft(read: ExtractedSeries, text: string, imageUrls:
     };
   });
   if (unreadable) warnings.push("มีตัวเลขบางช่องที่อ่านไม่ออก ใส่เป็น 0 ไว้ กรุณาตรวจ");
+  if (wrongGames.length) warnings.unshift(`รูปเกม ${wrongGames.join(", ")} ชื่อผู้เล่นแทบไม่ตรงกับทั้งสองทีม อาจเป็นรูปของเกมอื่น ตรวจหรือลบเกมนั้นก่อนบันทึก`);
+  if (doubtful.length) warnings.push(`ชื่อในรูปไม่ชัด ใช้ชื่อจากรายชื่อทีมแทน กรุณาตรวจ: ${doubtful.join(" · ")}`);
   if (newPlayers.size) warnings.push(`ผู้เล่นใหม่ (จะสร้างให้ตอนบันทึก): ${[...newPlayers].join(", ")}`);
   if (!read.games.length) warnings.push("ไม่พบสกอร์บอร์ดในรูป");
 

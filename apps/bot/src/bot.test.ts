@@ -607,6 +607,16 @@ describe("formatting", () => {
     for (const f of e.fields!.filter((f) => f.value.startsWith("```"))) assert.ok(f.value.endsWith("```"), "code blocks stay closed");
   });
 
+  test("players taken from the tournament rosters are listed by name and UID", () => {
+    const row = (name: string, uid: string | null, side: "A" | "B") => ({ playerId: name, name, uid, side, rating: null, award: null, pts: 1, reb: 0, blk: 0, stl: 0, ast: 0, lbr: 0 });
+    const e = previewEmbed(
+      { teamAId: "a", teamAName: "ทีม 2", teamBId: "b", teamBName: "ทีม 1", scoreA: 1, scoreB: 0, games: [{ scoreA: 24, scoreB: 12, imageUrl: null, players: [row("Xerneas", "101396639", "A"), row("DN1_leng0234", "100638445", "B"), row("Guest", null, "B")] }], warnings: [], notes: "" },
+      { tournament: "Cup" },
+    );
+    const f = e.fields!.find((x) => x.name === "ผู้เล่นตามรายชื่อทีม");
+    assert.equal(f?.value, "**ทีม 2**\n• Xerneas (UID 101396639)\n**ทีม 1**\n• DN1_leng0234 (UID 100638445)");
+  });
+
   test("only public addresses are used as Discord links", () => {
     assert.equal(isPublicUrl("https://rank.example/x"), true);
     for (const u of ["http://localhost:3000", "http://127.0.0.1:3000", "ftp://x", undefined, ""]) assert.equal(isPublicUrl(u), false, String(u));
