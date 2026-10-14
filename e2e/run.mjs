@@ -76,7 +76,7 @@ await new Promise((r) => discordMock.listen(Number(process.env.DISCORD_MOCK_PORT
 const uniq = Date.now().toString().slice(-5);
 
 console.log("— Public pages");
-const paths = ["/", "/guilds", "/blacklist", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=ppg", "/rankings/stats", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", LOGIN];
+const paths = ["/", "/guilds", "/special", "/blacklist", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=ppg", "/rankings/stats", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", LOGIN];
 for (const p of paths) {
   await page.goto(base + p);
   await page.waitForLoadState("networkidle");
@@ -1025,6 +1025,52 @@ if (!(await page.locator(".btn-discord").count())) {
   await page.locator(".notice:has-text('สุ่มทีมเรียบร้อยแล้ว')").waitFor();
   await page.locator(`h2:has-text('รายชื่อผู้เล่น')`).waitFor();
   step("organizer drew 2 balanced teams (every team has G/F/C), redrew and saved; the page shows the teams");
+
+  console.log("— เล่นเก่งปากเก่ง (substitutes list)");
+  await page.goto(base + "/me");
+  const reserve = page.locator("#reserve");
+  if (await reserve.locator('select[name="playerId"]').count()) await reserve.locator('select[name="playerId"]').selectOption({ label: `Disc-${uniq} (UID 77${uniq})` });
+  await reserve.locator('select[name="position"]').selectOption("GUARD");
+  await reserve.locator('input[name="facebook"]').fill("https://evil.example/login");
+  await reserve.locator("button:has-text('ลงชื่อตัวสำรอง')").click();
+  await reserve.locator(".error:has-text('facebook.com')").waitFor();
+  await reserve.locator('input[name="facebook"]').fill(`https://www.facebook.com/disc${uniq}`);
+  await reserve.locator('input[name="phone"]').fill("0812345678");
+  await reserve.locator("button:has-text('ลงชื่อตัวสำรอง')").click();
+  await reserve.locator(".success:has-text('รายชื่อตัวสำรอง')").waitFor();
+  await page.reload();
+  await page.locator("#reserve .notice:has-text('ลงชื่อไว้แล้ว')").waitFor();
+  await page.goto(base + "/special");
+  await page.locator("h1:has-text('เล่นเก่งปากเก่ง')").waitFor();
+  await page.locator(`#reserve .card:has-text('บอลหลัก') li:has-text('UID 77${uniq}')`).waitFor();
+  const publicText = await page.locator("main").textContent();
+  if (publicText.includes(`disc${uniq}`) || publicText.includes("0812345678")) throw new Error("Facebook or phone shown on the public page");
+  await page.screenshot({ path: OUT + "/special.png", fullPage: true });
+  step("player signed up as a substitute on /me (a non-Facebook link is refused); /special lists them without contact details");
+
+  const rAdminCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const rAdmin = await rAdminCtx.newPage();
+  rAdmin.on("pageerror", (e) => problems.push(`pageerror: ${e.message} @ ${rAdmin.url()}`));
+  await rAdmin.goto(base + LOGIN);
+  await rAdmin.fill('input[name="password"]', PASSWORD);
+  await rAdmin.click("button:has-text('เข้าสู่ระบบ')");
+  await rAdmin.waitForURL(base + "/admin");
+  await rAdmin.click('.side-nav a[href="/admin/reserve"]');
+  const row = rAdmin.locator(`tr:has-text('UID 77${uniq}')`);
+  await row.locator(`a[href="https://www.facebook.com/disc${uniq}"]`).waitFor();
+  await row.locator("a[href='tel:0812345678']").waitFor();
+  await row.locator("button:has-text('แก้ไข')").click();
+  await row.locator('select[name="position"]').selectOption("ALL");
+  await row.locator('input[name="rank"]').fill("โซน");
+  await row.locator("button:has-text('บันทึก')").click();
+  await row.locator(".success:has-text('บันทึกแล้ว')").waitFor();
+  await rAdmin.reload();
+  await rAdmin.locator(`tr:has-text('UID 77${uniq}'):has-text('All Around'):has-text('แรงค์โซน')`).waitFor();
+  await rAdmin.screenshot({ path: OUT + "/reserve-admin.png", fullPage: true });
+  await rAdmin.goto(base + "/admin/tournaments/new");
+  await rAdmin.locator('input[name="special"]').waitFor();
+  await rAdminCtx.close();
+  step("organizer sees Facebook and phone on /admin/reserve and fixed the position and rank; the tournament form has the special tick box");
 
   await page.goto(base + "/me");
   page.once("dialog", (d) => d.accept());

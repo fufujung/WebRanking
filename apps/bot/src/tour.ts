@@ -578,6 +578,7 @@ export class TourManager {
       grandFinalReset: i.options.getBoolean("grand_final_reset") ?? true,
       entryMode: solo ? "SOLO" : "TEAM",
       teamSize,
+      special: i.options.getBoolean("special") ?? false,
     });
     const category = i.options.getChannel("category");
     const tour: TourConfig = {
@@ -596,19 +597,20 @@ export class TourManager {
     };
     this.tours.set(t.id, tour);
     await this.refreshPanel(i.client, tour);
+    const special = i.options.getBoolean("special") ? "\n⭐ รายการพิเศษ เล่นเก่งปากเก่ง: ผลการแข่งไปที่ MMR และสถิติแยก (`/pool rank`) ไม่รวมกับรายการหลัก" : "";
     if (solo) {
       return void (await i.editReply(
         [
           `✅ สร้าง **${t.name}** แบบลงเดี่ยว (ทีมละ ${teamSize} คน) และเปิดรับลงชื่อแล้ว (ประกาศที่ <#${tour.announceChannelId}>)`,
           "ขั้นต่อไป: ผู้เล่นกดปุ่ม 🙋 ลงชื่อเดี่ยว ในประกาศ (เลือกตำแหน่งและแรงค์) → ผู้จัดกด 🎲 สุ่มทีม ดูผลแล้วกดยืนยัน → จัดสาย `/tour seed` → ตรวจ/แก้ แล้วกดยืนยันเริ่มแข่ง",
-        ].join("\n"),
+        ].join("\n") + special,
       ));
     }
     await i.editReply(
       [
         `✅ สร้าง **${t.name}** และเปิดรับสมัครแล้ว (ประกาศที่ <#${tour.announceChannelId}>)`,
         "ขั้นต่อไป: ให้หัวหน้าทีมกดปุ่ม 📝 สมัครทีม ในประกาศ (หรือ `/register`) → ปิดรับสมัคร `/tour registration open:False` → จัดสาย `/tour seed` → ตรวจ/แก้ แล้วกดยืนยันเริ่มแข่ง",
-      ].join("\n"),
+      ].join("\n") + special,
     );
   }
 

@@ -16,7 +16,7 @@ rankings.get("/teams", async (req, res) => {
   const q = pagination.extend({ minMatches: z.coerce.number().int().min(0).default(0), gameId }).parse(req.query);
   const [teams, allMatches, titles, movement] = await Promise.all([
     prisma.team.findMany({ where: q.gameId ? { gameId: q.gameId } : {}, orderBy: [{ rating: "desc" }, { name: "asc" }] }),
-    prisma.match.findMany({ select: { teamAId: true, teamBId: true, scoreA: true, scoreB: true, winnerId: true } }),
+    prisma.match.findMany({ where: { tournament: { special: false } }, select: { teamAId: true, teamBId: true, scoreA: true, scoreB: true, winnerId: true } }),
     prisma.tournamentEntry.groupBy({ by: ["teamId"], where: { placement: 1 }, _count: true }),
     teamMovement(q.gameId),
   ]);
@@ -44,7 +44,7 @@ rankings.get("/players", async (req, res) => {
     .parse(req.query);
   const [players, lines] = await Promise.all([
     prisma.player.findMany({ where: { ...(q.teamId ? { teamId: q.teamId } : {}), ...(q.gameId ? { gameId: q.gameId } : {}) }, include: { team: teamSummary } }),
-    prisma.matchPlayerStat.findMany({ select: statLineSelect }),
+    prisma.matchPlayerStat.findMany({ where: { match: { tournament: { special: false } } }, select: statLineSelect }),
   ]);
   const stats = statsByPlayer(lines);
   const value = (p: { mmr: number; stats: PlayerStats }) => (q.sort === "mmr" ? p.mmr : p.stats[q.sort as keyof PlayerStats]);

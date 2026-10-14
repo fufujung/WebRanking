@@ -34,11 +34,12 @@ export function recomputeRatings(): Promise<void> {
 async function replayAllMatches() {
   const [teams, players, matches, oldChanges, penalties] = await Promise.all([
     prisma.team.findMany({ select: { id: true, rating: true } }),
-    prisma.player.findMany({ select: { id: true, mmr: true, peakMmr: true } }),
+    prisma.player.findMany({ select: { id: true, mmr: true, peakMmr: true, specialMmr: true, specialPeakMmr: true } }),
     prisma.match.findMany({
       orderBy: [{ playedAt: "asc" }, { createdAt: "asc" }],
       select: {
         id: true, playedAt: true, teamAId: true, teamBId: true, winnerId: true, ratingDeltaA: true, ratingDeltaB: true,
+        tournament: { select: { special: true } },
         playerStats: { select: { playerId: true, teamId: true, award: true } },
       },
     }),
@@ -49,6 +50,9 @@ async function replayAllMatches() {
   const stored = new Map(teams.map((t) => [t.id, t.rating]));
   const mmr = new Map<string, { mmr: number; series: number }>();
   const peak = new Map<string, number>();
+  // Special events ("เล่นเก่งปากเก่ง") keep their own player ratings and leave team ratings alone.
+  const specialMmr = new Map<string, { mmr: number; series: number }>();
+  const specialPeak = new Map<string, number>();
   const matchUpdates = [];
   const changes: { playerId: string; matchId: string; before: number; delta: number; result: string }[] = [];
 
@@ -64,10 +68,11 @@ async function replayAllMatches() {
 
   for (const m of matches) {
     applyPenalties(m.playedAt);
+    const special = m.tournament.special;
     const ra = ratings.get(m.teamAId) ?? START_RATING;
     const rb = ratings.get(m.teamBId) ?? START_RATING;
     const scoreA = m.winnerId === null ? 0.5 : m.winnerId === m.teamAId ? 1 : 0;
-    const [da, db] = eloDelta(ra, rb, scoreA);
+    const [da, db] = special ? [0, 0] : eloDelta(ra, rb, scoreA);
     ratings.set(m.teamAId, ra + da);
     ratings.set(m.teamBId, rb + db);
     if (m.ratingDeltaA !== da || m.ratingDeltaB !== db) {
@@ -77,9 +82,10 @@ async function replayAllMatches() {
     }
 
     const winner = m.winnerId === null ? null : m.winnerId === m.teamAId ? "A" : "B";
-    for (const c of scoreSeries(seriesPlayers(m), winner, mmr, { A: ra, B: rb })) {
+    const [book, best] = special ? [specialMmr, specialPeak] : [mmr, peak];
+    for (const c of scoreSeries(seriesPlayers(m), winner, book, special ? { A: START_MMR, B: START_MMR } : { A: ra, B: rb })) {
       changes.push({ ...c, matchId: m.id });
-      peak.set(c.playerId, Math.max(peak.get(c.playerId) ?? START_MMR, c.before + c.delta));
+      best.set(c.playerId, Math.max(best.get(c.playerId) ?? START_MMR, c.before + c.delta));
     }
   }
 
@@ -102,9 +108,18 @@ async function replayAllMatches() {
   if (fresh.length) changeWrites.push(prisma.playerMmrChange.createMany({ data: fresh }));
 
   const playerWrites = players
-    .map((p) => ({ id: p.id, mmr: mmr.get(p.id)?.mmr ?? START_MMR, peakMmr: peak.get(p.id) ?? START_MMR, was: p }))
-    .filter((p) => p.mmr !== p.was.mmr || p.peakMmr !== p.was.peakMmr)
-    .map((p) => prisma.player.update({ where: { id: p.id }, data: { mmr: p.mmr, peakMmr: p.peakMmr } }));
+    .map((p) => ({
+      id: p.id,
+      data: {
+        mmr: mmr.get(p.id)?.mmr ?? START_MMR,
+        peakMmr: peak.get(p.id) ?? START_MMR,
+        specialMmr: specialMmr.get(p.id)?.mmr ?? START_MMR,
+        specialPeakMmr: specialPeak.get(p.id) ?? START_MMR,
+      },
+      was: p,
+    }))
+    .filter((p) => (Object.keys(p.data) as (keyof typeof p.data)[]).some((k) => p.data[k] !== p.was[k]))
+    .map((p) => prisma.player.update({ where: { id: p.id }, data: p.data }));
 
   await prisma.$transaction([
     ...matchUpdates,

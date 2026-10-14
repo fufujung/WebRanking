@@ -128,6 +128,11 @@ export async function mergePlayers(intoId: string, fromId: string) {
       else await tx.blacklistEntry.update({ where: { id: b.id }, data: { playerId: into.id } });
     }
 
+    // The substitutes-list sign-up follows the person too, unless the kept player has one already.
+    if (!(await tx.reservePlayer.findUnique({ where: { playerId: into.id } }))) {
+      await tx.reservePlayer.updateMany({ where: { playerId: from.id }, data: { playerId: into.id } });
+    }
+
     const guildId = into.guildId ?? from.guildId;
     if (guildId) await tx.guild.updateMany({ where: { id: guildId, leaderId: from.id }, data: { leaderId: into.id } });
     await tx.player.delete({ where: { id: from.id } });

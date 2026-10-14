@@ -68,6 +68,7 @@ const tourCommand: ApplicationCommandData = {
         { type: O.Boolean, name: "third_place", description: "มีนัดชิงอันดับ 3 (Single Elimination)" },
         { type: O.Boolean, name: "grand_final_reset", description: "Double Elimination: ถ้าสายล่างชนะนัดชิง ให้แข่งนัดตัดสินอีกนัด (ค่าเริ่มต้น เปิด)" },
         { type: O.String, name: "game", description: "ชื่อเกม", maxLength: 100 },
+        { type: O.Boolean, name: "special", description: "รายการพิเศษ เล่นเก่งปากเก่ง: สถิติและ MMR แยกจากรายการหลัก" },
       ]),
     },
     {
@@ -167,34 +168,51 @@ const rosterCommand: ApplicationCommandData = {
   ],
 };
 
+const positionChoices = [
+  { name: "บอลหลัก (Guard)", value: "GUARD" },
+  { name: "บอลรอง (Forward)", value: "FORWARD" },
+  { name: "เซนเตอร์ (Center)", value: "CENTER" },
+  { name: "All Around", value: "ALL" },
+];
+
 const poolCommand: ApplicationCommandData = {
   name: "pool",
-  description: "ผู้เล่นช่วยแข่ง (เล่นเก่งปากเก่ง): ลงทะเบียนตามแรงค์และสุ่มเข้าทีม",
+  description: "ตัวสำรองรายการเล่นเก่งปากเก่ง: ห้องลงชื่อ สุ่มเข้าทีม และอันดับ MMR แยก",
   dmPermission: false,
   options: [
     {
       type: O.Subcommand,
       name: "setup",
-      description: "ตั้งห้องลงทะเบียนและรายการแรงค์ (แอดมิน)",
+      description: "ตั้งห้องลงชื่อตัวสำรองและรายการแรงค์ (แอดมิน)",
       options: [
-        { type: O.Channel, name: "channel", description: "ห้องลงทะเบียน (ไม่ใส่ = ห้องนี้)", channelTypes: [ChannelType.GuildText] },
+        { type: O.Channel, name: "channel", description: "ห้องลงชื่อ (ไม่ใส่ = ห้องนี้)", channelTypes: [ChannelType.GuildText] },
         { type: O.String, name: "ranks", description: "แรงค์ คั่นด้วยจุลภาค (ค่าเริ่มต้น ฟ้า, ทอง, แดง, โซน)", maxLength: 300 },
-        { type: O.Role, name: "organizer_role", description: "ยศที่สุ่มและเปลี่ยนตัวได้" },
+        { type: O.Role, name: "organizer_role", description: "ยศที่สุ่ม เปลี่ยนตัว และดูช่องทางติดต่อได้" },
       ],
     },
     {
       type: O.Subcommand,
       name: "draw",
-      description: "สุ่มผู้เล่นตามแรงค์ (ใส่ A และ B เพื่อแบ่งเข้า 2 ทีม)",
+      description: "สุ่มตัวสำรองตามแรงค์และ/หรือตำแหน่ง (ใส่ A และ B เพื่อแบ่งเข้า 2 ทีม)",
       options: [
-        { type: O.String, name: "rank", description: "แรงค์ที่จะสุ่ม", required: true, autocomplete: true },
         { type: O.Integer, name: "count", description: "สุ่มกี่คน (รวมทุกทีม)", required: true, minValue: 1, maxValue: 20 },
+        { type: O.String, name: "rank", description: "เฉพาะแรงค์นี้ (ไม่ใส่ = ทุกแรงค์)", autocomplete: true },
+        { type: O.String, name: "position", description: "เฉพาะตำแหน่งนี้ (All Around ถูกสุ่มได้ทุกตำแหน่ง)", choices: positionChoices },
         { type: O.User, name: "player_a", description: "คนที่ 1 (หัวหน้าทีม A)" },
         { type: O.User, name: "player_b", description: "คนที่ 2 (หัวหน้าทีม B)" },
       ],
     },
-    { type: O.Subcommand, name: "list", description: "ดูรายชื่อที่ลงทะเบียนไว้ (ผู้จัด)", options: [{ type: O.String, name: "rank", description: "เฉพาะแรงค์นี้", autocomplete: true }] },
+    {
+      type: O.Subcommand,
+      name: "list",
+      description: "ดูรายชื่อตัวสำรองพร้อม Facebook และเบอร์ (ผู้จัด)",
+      options: [
+        { type: O.String, name: "rank", description: "เฉพาะแรงค์นี้", autocomplete: true },
+        { type: O.String, name: "position", description: "เฉพาะตำแหน่งนี้", choices: positionChoices },
+      ],
+    },
     { type: O.Subcommand, name: "remove", description: "เอาผู้เล่นออกจากรายชื่อ (ผู้จัด)", options: [{ type: O.User, name: "user", description: "ผู้เล่น", required: true }] },
+    { type: O.Subcommand, name: "rank", description: "อันดับ MMR รายการเล่นเก่งปากเก่ง (แยกจากรายการหลัก)" },
   ],
 };
 

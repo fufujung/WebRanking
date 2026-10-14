@@ -46,8 +46,8 @@ export const teamInput = z.object({
 export const POSITIONS = ["GUARD", "FORWARD", "CENTER", "ALL"] as const;
 export type Position = (typeof POSITIONS)[number];
 const POSITION_WORDS: Record<string, Position> = {
-  guard: "GUARD", g: "GUARD", pg: "GUARD", sg: "GUARD", การ์ด: "GUARD",
-  forward: "FORWARD", f: "FORWARD", sf: "FORWARD", pf: "FORWARD", ฟอร์เวิร์ด: "FORWARD", ฟอร์เวิด: "FORWARD", ฟอเวิร์ด: "FORWARD", ฟอลเวิร์ด: "FORWARD",
+  guard: "GUARD", g: "GUARD", pg: "GUARD", sg: "GUARD", การ์ด: "GUARD", บอลหลัก: "GUARD",
+  forward: "FORWARD", f: "FORWARD", sf: "FORWARD", pf: "FORWARD", ฟอร์เวิร์ด: "FORWARD", ฟอร์เวิด: "FORWARD", ฟอเวิร์ด: "FORWARD", ฟอลเวิร์ด: "FORWARD", บอลรอง: "FORWARD",
   center: "CENTER", centre: "CENTER", c: "CENTER", เซ็นเตอร์: "CENTER", เซนเตอร์: "CENTER",
   all: "ALL", allaround: "ALL", allround: "ALL", ทุกตำแหน่ง: "ALL", ได้ทุกตำแหน่ง: "ALL",
 };
@@ -60,7 +60,7 @@ export function toPosition(text: string | null | undefined): Position | null {
   return (POSITIONS as readonly string[]).includes(code) ? (code as Position) : (POSITION_KEYS.get(positionKey(text)) ?? null);
 }
 /** A player's position: one of the four, or blank. */
-const positionField = z
+export const positionField = z
   .string()
   .trim()
   .max(60)
@@ -118,6 +118,8 @@ export const tournamentInput = z.object({
   /** SOLO: players sign up alone and are drawn into teams of teamSize. */
   entryMode: z.enum(["TEAM", "SOLO"]).default("TEAM"),
   teamSize: z.coerce.number().int().min(2).max(10).default(3),
+  /** A special "เล่นเก่งปากเก่ง" event: results move only the separate special MMR and stats. */
+  special: z.boolean().default(false),
 });
 
 export const rosterSizeOk = (t: { rosterMin?: number; rosterMax?: number }) => t.rosterMin === undefined || t.rosterMax === undefined || t.rosterMin <= t.rosterMax;

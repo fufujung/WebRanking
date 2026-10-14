@@ -92,6 +92,21 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
         </div>
       </section>
 
+      {p.special && (
+        <Link href="/special" className="card special-card" style={{ ["--tier" as string]: p.special.tier.color }}>
+          <TierEmblem tier={p.special.tier} size={48} />
+          <div className="grow">
+            <strong>⭐ เล่นเก่งปากเก่ง</strong> <span className="muted small">MMR แยกจากรายการหลัก</span>
+            <div className="special-card-facts small">
+              <span><strong>{p.special.mmr}</strong> MMR</span>
+              <span>{p.special.rank ? `อันดับ #${p.special.rank} จาก ${p.special.rankedPlayers} คน` : "กำลังจัดอันดับ"}</span>
+              <span>{p.special.series} แมตช์ · แต้มรวม {p.special.stats.pts} · MVP {p.special.stats.mvp}</span>
+            </div>
+          </div>
+          <span className="muted small">ดูอันดับ →</span>
+        </Link>
+      )}
+
       {history.length >= 2 && (
         <section className="card" style={{ marginBottom: 16 }}>
           <div className="row between">
