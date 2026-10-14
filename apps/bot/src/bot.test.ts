@@ -565,6 +565,9 @@ describe("info commands", () => {
   });
 
   test("/position sets the player's own position, shown by /player and on the website", async () => {
+    const { commandData } = await import("./commands.js");
+    const choices = (commandData as any[]).find((c) => c.name === "position").options[0].choices.map((c: any) => c.name);
+    assert.deepEqual(choices, ["Guard (การ์ด บอลหลัก)", "Forward (ฟอร์เวิร์ด บอลรอง)", "Center (เซ็นเตอร์)", "All Around (ได้ทุกตำแหน่ง)"]);
     const me = "555000000000000777";
     members.set(me, { roles: [], manage: false });
     const none = command("position", { position: "CENTER" }, me);
