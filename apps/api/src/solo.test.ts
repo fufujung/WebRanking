@@ -135,6 +135,7 @@ describe("SOLO tournament", () => {
     const view = await ok("POST", `/members/${ids[0].discord}/solo/${tid}`, { playerId: ids[0].player, position: "ALL", rank: "Diamond" });
     assert.equal(view.signups.length, 7);
     assert.equal(view.signups.find((s: { playerId: string }) => s.playerId === ids[0].player).position, "ALL");
+    assert.equal((await ok("GET", `/players/${ids[0].player}`)).role, "ALL", "the position picked is the player's position on the website too");
     // Public list; reader key works.
     const pub = await call("GET", `/tournaments/${tid}/solo`, undefined, reader);
     assert.equal(pub.status, 200);
@@ -143,6 +144,34 @@ describe("SOLO tournament", () => {
     await ok("DELETE", `/members/${ids[6].discord}/solo/${tid}`);
     assert.equal((await ok("GET", `/tournaments/${tid}/solo`)).signups.length, 6);
     await ok("POST", `/members/${ids[6].discord}/solo/${tid}`, { playerId: ids[6].player, position: "CENTER", rank: "Bronze" });
+  });
+
+  test("positions: one of four, set from Discord, typed any common way, older text tidied", async () => {
+    const [me] = ids;
+    const set = await ok("POST", `/members/${me.discord}/position`, { position: "CENTER" });
+    assert.deepEqual(set.players.map((p: { id: string }) => p.id), [me.player]);
+    assert.equal((await ok("GET", `/players/${me.player}`)).role, "CENTER");
+    assert.equal((await call("POST", `/members/${me.discord}/position`, { position: "SNIPER" })).status, 400);
+    assert.equal((await call("POST", `/members/999999999999999999/position`, { position: "GUARD" })).status, 404, "no linked character");
+
+    // The admin and /me forms send a code; older typed words still map to one.
+    assert.equal((await ok("PATCH", `/players/${me.player}`, { role: "เซ็นเตอร์" })).role, "CENTER");
+    assert.equal((await ok("PATCH", `/players/${me.player}`, { role: "forward" })).role, "FORWARD");
+    assert.equal((await ok("PATCH", `/players/${me.player}`, { role: "" })).role, null);
+    assert.equal((await call("PATCH", `/players/${me.player}`, { role: "Duelist" })).status, 400);
+
+    // Saved before positions were a fixed choice: words become codes, blanks take the solo sign-up.
+    const { prisma } = await import("./lib/db.js");
+    const { backfillPositions } = await import("./lib/players.js");
+    await prisma.player.update({ where: { id: me.player }, data: { role: null } });
+    await prisma.player.update({ where: { id: ids[1].player }, data: { role: "Guard" } });
+    await prisma.player.update({ where: { id: ids[2].player }, data: { role: "Duelist" } });
+    await backfillPositions();
+    const role = async (id: string) => (await ok("GET", `/players/${id}`)).role;
+    assert.equal(await role(me.player), "ALL", "from the sign-up");
+    assert.equal(await role(ids[1].player), "GUARD");
+    assert.equal(await role(ids[2].player), "Duelist", "other text is left alone");
+    await prisma.player.update({ where: { id: ids[2].player }, data: { role: "CENTER" } });
   });
 
   test("a SOLO tournament refuses team registration from the bot", async () => {

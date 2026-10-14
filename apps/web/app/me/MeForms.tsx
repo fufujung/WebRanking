@@ -4,6 +4,7 @@ import { startTransition, useActionState, useState } from "react";
 import { claimPlayer, unlinkMyPlayer, updateMyPlayer, type MeState } from "./actions";
 import { ImageDrop } from "@/components/ImageDrop";
 import type { Game, Player } from "@/lib/types";
+import { PositionSelect } from "@/components/PositionSelect";
 
 function useSubmit(action: (s: MeState, f: FormData) => Promise<MeState>) {
   const [state, dispatch, pending] = useActionState<MeState, FormData>(action, undefined);
@@ -55,7 +56,7 @@ export function EditMyPlayer({ player }: { player: Player }) {
     <form onSubmit={onSubmit} className="form">
       <div className="form-row">
         <label>ชื่อเล่น<input name="nickname" maxLength={100} defaultValue={player.nickname ?? ""} /></label>
-        <label>ตำแหน่ง<input name="role" maxLength={60} defaultValue={player.role ?? ""} placeholder="เช่น Center, Guard" /></label>
+        <PositionSelect value={player.role} />
         <label>ประเทศ<input name="country" maxLength={60} defaultValue={player.country ?? ""} /></label>
       </div>
       <label>

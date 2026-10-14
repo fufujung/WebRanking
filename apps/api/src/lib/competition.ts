@@ -523,7 +523,8 @@ export function recordResult(tournamentId: string, ref: string, body: unknown) {
     if (row.status !== "READY" && !(row.status === "DONE" && row.outcome !== "BYE")) {
       throw fail(409, "This match is not ready to be played", "แมตช์นี้ยังไม่พร้อมแข่ง (รอทีมจากรอบก่อน)");
     }
-    if (input.sourceRef && row.matchId) {
+    // The same post sent again is a no-op; a correction (replace) of that series is still saved.
+    if (input.sourceRef && row.matchId && !input.replace) {
       const same = await prisma.match.findUnique({ where: { id: row.matchId }, select: { sourceRef: true } });
       if (same?.sourceRef === input.sourceRef) return slotView(tournamentId, row.id);
     }

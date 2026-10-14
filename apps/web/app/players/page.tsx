@@ -2,6 +2,7 @@ import { api, qs } from "@/lib/api";
 import type { Page, Player, Team } from "@/lib/types";
 import { Empty, Pager, PlayerLink, TeamLink, pageOffset } from "@/components/ui";
 import { TeamFilter } from "@/components/TeamFilter";
+import { positionText } from "@/lib/solo";
 
 export const metadata = { title: "ผู้เล่น" };
 const LIMIT = 50;
@@ -35,7 +36,7 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
                 <tr key={p.id}>
                   <td><PlayerLink player={p} /></td>
                   <td>{p.team ? <TeamLink team={p.team} /> : <span className="muted">ไม่มีสังกัด</span>}</td>
-                  <td className="muted">{p.role ?? "-"}</td>
+                  <td className="muted">{positionText(p.role) ?? "-"}</td>
                   <td className="muted">{p.country ?? "-"}</td>
                 </tr>
               ))}

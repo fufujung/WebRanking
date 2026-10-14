@@ -564,6 +564,24 @@ describe("info commands", () => {
     assert.match(last<any>(matches.replies).embeds[0].description, /Discord Cup/);
   });
 
+  test("/position sets the player's own position, shown by /player and on the website", async () => {
+    const me = "555000000000000777";
+    members.set(me, { roles: [], manage: false });
+    const none = command("position", { position: "CENTER" }, me);
+    await bot.onCommand(none);
+    assert.match(last<string>(none.replies), /ยังไม่ได้ผูกกับตัวละคร/);
+
+    const player = await api.post<{ id: string; name: string }>(`/players/discord/${me}/claim`, { uid: "90077", name: "PosTester" });
+    const set = command("position", { position: "CENTER" }, me);
+    await bot.onCommand(set);
+    assert.match(last<string>(set.replies), /ตั้งตำแหน่ง \*\*PosTester\*\* เป็น \*\*Center \(เซ็นเตอร์\)\*\*/);
+    assert.equal((await api.get<{ role: string }>(`/players/${player.id}`)).role, "CENTER");
+
+    const show = command("player", { name: player.id });
+    await bot.onCommand(show);
+    assert.match(last<any>(show.replies).embeds[0].description, /Center \(เซ็นเตอร์\)/);
+  });
+
   test("/setup-off stops reading a channel and turns off announcements", async () => {
     await bot.onCommand(command("setup-off", { what: "announce" }));
     await bot.onCommand(command("setup-off", { what: "channel" }));

@@ -3,6 +3,7 @@ import { requireAdmin } from "../lib/apiKeys.js";
 import { discordId } from "../lib/members.js";
 import { notFound } from "../lib/errors.js";
 import { leaveSolo, signUp } from "../lib/solo.js";
+import { setOwnPosition } from "../lib/players.js";
 import { acceptInvite, cancelInvite, createGuild, declineInvite, editGuild, inviteToGuild, kickFromGuild, leaveGuild, passLeader } from "../lib/guilds.js";
 import { createTeam, inviteInfo, joinTeam, kickMember, leaveTeam, makeCaptain, memberView, resetInvite } from "../lib/teamSelf.js";
 
@@ -38,6 +39,11 @@ members.post("/:discordId/captain", async (req, res) => {
 });
 members.post("/:discordId/invite", async (req, res) => {
   res.json(await resetInvite(who(req.params.discordId), req.body));
+});
+
+/** Sets the position (GUARD, FORWARD, CENTER or ALL) of the member's characters, or of one with playerId. */
+members.post("/:discordId/position", async (req, res) => {
+  res.json(await setOwnPosition(who(req.params.discordId), req.body));
 });
 
 /** Signs up alone for a SOLO tournament with position and rank (again to change them). */

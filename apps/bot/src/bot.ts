@@ -54,6 +54,7 @@ import { JsonStore } from "./store.js";
 import { PoolManager } from "./pool.js";
 import { parseSeriesScore, TourManager } from "./tour.js";
 import { BlacklistCommands } from "./blacklist.js";
+import { positionLabel } from "./positions.js";
 import type { BracketMatch, Draft, Match, MatchDetail, Page, PlayerDetail, RankedPlayer, RankedTeam, TeamDetail, Tournament } from "./types.js";
 
 const SAVE = "✅";
@@ -471,6 +472,12 @@ export class TournamentBot {
           const id = await this.findId("players", i.options.getString("name", true));
           if (!id) return void (await i.editReply("ไม่พบผู้เล่นนี้"));
           return void (await i.editReply({ embeds: [playerEmbed(await this.api.get<PlayerDetail>(`/players/${id}`), this.siteUrl)] }));
+        }
+        case "position": {
+          await i.deferReply({ ephemeral: true });
+          const position = i.options.getString("position", true);
+          const out = await this.api.post<{ players: { name: string }[] }>(`/members/${i.user.id}/position`, { position });
+          return void (await i.editReply(`✅ ตั้งตำแหน่ง ${out.players.map((p) => `**${p.name}**`).join(", ")} เป็น **${positionLabel(position)}** แล้ว (ขึ้นที่เว็บด้วย)`));
         }
         case "matches": {
           await i.deferReply();

@@ -1,6 +1,7 @@
 import { ApplicationCommandOptionType, ApplicationCommandType, ChannelType, PermissionFlagsBits, type ApplicationCommandData, type ApplicationCommandOptionData, type ApplicationCommandSubCommandData } from "discord.js";
 import { blacklistCommand } from "./blacklist.js";
 import { PLAYER_SORTS } from "./format.js";
+import { POSITIONS } from "./positions.js";
 
 export const READ_POST_COMMAND = "อ่านผลจากโพสต์นี้";
 
@@ -242,6 +243,20 @@ export const commandData: ApplicationCommandData[] = [
   { name: "team", description: "ดูข้อมูลทีม", dmPermission: false, options: [{ type: ApplicationCommandOptionType.String, name: "name", description: "ชื่อทีม", required: true, autocomplete: true }] },
   { name: "player", description: "ดูสถิติผู้เล่น", dmPermission: false, options: [{ type: ApplicationCommandOptionType.String, name: "name", description: "ชื่อผู้เล่น", required: true, autocomplete: true }] },
   { name: "matches", description: "ผลการแข่งล่าสุด", dmPermission: false },
+  {
+    name: "position",
+    description: "ตั้งตำแหน่งของตัวละครที่ผูกกับ Discord ของคุณ",
+    dmPermission: false,
+    options: [
+      {
+        type: ApplicationCommandOptionType.String,
+        name: "position",
+        description: "ตำแหน่ง",
+        required: true,
+        choices: POSITIONS.map((p) => ({ name: p.label, value: p.value })),
+      },
+    ],
+  },
   { type: ApplicationCommandType.Message, name: READ_POST_COMMAND, dmPermission: false },
   tourCommand,
   registerCommand,

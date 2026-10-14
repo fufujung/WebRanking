@@ -5,6 +5,7 @@ import type { TeamDetail } from "@/lib/types";
 import { fmtDate, fmtRating } from "@/lib/format";
 import { Avatar, Delta, Empty, PlayerLink, Result, StatTile, StatusBadge, TeamLink } from "@/components/ui";
 import { Form, RankMove, TierBadge, TierEmblem, TierProgress } from "@/components/Tier";
+import { positionText } from "@/lib/solo";
 
 export default async function TeamPage({ params }: { params: Promise<{ id: string }> }) {
   const team = await apiOrNull<TeamDetail>(`/teams/${encodeURIComponent((await params).id)}`);
@@ -53,7 +54,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
                   <td><PlayerLink player={p} />{p.id === team.captainId && <span className="captain-chip" title="หัวหน้าทีม"> 👑 หัวหน้า</span>}</td>
                   <td>{p.stats.games ? <TierBadge tier={p.tier} size={20} /> : <span className="muted">-</span>}</td>
                   <td className="num"><strong>{p.stats.games ? p.mmr : "-"}</strong></td>
-                  <td className="muted">{p.role ?? "-"}</td>
+                  <td className="muted">{positionText(p.role) ?? "-"}</td>
                   <td className="num">{p.stats.games}</td>
                   <td className="num"><strong>{fmtRating(p.stats.avgRating)}</strong></td>
                   <td className="num">{p.stats.ppg}</td>

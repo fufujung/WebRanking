@@ -7,13 +7,12 @@ import { randomInt } from "node:crypto";
 import { z } from "zod";
 import { prisma } from "./db.js";
 import { fail, notFound } from "./errors.js";
-import { normaliseName } from "./validate.js";
+import { normaliseName, POSITIONS, type Position } from "./validate.js";
 import { parseRanks, type GameRank } from "./games.js";
 
 /** Used while the tournament's game has no ranks set: Kuroko's season ranks, lowest first. */
 export const DEFAULT_SOLO_RANKS: GameRank[] = ["แม่ทัพไร้มงกุฎ", "ซูเปอร์สตาร์ ม.ปลาย", "รุ่นแห่งปาฏิหาริย์", "เจ้าแห่ง ZONE"].map((name) => ({ name, iconUrl: null }));
-export const POSITIONS = ["GUARD", "FORWARD", "CENTER", "ALL"] as const;
-export type Position = (typeof POSITIONS)[number];
+export { POSITIONS, type Position };
 const ROLES = ["GUARD", "FORWARD", "CENTER"] as const;
 
 /** The ranks players of this tournament pick from: its game's ranks, lowest first. */
@@ -85,7 +84,8 @@ export async function signUp(discordId: string, tournamentId: string, body: unkn
       create: { tournamentId, playerId: player.id, ...data },
       update: data,
     });
-    if (t.gameId && !player.gameId) await tx.player.update({ where: { id: player.id }, data: { gameId: t.gameId } });
+    // The position picked here is the player's position on the website too.
+    await tx.player.update({ where: { id: player.id }, data: { role: input.position, ...(t.gameId && !player.gameId ? { gameId: t.gameId } : {}) } });
   });
   return soloView(tournamentId);
 }
