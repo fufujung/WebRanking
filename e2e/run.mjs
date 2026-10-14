@@ -827,7 +827,7 @@ if (!(await page.locator(".btn-discord").count())) {
 
   const mine = page.locator(`.me-player:has-text('Disc-${uniq}')`);
   await mine.locator('input[name="nickname"]').fill(`Nick ${uniq}`);
-  await mine.locator('input[name="role"]').fill("Center");
+  await mine.locator('select[name="role"]').selectOption("CENTER");
   await mine.locator("button:has-text('บันทึก')").click();
   await mine.locator(".success:has-text('บันทึกแล้ว')").waitFor();
   const up = await page.request.post(base + "/api/upload", { multipart: { image: { name: "a.png", mimeType: "image/png", buffer: fs.readFileSync(LOGO) } } });

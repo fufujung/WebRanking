@@ -42,11 +42,42 @@ export const teamInput = z.object({
   gameId: optionalText(40).optional(),
 });
 
+/** The positions in the game: Guard, Forward, Center, or All Around (any of them). */
+export const POSITIONS = ["GUARD", "FORWARD", "CENTER", "ALL"] as const;
+export type Position = (typeof POSITIONS)[number];
+const POSITION_WORDS: Record<string, Position> = {
+  guard: "GUARD", g: "GUARD", pg: "GUARD", sg: "GUARD", การ์ด: "GUARD",
+  forward: "FORWARD", f: "FORWARD", sf: "FORWARD", pf: "FORWARD", ฟอร์เวิร์ด: "FORWARD", ฟอร์เวิด: "FORWARD", ฟอเวิร์ด: "FORWARD", ฟอลเวิร์ด: "FORWARD",
+  center: "CENTER", centre: "CENTER", c: "CENTER", เซ็นเตอร์: "CENTER", เซนเตอร์: "CENTER",
+  all: "ALL", allaround: "ALL", allround: "ALL", ทุกตำแหน่ง: "ALL", ได้ทุกตำแหน่ง: "ALL",
+};
+const positionKey = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+const POSITION_KEYS = new Map(Object.entries(POSITION_WORDS).map(([w, p]) => [positionKey(w), p]));
+/** A position written any common way ("Center", "เซ็นเตอร์", "C") as its code, or null when it isn't one. */
+export function toPosition(text: string | null | undefined): Position | null {
+  if (!text) return null;
+  const code = text.trim().toUpperCase();
+  return (POSITIONS as readonly string[]).includes(code) ? (code as Position) : (POSITION_KEYS.get(positionKey(text)) ?? null);
+}
+/** A player's position: one of the four, or blank. */
+const positionField = z
+  .string()
+  .trim()
+  .max(60)
+  .nullish()
+  .transform((v, ctx) => {
+    if (!v) return null;
+    const p = toPosition(v);
+    if (!p) ctx.addIssue({ code: "custom", message: "Position must be GUARD, FORWARD, CENTER or ALL" });
+    return p;
+  });
+
 export const playerInput = z.object({
   name: z.string().trim().min(1).max(100),
   nickname: optionalText(100),
   country: optionalText(60),
-  role: optionalText(60),
+  /** Position: GUARD, FORWARD, CENTER or ALL (All Around). */
+  role: positionField,
   avatarUrl: imageUrl,
   teamId: optionalId,
   /** In-game UID: the same player across name changes. */

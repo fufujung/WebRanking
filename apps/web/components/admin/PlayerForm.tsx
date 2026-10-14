@@ -7,6 +7,7 @@ import type { Game, Player } from "@/lib/types";
 import { GameSelect } from "./GameForms";
 import { ImageDrop } from "../ImageDrop";
 import { TeamPicker, type PickerTeam } from "../TeamPicker";
+import { PositionSelect } from "@/components/PositionSelect";
 
 export function PlayerForm({ player, teams, games, defaultTeamId }: { player?: Player; teams: PickerTeam[]; games: Game[]; defaultTeamId?: string }) {
   const [state, onSubmit, pending] = useFormAction(savePlayer.bind(null, player?.id ?? null), undefined);
@@ -32,7 +33,7 @@ export function PlayerForm({ player, teams, games, defaultTeamId }: { player?: P
           ทีม
           <TeamPicker teams={teams} value={teamId} onChange={setTeamId} name="teamId" placeholder="ไม่มีสังกัด (พิมพ์เพื่อหาทีม)" />
         </label>
-        <label>ตำแหน่ง<input name="role" maxLength={60} defaultValue={player?.role ?? ""} placeholder="เช่น Duelist, Support" /></label>
+        <PositionSelect value={player?.role} />
         <label>ประเทศ<input name="country" maxLength={60} defaultValue={player?.country ?? ""} /></label>
       </div>
       <label>

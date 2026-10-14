@@ -7,15 +7,9 @@ import { fitEmbed, GREEN, GREY, isPublicUrl, RED, siteLink } from "./format.js";
 import { FORMAT_NAMES, bestOfText, when } from "./tourFormat.js";
 import type { Bracket } from "./types.js";
 
-export type SoloPosition = "GUARD" | "FORWARD" | "CENTER" | "ALL";
+import { POSITIONS, positionLabel, type SoloPosition } from "./positions.js";
+export { POSITIONS, positionLabel, type SoloPosition };
 
-export const POSITIONS: { value: SoloPosition; label: string; short: string }[] = [
-  { value: "GUARD", label: "Guard (การ์ด)", short: "G" },
-  { value: "FORWARD", label: "Forward (ตัวป้องกัน)", short: "F" },
-  { value: "CENTER", label: "Center (เซ็นเตอร์)", short: "C" },
-  { value: "ALL", label: "All Around (ได้ทุกตำแหน่ง)", short: "ALL" },
-];
-export const positionLabel = (p: string) => POSITIONS.find((x) => x.value === p)?.label ?? p;
 const positionShort = (p: string) => POSITIONS.find((x) => x.value === p)?.short ?? p;
 
 export interface SoloSignup {

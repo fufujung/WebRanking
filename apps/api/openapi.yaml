@@ -168,6 +168,24 @@ paths:
       responses:
         "200": { description: "{ code }" }
         "403": { description: Only the captain can do this }
+  /api/v1/members/{discordId}/position:
+    parameters: [{ $ref: "#/components/parameters/discordId" }]
+    post:
+      tags: [Members]
+      summary: Set the position of this member's characters, or of one with playerId (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [position]
+              properties:
+                position: { type: string, enum: [GUARD, FORWARD, CENTER, ALL] }
+                playerId: { type: string, description: Only this one of the member's characters }
+      responses:
+        "200": { description: "{ position, players: [{ id, name }] }" }
+        "404": { description: No character is linked to this Discord account }
   /api/v1/members/{discordId}/solo/{tournamentId}:
     parameters:
       - { $ref: "#/components/parameters/discordId" }
@@ -1251,7 +1269,7 @@ components:
         name: { type: string }
         nickname: { type: string, nullable: true }
         country: { type: string, nullable: true }
-        role: { type: string, nullable: true }
+        role: { type: string, nullable: true, description: "Position: GUARD, FORWARD, CENTER or ALL (All Around)" }
         avatarUrl: { type: string, nullable: true }
         teamId: { type: string, nullable: true }
         uid: { type: string, nullable: true, description: In-game UID; the same player across name changes }
@@ -1267,7 +1285,7 @@ components:
         name: { type: string }
         nickname: { type: string, nullable: true }
         country: { type: string, nullable: true }
-        role: { type: string, nullable: true }
+        role: { type: string, nullable: true, enum: [GUARD, FORWARD, CENTER, ALL, null], description: "Position; common words such as Center or เซ็นเตอร์ are accepted and stored as the code" }
         avatarUrl: { type: string, nullable: true }
         teamId: { type: string, nullable: true }
         uid: { type: string, nullable: true, description: One player per UID + server (409 if taken) }

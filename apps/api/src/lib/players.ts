@@ -4,9 +4,10 @@
  */
 import type { Player, Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
-import { HttpError, notFound } from "./errors.js";
+import { z } from "zod";
+import { fail, HttpError, notFound } from "./errors.js";
 import { recomputeRatings } from "./elo.js";
-import { normaliseName } from "./validate.js";
+import { normaliseName, POSITIONS, toPosition } from "./validate.js";
 
 type Tx = Prisma.TransactionClient;
 
@@ -169,4 +170,36 @@ export async function backfillPlayerUids() {
     if (done) filled++;
   }
   return filled;
+}
+
+/**
+ * Positions saved before they were a fixed choice: "Center" or "เซ็นเตอร์" becomes CENTER, and a
+ * player with none takes the position of their latest solo sign-up. Other text is left as it is.
+ */
+export async function backfillPositions() {
+  const players = await prisma.player.findMany({
+    where: { OR: [{ role: null }, { role: { notIn: [...POSITIONS] } }] },
+    select: { id: true, role: true, soloSignups: { orderBy: { createdAt: "desc" }, take: 1, select: { position: true } } },
+  });
+  let changed = 0;
+  for (const p of players) {
+    const role = toPosition(p.role) ?? (p.role ? null : (toPosition(p.soloSignups[0]?.position) ?? null));
+    if (role && role !== p.role) {
+      await prisma.player.update({ where: { id: p.id }, data: { role } });
+      changed++;
+    }
+  }
+  return changed;
+}
+
+/**
+ * A member sets the position of the characters linked to their Discord account (or of one, by playerId).
+ * Returns the characters changed.
+ */
+export async function setOwnPosition(discordId: string, body: unknown) {
+  const input = z.object({ position: z.enum(POSITIONS), playerId: z.string().trim().min(1).optional() }).parse(body);
+  const mine = await prisma.player.findMany({ where: { discordId, ...(input.playerId ? { id: input.playerId } : {}) }, select: { id: true, name: true } });
+  if (!mine.length) throw fail(404, "No character is linked to this Discord account", "บัญชี Discord นี้ยังไม่ได้ผูกกับตัวละคร (เข้าสู่ระบบที่เว็บด้วย Discord แล้วผูกตัวละครก่อน)");
+  await prisma.player.updateMany({ where: { id: { in: mine.map((p) => p.id) } }, data: { role: input.position } });
+  return { position: input.position, players: mine };
 }

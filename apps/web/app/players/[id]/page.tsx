@@ -5,6 +5,7 @@ import { STAT_KEYS, type PlayerDetail, type Tier } from "@/lib/types";
 import { fmtDate, fmtRating, signed, statLabels } from "@/lib/format";
 import { AwardBadge, Avatar, Empty, StatTile, TeamLink } from "@/components/ui";
 import { Form, MmrChart, RankMove, TierEmblem, TierProgress } from "@/components/Tier";
+import { positionText } from "@/lib/solo";
 
 export default async function PlayerPage({ params }: { params: Promise<{ id: string }> }) {
   const [p, tiers] = await Promise.all([
@@ -22,7 +23,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
           <Avatar src={p.avatarUrl} name={p.name} size="lg" round />
           <div>
             <h1>{p.name}</h1>
-            <span className="muted">{[p.nickname && `“${p.nickname}”`, p.role, p.country].filter(Boolean).join(" · ") || " "}</span>
+            <span className="muted">{[p.nickname && `“${p.nickname}”`, positionText(p.role), p.country].filter(Boolean).join(" · ") || " "}</span>
             {(p.game || p.uid || p.discordId || p.names.length > 0) && (
               <div className="row small" style={{ gap: 8, marginTop: 6 }}>
                 {p.game && <span className="chip game-chip" title="เกม">{p.game.name}</span>}

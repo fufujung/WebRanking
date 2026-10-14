@@ -92,6 +92,8 @@ export interface PlayerDetail {
   id: string;
   name: string;
   nickname: string | null;
+  /** Position: GUARD, FORWARD, CENTER or ALL. */
+  role?: string | null;
   mmr?: number;
   blacklist?: { active: boolean; penalty: number; entries: BlacklistEntry[] };
   team: TeamSummary | null;

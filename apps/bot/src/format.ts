@@ -1,5 +1,6 @@
 import type { APIEmbed } from "discord.js";
 import { STAT_KEYS, type Draft, type DraftPlayer, type Match, type MatchDetail, type PlayerDetail, type RankedPlayer, type RankedTeam, type TeamDetail } from "./types.js";
+import { positionLabel } from "./positions.js";
 
 export const RED = 0xd9121f;
 export const GREEN = 0x3fc46d;
@@ -197,7 +198,7 @@ export function playerEmbed(p: PlayerDetail, siteUrl?: string): APIEmbed {
   return fitEmbed({
     title: p.name,
     url: isPublicUrl(link) ? link : undefined,
-    description: `${p.team ? `ทีม **${p.team.name}**` : "ไม่มีสังกัด"} · ${s.games} เกม · ชนะ ${s.wins} (${s.winRate}%)`,
+    description: `${p.team ? `ทีม **${p.team.name}**` : "ไม่มีสังกัด"}${p.role ? ` · ${positionLabel(p.role)}` : ""} · ${s.games} เกม · ชนะ ${s.wins} (${s.winRate}%)`,
     color: RED,
     fields: [
       { name: "เรตติ้งเฉลี่ย", value: rating(s.avgRating), inline: true },
