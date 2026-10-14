@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { api } from "@/lib/api";
-import type { ReservePlayer } from "@/lib/types";
+import type { GameRank, ReservePlayer } from "@/lib/types";
 import { fmtDateTime } from "@/lib/format";
 import { positionText, POSITIONS, positionLabel } from "@/lib/solo";
 import { facebookHref } from "@/lib/special";
@@ -13,7 +13,7 @@ export const metadata = { title: "ตัวสำรอง เล่นเก่
 /** The always-open substitutes list with contact details, for organizers only. */
 export default async function AdminReserve({ searchParams }: { searchParams: Promise<{ q?: string; pos?: string }> }) {
   const sp = await searchParams;
-  const { data } = await api<{ data: ReservePlayer[] }>("/special/reserve/private");
+  const [{ data }, { data: ranks }] = await Promise.all([api<{ data: ReservePlayer[] }>("/special/reserve/private"), api<{ data: GameRank[] }>("/special/ranks")]);
   const pos = (POSITIONS as string[]).includes(sp.pos ?? "") ? sp.pos! : "all";
   const q = (sp.q ?? "").trim().toLowerCase();
   const rows = data
@@ -61,7 +61,7 @@ export default async function AdminReserve({ searchParams }: { searchParams: Pro
                     </td>
                     <td className="small">
                       {r.position ? positionText(r.position) : <span className="pill pill-warn">ยังไม่ระบุ</span>}
-                      <br /><span className="muted">{r.rank ? `แรงค์${r.rank}` : "ยังไม่เลือกแรงค์"}</span>
+                      <br /><span className="muted">{r.rank ? `แรงค์ ${r.rank}` : "ยังไม่เลือกแรงค์"}</span>
                     </td>
                     <td className="small">
                       {r.facebook ? (fb ? <a href={fb} target="_blank" rel="noopener noreferrer nofollow">{r.facebook}</a> : <span>FB: {r.facebook}</span>) : <span className="pill pill-warn">ยังไม่ใส่ Facebook</span>}
@@ -69,7 +69,7 @@ export default async function AdminReserve({ searchParams }: { searchParams: Pro
                     </td>
                     <td className="num hide-sm">{r.player.specialMmr}</td>
                     <td className="hide-sm muted small">{fmtDateTime(r.createdAt)}</td>
-                    <td className="right"><ReserveActions row={r} /></td>
+                    <td className="right"><ReserveActions row={r} ranks={ranks} /></td>
                   </tr>
                 );
               })}

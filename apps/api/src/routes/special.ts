@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAdmin } from "../lib/apiKeys.js";
-import { editReserve, importReserve, removeReserve, reserveList, specialBoard } from "../lib/special.js";
+import { editReserve, importReserve, removeReserve, reserveList, reserveRanks, specialBoard } from "../lib/special.js";
 
 /**
  * The special "เล่นเก่งปากเก่ง" events: the separate MMR and stats board, and the standing list of substitutes.
@@ -12,6 +12,12 @@ export const special = Router();
 special.get("/", async (req, res) => {
   const q = z.object({ gameId: z.string().trim().min(1).max(40).optional() }).parse(req.query);
   res.json(await specialBoard(q.gameId));
+});
+
+/** The ranks substitutes pick from: the game's in-game ranks, lowest first. */
+special.get("/ranks", async (req, res) => {
+  const q = z.object({ gameId: z.string().trim().min(1).max(40).optional() }).parse(req.query);
+  res.json({ data: await reserveRanks(q.gameId) });
 });
 
 special.get("/reserve", async (_req, res) => {

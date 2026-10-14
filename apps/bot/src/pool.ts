@@ -1,7 +1,7 @@
 /**
  * The substitutes list for the special "เล่นเก่งปากเก่ง" events: a sign-up room that is always open and
  * serves every event. People sign up once with character name, UID, Facebook, phone (optional) and
- * position, then pick their in-game rank. The list lives on the website (so it shows there too); Facebook
+ * position, then pick their in-game rank (required; the game's ranks on the website, the same list as solo tournaments). The list lives on the website (so it shows there too); Facebook
  * and phone are only shown to organizers. Organizers draw players at random (by rank and/or position) to
  * fill two sides (e.g. A vs B), draw again, swap one player and confirm; the draws stay in the bot's data folder.
  * Results of special events go into the separate special MMR on the website: /pool rank shows it.
@@ -31,7 +31,6 @@ import { POSITIONS, positionLabel, type SoloPosition } from "./positions.js";
 import { JsonStore } from "./store.js";
 import type { MemberInfo } from "./tour.js";
 
-export const DEFAULT_RANKS = ["ฟ้า", "ทอง", "แดง", "โซน"];
 const RED = 0xdc2626;
 const GREY = 0x6b7280;
 const GREEN = 0x16a34a;
@@ -94,7 +93,8 @@ export interface PoolConfig {
   guildId: string;
   channelId: string;
   panelMessageId: string | null;
-  ranks: string[];
+  /** No longer used: the ranks come from the website (the game's ranks). Kept so old files still load. */
+  ranks?: string[];
   organizerRoleId: string | null;
   ownerId: string;
   /** Only the old list waiting to be carried over to the website. */
@@ -113,12 +113,23 @@ export interface PoolOptions {
 
 type Players = Record<string, PoolPlayer>;
 
+/** A filled-in form waiting for its rank (Discord forms can't hold the rank picker too). */
+interface PendingForm {
+  uid: string;
+  name: string;
+  position: string | undefined;
+  facebook: string;
+  phone: string | null;
+  at: number;
+}
+const PENDING_MS = 15 * 60_000;
+
 const mention = (id: string) => `<@${id}>`;
-const rankText = (r: string | null) => (r ? `แรงค์${r}` : "ยังไม่เลือกแรงค์");
+const rankText = (r: string | null) => (r ? `แรงค์ ${r}` : "ยังไม่เลือกแรงค์");
 const playerLine = (id: string, p?: PoolPlayer) => (p ? `${mention(id)} · **${p.name}** (UID ${p.uid ?? "-"}) · ${positionText(p.position)} · ${rankText(p.rank)}` : mention(id));
 /** What organizers see in /pool list: the public line plus Facebook and phone. */
 const privateLine = (id: string, p: PoolPlayer) => `${playerLine(id, p)}\n　FB: ${p.facebook ? p.facebook.replace(/[`*_~|]/g, "") : "-"}${p.phone ? ` · โทร ${p.phone}` : ""}`;
-const drawTitle = (d: Draw) => [d.rank ? `แรงค์${d.rank}` : null, d.position ? positionText(d.position) : null].filter(Boolean).join(" ") || "ทุกแรงค์";
+const drawTitle = (d: Draw) => [d.rank ? `แรงค์ ${d.rank}` : null, d.position ? positionText(d.position) : null].filter(Boolean).join(" ") || "ทุกแรงค์";
 
 function toPlayer(r: ReserveRow): PoolPlayer {
   return {
@@ -138,6 +149,7 @@ export class PoolManager {
   private siteUrl?: string;
   private log: (...args: unknown[]) => void;
   private random: () => number;
+  private pending = new Map<string, PendingForm>();
 
   constructor(opts: PoolOptions) {
     this.api = opts.api;
@@ -152,6 +164,12 @@ export class PoolManager {
   }
 
   // ---------- The list (on the website) ----------
+
+  /** The ranks to pick from: the game's in-game ranks on the website, lowest first. */
+  async ranks(): Promise<string[]> {
+    const { data } = await this.api.get<{ data: { name: string }[] }>("/special/ranks");
+    return data.map((r) => r.name);
+  }
 
   /** Everyone signed up, by Discord account. The old list in pool.json is carried over to the website first. */
   async players(): Promise<Players> {
@@ -174,10 +192,10 @@ export class PoolManager {
 
   // ---------- Messages ----------
 
-  panel(pool: PoolConfig, players: Players) {
+  panel(pool: PoolConfig, players: Players, ranks: string[]) {
     const list = Object.values(players);
     const byPosition = (["GUARD", "FORWARD", "CENTER", "ALL"] as const).map((p) => `${POSITION_SHORT[p]} **${list.filter((x) => x.position === p).length}**`);
-    const byRank = pool.ranks.map((r) => `แรงค์${r} **${list.filter((p) => p.rank === r).length}**`);
+    const byRank = ranks.map((r) => `${r} **${list.filter((p) => p.rank === r).length}**`);
     const board = siteLink(this.siteUrl, "/special");
     const embed: APIEmbed = {
       title: "🎲 ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง",
@@ -187,7 +205,7 @@ export class PoolManager {
         "ห้องนี้เปิดรับลงชื่อตลอด ใช้ได้ทุกงาน กด 📝 **ลงชื่อ / แก้ข้อมูล** แล้วกรอก:",
         "• ชื่อตัวละคร และ UID",
         "• Facebook (เบอร์โทรไม่ใส่ก็ได้) ผู้จัดเท่านั้นที่เห็น",
-        "• ตำแหน่ง: บอลหลัก, บอลรอง, เซนเตอร์ หรือ All Around แล้วเลือกแรงค์",
+        "• ตำแหน่ง: บอลหลัก, บอลรอง, เซนเตอร์ หรือ All Around แล้วเลือกแรงค์ (ต้องเลือก)",
         "",
         "เวลามีงาน ผู้จัดจะสุ่มคนจากรายชื่อนี้ ถ้าถูกเลือกบอทจะแท็กชื่อคุณ ถ้าไม่สะดวก กด 🙋 **ไม่สะดวก** ใต้ประกาศ บอทจะสุ่มคนใหม่แทน",
         "สถิติและ MMR ของรายการนี้แยกจากรายการหลัก ดูได้ด้วย `/pool rank` หรือที่หน้าเว็บ",
@@ -274,12 +292,12 @@ export class PoolManager {
   }
 
   /** After the form: the rank, one click. */
-  private rankPicker(pool: PoolConfig, current: string | null) {
+  private rankPicker(pool: PoolConfig, ranks: string[], current: string | null) {
     return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
       new StringSelectMenuBuilder()
         .setCustomId(`tp:rank:${pool.guildId}`)
         .setPlaceholder("เลือกแรงค์ของคุณ")
-        .addOptions(pool.ranks.slice(0, 25).map((r) => ({ label: `แรงค์${r}`, value: r, default: current === r }))),
+        .addOptions(ranks.slice(0, 25).map((r) => ({ label: r.slice(0, 100), value: r.slice(0, 100), default: current === r }))),
     );
   }
 
@@ -351,7 +369,8 @@ export class PoolManager {
     const msg = channel?.isTextBased() ? await channel.messages.fetch(pool.panelMessageId).catch(() => null) : null;
     if (!msg) return;
     const list = players ?? (await this.players().catch(() => null));
-    if (list) await msg.edit(this.panel(pool, list)).catch(() => null);
+    const ranks = await this.ranks().catch(() => null);
+    if (list && ranks) await msg.edit(this.panel(pool, list, ranks)).catch(() => null);
   }
 
   // ---------- Commands ----------
@@ -364,14 +383,10 @@ export class PoolManager {
       if (sub === "setup") {
         if (!info.manageGuild && !(pool && this.isOrganizer(pool, i.user.id, info))) return void (await i.reply({ ephemeral: true, content: "เฉพาะแอดมินเซิร์ฟเวอร์หรือผู้จัด" }));
         const channelId = i.options.getChannel("channel")?.id ?? i.channelId;
-        const typed = i.options.getString("ranks");
-        const ranks = typed ? [...new Set(typed.split(/[,，\n]/).map((r) => r.trim().replace(/^แรงค์/, "")).filter(Boolean))] : (pool?.ranks ?? DEFAULT_RANKS);
-        if (!ranks.length || ranks.length > 25) return void (await i.reply({ ephemeral: true, content: "ใส่แรงค์ 1-25 แบบ คั่นด้วยจุลภาค เช่น ฟ้า, ทอง, แดง, โซน" }));
         const next: PoolConfig = {
           guildId: i.guildId!,
           channelId,
           panelMessageId: pool?.channelId === channelId ? pool.panelMessageId : null,
-          ranks,
           organizerRoleId: i.options.getRole("organizer_role")?.id ?? pool?.organizerRoleId ?? null,
           ownerId: pool?.ownerId ?? i.user.id,
           players: pool?.players ?? {},
@@ -379,16 +394,16 @@ export class PoolManager {
         };
         await i.deferReply({ ephemeral: true });
         this.pools.set(next.guildId, next);
-        const players = await this.players();
+        const [players, ranks] = await Promise.all([this.players(), this.ranks()]);
         const channel = await i.client.channels.fetch(channelId).catch(() => null);
         if (!channel?.isSendable()) return void (await i.editReply("บอทส่งข้อความในห้องนั้นไม่ได้ ตรวจสิทธิ์ View Channel / Send Messages"));
         const old = next.panelMessageId && channel.isTextBased() ? await channel.messages.fetch(next.panelMessageId).catch(() => null) : null;
-        if (old) await old.edit(this.panel(next, players));
-        else next.panelMessageId = (await channel.send(this.panel(next, players))).id;
+        if (old) await old.edit(this.panel(next, players, ranks));
+        else next.panelMessageId = (await channel.send(this.panel(next, players, ranks))).id;
         this.pools.set(next.guildId, { ...this.pools.get(next.guildId)!, panelMessageId: next.panelMessageId });
-        const gone = Object.values(players).filter((p) => p.rank && !ranks.includes(p.rank));
-        const warn = gone.length ? `\n⚠️ มี ${gone.length} คนที่แรงค์เดิมไม่อยู่ในรายการใหม่ (${[...new Set(gone.map((p) => p.rank))].join(", ")}) จะไม่ถูกสุ่มตามแรงค์จนกว่าจะเลือกแรงค์ใหม่` : "";
-        return void (await i.editReply(`✅ ตั้งห้องลงชื่อตัวสำรองที่ <#${channelId}> แล้ว แรงค์: ${ranks.map((r) => `แรงค์${r}`).join(", ")}${warn}`));
+        const gone = Object.values(players).filter((p) => !p.rank || !ranks.includes(p.rank));
+        const warn = gone.length ? `\n⚠️ มี ${gone.length} คนที่ยังไม่มีแรงค์ในรายการ จะไม่ถูกสุ่มตามแรงค์จนกว่าจะกด 📝 แล้วเลือกแรงค์` : "";
+        return void (await i.editReply(`✅ ตั้งห้องลงชื่อตัวสำรองที่ <#${channelId}> แล้ว แรงค์ให้เลือก: ${ranks.join(", ")} (แก้รายการแรงค์ได้ที่หน้าแอดมินบนเว็บ > เกม)${warn}`));
       }
       if (!pool) return void (await i.reply({ ephemeral: true, content: "ยังไม่ได้ตั้งห้องลงชื่อ ใช้ `/pool setup` ก่อน" }));
       if (!this.isOrganizer(pool, i.user.id, info)) return void (await i.reply({ ephemeral: true, content: "คำสั่งนี้สำหรับผู้จัด" }));
@@ -424,7 +439,10 @@ export class PoolManager {
       // draw
       const rank = i.options.getString("rank")?.replace(/^แรงค์/, "").trim() || null;
       const position = (i.options.getString("position") as SoloPosition | null) ?? null;
-      if (rank && !pool.ranks.includes(rank)) return void (await say(`ไม่มีแรงค์ "${rank}" (มี ${pool.ranks.join(", ")})`));
+      if (rank) {
+        const ranks = await this.ranks();
+        if (!ranks.includes(rank)) return void (await say(`ไม่มีแรงค์ "${rank}" (มี ${ranks.join(", ")})`));
+      }
       const count = i.options.getInteger("count", true);
       const a = i.options.getUser("player_a")?.id ?? null;
       const b = i.options.getUser("player_b")?.id ?? null;
@@ -484,10 +502,9 @@ export class PoolManager {
   }
 
   async onAutocomplete(i: AutocompleteInteraction) {
-    const pool = this.pools.get(i.guildId ?? "");
-    const typed = String(i.options.getFocused()).replace(/^แรงค์/, "").trim();
-    const ranks = (pool?.ranks ?? DEFAULT_RANKS).filter((r) => r.includes(typed));
-    await i.respond(ranks.slice(0, 25).map((r) => ({ name: `แรงค์${r}`, value: r })));
+    const typed = String(i.options.getFocused()).replace(/^แรงค์/, "").trim().toLowerCase();
+    const ranks = (await this.ranks().catch(() => [] as string[])).filter((r) => r.toLowerCase().includes(typed));
+    await i.respond(ranks.slice(0, 25).map((r) => ({ name: r.slice(0, 100), value: r.slice(0, 100) })));
   }
 
   // ---------- Buttons, menus and forms ----------
@@ -619,21 +636,20 @@ export class PoolManager {
     }
     try {
       await i.deferReply({ ephemeral: true });
-      const before = await this.mine(i.user.id);
+      const [before, ranks] = await Promise.all([this.mine(i.user.id), this.ranks()]);
+      const form: PendingForm = { uid, name, position, facebook: text("facebook"), phone: text("phone") || null, at: Date.now() };
+      if (!before?.rank || !ranks.includes(before.rank)) {
+        // The rank is required but doesn't fit in the form: check the form now, save it once the rank is picked.
+        await this.api.post(`/members/${i.user.id}/reserve/check`, { uid, name, position, facebook: form.facebook, phone: form.phone });
+        this.pending.set(i.user.id, form);
+        return void (await i.editReply({ content: "📝 อีกขั้นเดียว: **เลือกแรงค์ของคุณ** ด้านล่าง แล้วระบบจะบันทึกการลงชื่อให้", components: [this.rankPicker(pool, ranks, null)] }));
+      }
       // The website checks the form first, then links (or creates) the character with this UID.
-      const { data } = await this.api.post<{ data: ReserveRow }>(`/members/${i.user.id}/reserve`, {
-        uid,
-        name,
-        position,
-        facebook: text("facebook"),
-        phone: text("phone") || null,
-        rank: before?.rank ?? null,
-      });
-      const me = toPlayer(data);
+      const me = await this.save(i.user.id, form, before.rank);
       const renamed = me.name !== name ? `\n(UID ${uid} อยู่ในระบบแล้วในชื่อ **${me.name}** ถ้าชื่อผิดให้แจ้งผู้จัด)` : "";
       await i.editReply({
-        content: `✅ ${before ? "แก้ข้อมูล" : "ลงชื่อ"}แล้ว: **${me.name}** (UID ${me.uid}) · ${positionText(me.position)}${renamed}\nเลือกแรงค์ของคุณด้านล่าง (${rankText(me.rank)})`,
-        components: pool.ranks.length ? [this.rankPicker(pool, me.rank)] : [],
+        content: `✅ แก้ข้อมูลแล้ว: **${me.name}** (UID ${me.uid}) · ${positionText(me.position)} · ${rankText(me.rank)}${renamed}\nเปลี่ยนแรงค์ได้ด้านล่าง`,
+        components: [this.rankPicker(pool, ranks, me.rank)],
       });
       await this.refreshPanel(i.client, pool);
     } catch (e) {
@@ -643,15 +659,29 @@ export class PoolManager {
     }
   }
 
+  private async save(discordId: string, f: PendingForm, rank: string) {
+    const { data } = await this.api.post<{ data: ReserveRow }>(`/members/${discordId}/reserve`, { uid: f.uid, name: f.name, position: f.position, facebook: f.facebook, phone: f.phone, rank });
+    return toPlayer(data);
+  }
+
   private async pickRank(i: StringSelectMenuInteraction, guildId: string) {
     const pool = this.pools.get(guildId);
     const rank = i.values[0];
-    if (!pool || !pool.ranks.includes(rank)) return void (await i.update({ content: "เลือกแรงค์ใหม่อีกครั้ง (กด 📝 ลงชื่อ / แก้ข้อมูล)", components: [] }));
+    if (!pool) return void (await i.update({ content: "ยังไม่ได้ตั้งห้องลงชื่อ", components: [] }));
+    const form = this.pending.get(i.user.id);
+    if (form && Date.now() - form.at < PENDING_MS) {
+      const me = await this.save(i.user.id, form, rank);
+      this.pending.delete(i.user.id);
+      const renamed = me.name !== form.name ? `\n(UID ${form.uid} อยู่ในระบบแล้วในชื่อ **${me.name}** ถ้าชื่อผิดให้แจ้งผู้จัด)` : "";
+      await i.update({ content: `✅ ลงชื่อแล้ว: **${me.name}** (UID ${me.uid}) · ${positionText(me.position)} · ${rankText(me.rank)}${renamed}\nถ้าถูกสุ่มไปช่วยแข่ง บอทจะแท็กชื่อคุณ`, components: [] });
+      return void (await this.refreshPanel(i.client, pool));
+    }
+    this.pending.delete(i.user.id);
     const { data } = await this.api.get<{ data: ReserveRow | null }>(`/members/${i.user.id}/reserve`);
     if (!data) return void (await i.update({ content: "คุณยังไม่ได้ลงชื่อ กด 📝 ลงชื่อ / แก้ข้อมูล", components: [] }));
     if (!data.position || !data.facebook) return void (await i.update({ content: "กรอก Facebook และตำแหน่งก่อน: กด 📝 ลงชื่อ / แก้ข้อมูล", components: [] }));
     await this.api.post(`/members/${i.user.id}/reserve`, { playerId: data.playerId, position: data.position, facebook: data.facebook, phone: data.phone ?? null, rank });
-    await i.update({ content: `✅ บันทึกแล้ว: **${data.player.nickname || data.player.name}** · ${positionText(data.position)} · แรงค์${rank}\nถ้าถูกสุ่มไปช่วยแข่ง บอทจะแท็กชื่อคุณ`, components: [] });
+    await i.update({ content: `✅ บันทึกแล้ว: **${data.player.nickname || data.player.name}** · ${positionText(data.position)} · ${rankText(rank)}\nถ้าถูกสุ่มไปช่วยแข่ง บอทจะแท็กชื่อคุณ`, components: [] });
     await this.refreshPanel(i.client, pool);
   }
 

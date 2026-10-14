@@ -4,7 +4,7 @@ import { discordId } from "../lib/members.js";
 import { notFound } from "../lib/errors.js";
 import { leaveSolo, signUp } from "../lib/solo.js";
 import { setOwnPosition } from "../lib/players.js";
-import { joinReserve, leaveReserve, myReserve } from "../lib/special.js";
+import { checkReserve, joinReserve, leaveReserve, myReserve } from "../lib/special.js";
 import { acceptInvite, cancelInvite, createGuild, declineInvite, editGuild, inviteToGuild, kickFromGuild, leaveGuild, passLeader } from "../lib/guilds.js";
 import { createTeam, inviteInfo, joinTeam, kickMember, leaveTeam, makeCaptain, memberView, resetInvite } from "../lib/teamSelf.js";
 
@@ -61,6 +61,11 @@ members.get("/:discordId/reserve", async (req, res) => {
 });
 members.post("/:discordId/reserve", async (req, res) => {
   res.json({ data: await joinReserve(who(req.params.discordId), req.body) });
+});
+/** Checks the form without saving it, rank optional: the bot asks for the rank after the form. */
+members.post("/:discordId/reserve/check", async (req, res) => {
+  await checkReserve(who(req.params.discordId), req.body);
+  res.status(204).end();
 });
 members.delete("/:discordId/reserve", async (req, res) => {
   await leaveReserve(who(req.params.discordId));

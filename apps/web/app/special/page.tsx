@@ -9,6 +9,7 @@ import { discordEnabled } from "@/lib/discord";
 import { Avatar, Empty, PlayerLink, StatusBadge } from "@/components/ui";
 import { Form, RankMove, TierBadge, TierProgress } from "@/components/Tier";
 import { GameTabs } from "@/components/GameTabs";
+import { RankBadge } from "@/components/RankBadge";
 
 export const metadata = { title: "เล่นเก่งปากเก่ง · ตัวสำรองและอันดับ MMR แยก" };
 
@@ -166,10 +167,13 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
                           <Avatar src={r.player.avatarUrl} name={r.player.name} />
                           <span>
                             <strong>{r.player.nickname || r.player.name}</strong>
-                            <span className="muted small"> · UID {r.player.uid ?? "-"}{r.rank ? ` · แรงค์${r.rank}` : ""}</span>
+                            <span className="muted small"> · UID {r.player.uid ?? "-"}</span>
                           </span>
                         </Link>
-                        <span className="muted small">{r.player.specialMmr} MMR</span>
+                        <span className="reserve-meta">
+                          {r.rank ? <RankBadge rank={r.rank} ranks={board.ranks} /> : <span className="muted small">ยังไม่เลือกแรงค์</span>}
+                          <span className="muted small">{r.player.specialMmr} MMR</span>
+                        </span>
                       </li>
                     ))}
                   </ul>

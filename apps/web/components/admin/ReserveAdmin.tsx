@@ -2,12 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { removeReserve, saveReserve, type FormState } from "@/app/admin/actions";
-import type { ReservePlayer } from "@/lib/types";
+import type { GameRank, ReservePlayer } from "@/lib/types";
 import { PositionSelect } from "../PositionSelect";
 import { useFormAction } from "./useFormAction";
 
 /** Fix a substitute's position, rank, Facebook or phone, or take them off the list. */
-export function ReserveActions({ row }: { row: ReservePlayer }) {
+export function ReserveActions({ row, ranks }: { row: ReservePlayer; ranks: GameRank[] }) {
   const [open, setOpen] = useState(false);
   const [state, onSubmit, pending] = useFormAction(saveReserve.bind(null, row.playerId), undefined);
   const [removed, setRemoved] = useState<FormState>();
@@ -24,7 +24,14 @@ export function ReserveActions({ row }: { row: ReservePlayer }) {
       {open && (
         <form onSubmit={onSubmit} className="form reserve-edit">
           <PositionSelect value={row.position} name="position" />
-          <label>แรงค์<input name="rank" maxLength={30} defaultValue={row.rank ?? ""} /></label>
+          <label>
+            แรงค์
+            <select name="rank" defaultValue={row.rank ?? ""}>
+              <option value="">ยังไม่เลือก</option>
+              {row.rank && !ranks.some((r) => r.name === row.rank) && <option value={row.rank}>{row.rank} (ไม่อยู่ในรายการแล้ว)</option>}
+              {ranks.map((r) => <option key={r.name} value={r.name}>{r.name}</option>)}
+            </select>
+          </label>
           <label>Facebook<input name="facebook" maxLength={200} defaultValue={row.facebook ?? ""} /></label>
           <label>เบอร์โทร<input name="phone" maxLength={20} inputMode="tel" defaultValue={row.phone ?? ""} /></label>
           {state?.error && <div className="error small">{state.error}</div>}

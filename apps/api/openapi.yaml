@@ -231,13 +231,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [playerId, position, facebook]
+              required: [playerId, position, facebook, rank]
               properties:
                 playerId: { type: string, description: One of this member's characters }
                 position: { type: string, enum: [GUARD, FORWARD, CENTER, ALL], description: "GUARD = บอลหลัก, FORWARD = บอลรอง" }
                 facebook: { type: string, maxLength: 200, description: A Facebook name or a facebook.com link (private) }
                 phone: { type: string, nullable: true, maxLength: 20, description: Optional (private) }
-                rank: { type: string, nullable: true, maxLength: 30, description: In-game rank for the Discord random draws }
+                rank: { type: string, maxLength: 30, description: "One of the game's ranks (GET /special/ranks); used by the Discord random draws" }
       responses:
         "200": { description: "{ data }: the sign-up" }
         "400": { description: "Invalid field; details.th says which in Thai" }
@@ -256,7 +256,25 @@ paths:
       parameters:
         - { name: gameId, in: query, schema: { type: string } }
       responses:
-        "200": { description: "{ ranked, placing, tiers, stats, events, reserve, rules }" }
+        "200": { description: "{ ranked, placing, tiers, stats, events, reserve, ranks, rules }" }
+  /api/v1/members/{discordId}/reserve/check:
+    parameters:
+      - { $ref: "#/components/parameters/discordId" }
+    post:
+      tags: [Members]
+      summary: Check a sign-up form without saving it; the rank may be left out (admin). The Discord bot asks for the rank after the form.
+      responses:
+        "204": { description: The form is fine }
+        "400": { description: The first problem, in Thai in details.th }
+        "409": { description: The UID belongs to another Discord account }
+  /api/v1/special/ranks:
+    get:
+      tags: [Special]
+      summary: The ranks substitutes pick from (the game's in-game ranks, lowest first, the same list as solo tournaments)
+      parameters:
+        - { name: gameId, in: query, schema: { type: string } }
+      responses:
+        "200": { description: "{ data: [{ name, iconUrl }] }" }
   /api/v1/special/reserve:
     get:
       tags: [Special]

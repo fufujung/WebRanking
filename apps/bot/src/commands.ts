@@ -183,10 +183,9 @@ const poolCommand: ApplicationCommandData = {
     {
       type: O.Subcommand,
       name: "setup",
-      description: "ตั้งห้องลงชื่อตัวสำรองและรายการแรงค์ (แอดมิน)",
+      description: "ตั้งห้องลงชื่อตัวสำรอง (แอดมิน) แรงค์ใช้รายการแรงค์ของเกมบนเว็บ",
       options: [
         { type: O.Channel, name: "channel", description: "ห้องลงชื่อ (ไม่ใส่ = ห้องนี้)", channelTypes: [ChannelType.GuildText] },
-        { type: O.String, name: "ranks", description: "แรงค์ คั่นด้วยจุลภาค (ค่าเริ่มต้น ฟ้า, ทอง, แดง, โซน)", maxLength: 300 },
         { type: O.Role, name: "organizer_role", description: "ยศที่สุ่ม เปลี่ยนตัว และดูช่องทางติดต่อได้" },
       ],
     },

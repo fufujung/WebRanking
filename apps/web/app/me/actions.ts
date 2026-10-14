@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { explain } from "@/lib/explain";
 import { endMemberSession, getMember } from "@/lib/member";
-import type { Player, ReservePlayer } from "@/lib/types";
+import type { Player } from "@/lib/types";
 
 export type MeState = { error?: string; ok?: string; needsName?: boolean; needsGame?: boolean } | undefined;
 
@@ -181,10 +181,9 @@ export async function passGuildLeader(playerId: string, memberId: string) {
 export async function saveMyReserve(_: MeState, form: FormData): Promise<MeState> {
   const m = await member();
   try {
-    const { data: current } = await api<{ data: ReservePlayer | null }>(`/members/${m.id}/reserve`);
     await api(`/members/${m.id}/reserve`, {
       method: "POST",
-      json: { playerId: text(form, "playerId"), position: text(form, "position") || null, facebook: text(form, "facebook"), phone: text(form, "phone") || null, rank: current?.rank ?? null },
+      json: { playerId: text(form, "playerId"), position: text(form, "position") || null, facebook: text(form, "facebook"), phone: text(form, "phone") || null, rank: text(form, "rank") || null },
     });
   } catch (e) {
     return { error: explain(e) };

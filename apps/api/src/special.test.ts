@@ -58,6 +58,8 @@ after(async () => {
 
 const line = (side: "A" | "B", playerId: string, pts = 5, award: string | null = null) => ({ side, playerId, pts, reb: 1, blk: 0, stl: 0, ast: 1, lbr: 0, award });
 
+const R = "รุ่นแห่งปาฏิหาริย์";
+
 describe("special events (เล่นเก่งปากเก่ง)", () => {
   const bank = "111111111111111111";
   const dew = "222222222222222222";
@@ -69,43 +71,62 @@ describe("special events (เล่นเก่งปากเก่ง)", () =>
     dewPlayer = (await ok("POST", `/players/discord/${dew}/claim`, { uid: "200200", name: "Dew" })).id;
 
     // Facebook is required, the position must be one of the four, the phone may be left out.
-    const noFb = await call("POST", `/members/${bank}/reserve`, { playerId: bankPlayer, position: "GUARD" });
+    const noFb = await call("POST", `/members/${bank}/reserve`, { playerId: bankPlayer, position: "GUARD", rank: R });
     assert.equal(noFb.status, 400);
     assert.match(noFb.body.details.th, /Facebook/);
-    const badPos = await call("POST", `/members/${bank}/reserve`, { playerId: bankPlayer, position: "Goalkeeper", facebook: "Bank OT" });
+    const badPos = await call("POST", `/members/${bank}/reserve`, { playerId: bankPlayer, position: "Goalkeeper", facebook: "Bank OT", rank: R });
     assert.equal(badPos.status, 400);
     assert.match(badPos.body.details.th, /ตำแหน่ง/);
-    const badPhone = await call("POST", `/members/${bank}/reserve`, { playerId: bankPlayer, position: "GUARD", facebook: "Bank OT", phone: "call me" });
+    const badPhone = await call("POST", `/members/${bank}/reserve`, { playerId: bankPlayer, position: "GUARD", facebook: "Bank OT", phone: "call me", rank: R });
     assert.equal(badPhone.status, 400);
     assert.match(badPhone.body.details.th, /เบอร์/);
+    // The rank is required and must be one of the game's ranks (the same list as solo tournaments).
+    const ranks = (await ok("GET", "/special/ranks")).data.map((r: { name: string }) => r.name);
+    assert.ok(ranks.includes(R));
+    const noRank = await call("POST", `/members/${bank}/reserve`, { playerId: bankPlayer, position: "GUARD", facebook: "Bank OT" });
+    assert.equal(noRank.status, 400);
+    assert.match(noRank.body.details.th, /แรงค์/);
+    const badRank = await call("POST", `/members/${bank}/reserve`, { playerId: bankPlayer, position: "GUARD", facebook: "Bank OT", rank: "ฟ้า" });
+    assert.equal(badRank.status, 400);
+    assert.match(badRank.body.details.th, /เจ้าแห่ง ZONE/, "the error lists the ranks to pick from");
+    // Discord checks the form before asking for the rank; nothing is saved.
+    const check = (who: string, body: object, key?: string) => call("POST", `/members/${who}/reserve/check`, body, key);
+    assert.equal((await check("999999999999999999", { uid: "999", name: "Zed", position: "GUARD", facebook: "Zed" })).status, 204);
+    assert.equal((await check("999999999999999999", { uid: "999", name: "Zed", position: "GUARD", facebook: "https://evil.example" })).status, 400);
+    assert.equal((await check("999999999999999999", { uid: "100100", name: "Zed", position: "GUARD", facebook: "Zed" })).status, 409, "Bank's UID");
+    assert.equal((await check(bank, { uid: "100100", position: "GUARD", facebook: "Bank" })).status, 204, "Bank's own UID");
+    assert.equal((await check("999999999999999999", { uid: "999", name: "Zed", position: "GUARD", facebook: "Zed" }, reader)).status, 403);
+    assert.equal((await ok("GET", "/players/discord/999999999999999999")).data.length, 0, "checking creates no character");
+    assert.equal((await ok("GET", "/special/reserve")).data.length, 0);
     // A link must be a Facebook link.
     for (const facebook of ["https://evil.example/login", "javascript:alert(1)//facebook.com", "www.fakebook.com/bank", "https://facebook.com.evil.io/x"]) {
-      const r = await call("POST", `/members/${bank}/reserve`, { playerId: bankPlayer, position: "GUARD", facebook });
+      const r = await call("POST", `/members/${bank}/reserve`, { playerId: bankPlayer, position: "GUARD", facebook, rank: R });
       assert.equal(r.status, 400, facebook);
     }
     // Signing up by UID links or creates the character, but only once the form is right.
     const carlId = "555555555555555555";
-    assert.equal((await call("POST", `/members/${carlId}/reserve`, { uid: "555555", name: "Carl", position: "GUARD", facebook: "x" })).status, 400);
+    assert.equal((await call("POST", `/members/${carlId}/reserve`, { uid: "555555", name: "Carl", position: "GUARD", facebook: "x", rank: R })).status, 400);
     assert.equal((await ok("GET", `/players/discord/${carlId}`)).data.length, 0, "a bad form creates no character");
-    assert.equal((await call("POST", `/members/${carlId}/reserve`, { uid: "100100", name: "Fake Bank", position: "GUARD", facebook: "Carl" })).status, 409, "Bank's UID is linked to Bank");
-    const byUid = (await ok("POST", `/members/${carlId}/reserve`, { uid: "555555", name: "Carl", position: "GUARD", facebook: "Carl C" })).data;
+    assert.equal((await call("POST", `/members/${carlId}/reserve`, { uid: "100100", name: "Fake Bank", position: "GUARD", facebook: "Carl", rank: R })).status, 409, "Bank's UID is linked to Bank");
+    const byUid = (await ok("POST", `/members/${carlId}/reserve`, { uid: "555555", name: "Carl", position: "GUARD", facebook: "Carl C", rank: R })).data;
     assert.equal(byUid.player.name, "Carl");
     assert.equal(byUid.player.uid, "555555");
     assert.equal((await call("DELETE", `/members/${carlId}/reserve`)).status, 204);
 
     // Someone else's character is refused.
-    assert.equal((await call("POST", `/members/${dew}/reserve`, { playerId: bankPlayer, position: "GUARD", facebook: "Dew" })).status, 403);
+    assert.equal((await call("POST", `/members/${dew}/reserve`, { playerId: bankPlayer, position: "GUARD", facebook: "Dew", rank: R })).status, 403);
 
     // "บอลหลัก" is the Thai word for Guard.
-    const mine = (await ok("POST", `/members/${bank}/reserve`, { playerId: bankPlayer, position: "บอลหลัก", facebook: "https://www.facebook.com/bank.ot", phone: "081-234-5678", rank: "ทอง" })).data;
+    const mine = (await ok("POST", `/members/${bank}/reserve`, { playerId: bankPlayer, position: "บอลหลัก", facebook: "https://www.facebook.com/bank.ot", phone: "081-234-5678", rank: "เจ้าแห่ง ZONE" })).data;
+    assert.equal(mine.rank, "เจ้าแห่ง ZONE");
     assert.equal(mine.position, "GUARD");
     assert.equal(mine.facebook, "https://www.facebook.com/bank.ot");
     assert.equal(mine.phone, "081-234-5678");
     assert.equal((await prisma.player.findUnique({ where: { id: bankPlayer } }))!.role, "GUARD", "the position is the player's position on the site too");
-    await ok("POST", `/members/${dew}/reserve`, { playerId: dewPlayer, position: "FORWARD", facebook: "Dew Rivals" });
+    await ok("POST", `/members/${dew}/reserve`, { playerId: dewPlayer, position: "FORWARD", facebook: "Dew Rivals", rank: R });
 
     // Signing up again changes the details instead of adding a second row.
-    await ok("POST", `/members/${dew}/reserve`, { playerId: dewPlayer, position: "CENTER", facebook: "Dew Rivals", phone: "" });
+    await ok("POST", `/members/${dew}/reserve`, { playerId: dewPlayer, position: "CENTER", facebook: "Dew Rivals", phone: "", rank: R });
     const pub = (await ok("GET", "/special/reserve")).data;
     assert.deepEqual(pub.map((r: { player: { name: string }; position: string }) => [r.player.name, r.position]), [["Bank", "GUARD"], ["Dew", "CENTER"]]);
     for (const r of pub) {
@@ -122,7 +143,7 @@ describe("special events (เล่นเก่งปากเก่ง)", () =>
     assert.equal(priv[0].discordId, bank);
     assert.equal(priv[1].phone, null);
     // Members can't write with a read key.
-    assert.equal((await call("POST", `/members/${dew}/reserve`, { playerId: dewPlayer, position: "CENTER", facebook: "Dew" }, reader)).status, 403);
+    assert.equal((await call("POST", `/members/${dew}/reserve`, { playerId: dewPlayer, position: "CENTER", facebook: "Dew", rank: R }, reader)).status, 403);
   });
 
   test("organizers fix or remove sign-ups; members leave on their own", async () => {
@@ -131,13 +152,15 @@ describe("special events (เล่นเก่งปากเก่ง)", () =>
     assert.equal(fixed.phone, "0899999999");
     assert.equal(fixed.facebook, "Dew Rivals", "fields left out are kept");
     assert.equal((await call("PATCH", `/special/reserve/${dewPlayer}`, { facebook: "https://evil.example" })).status, 400);
+    assert.equal((await call("PATCH", `/special/reserve/${dewPlayer}`, { rank: "ไม่มีแรงค์นี้" })).status, 400);
+    assert.equal((await ok("PATCH", `/special/reserve/${dewPlayer}`, { rank: "เจ้าแห่ง ZONE" })).rank, "เจ้าแห่ง ZONE");
     assert.equal((await call("PATCH", `/special/reserve/${dewPlayer}`, { position: "CENTER" }, reader)).status, 403);
     assert.equal((await call("DELETE", `/special/reserve/${dewPlayer}`, undefined, reader)).status, 403);
 
     assert.equal((await call("DELETE", `/members/${dew}/reserve`)).status, 204);
     assert.equal((await call("DELETE", `/members/${dew}/reserve`)).status, 404);
     assert.equal((await ok("GET", `/members/${dew}/reserve`)).data, null);
-    await ok("POST", `/members/${dew}/reserve`, { playerId: dewPlayer, position: "FORWARD", facebook: "Dew Rivals" });
+    await ok("POST", `/members/${dew}/reserve`, { playerId: dewPlayer, position: "FORWARD", facebook: "Dew Rivals", rank: R });
     assert.equal((await call("DELETE", `/special/reserve/${dewPlayer}`)).status, 204);
     assert.equal((await ok("GET", "/special/reserve")).data.length, 1);
   });

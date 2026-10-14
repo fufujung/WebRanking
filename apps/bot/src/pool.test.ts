@@ -156,7 +156,7 @@ async function signUp(userId: string, f: Form, rank: string) {
   const i = form(userId, f);
   await pool.onModal(i);
   const answer = i.replies.at(-1);
-  assert.match(said(answer), /แล้ว: /, said(answer));
+  assert.match(said(answer), /แล้ว: |เลือกแรงค์ของคุณ/, said(answer));
   const menu = answer.components[0].toJSON().components[0];
   assert.equal(menu.custom_id, `tp:rank:${GUILD}`);
   const pick = choose(menu.custom_id, userId, [rank], new Msg("private", answer));
@@ -182,6 +182,9 @@ before(async () => {
       },
     }),
   );
+  // The game's in-game ranks on the website are the list people pick from.
+  const game = await api.post<{ id: string }>("/games", { name: "Street Rivals" });
+  await api.patch(`/games/${game.id}`, { ranks: ["ฟ้า", "ทอง", "แดง", "โซน"].map((name) => ({ name, iconUrl: null })) });
   pool = new PoolManager({ api, dataDir, siteUrl: "https://ranking.example", log: () => {}, random: () => cycle[r++ % cycle.length] });
 });
 
@@ -197,7 +200,7 @@ test("setting up the room carries the old list over to the website", async () =>
   assert.match(reply(notAdmin), /เฉพาะแอดมิน/);
   const setup = command("setup", { channel: "signup", organizer_role: ORG_ROLE });
   await pool.onCommand(setup, admin);
-  assert.match(reply(setup), /ตั้งห้องลงชื่อตัวสำรองที่ <#signup> แล้ว แรงค์: แรงค์ฟ้า, แรงค์ทอง, แรงค์แดง, แรงค์โซน/);
+  assert.match(reply(setup), /ตั้งห้องลงชื่อตัวสำรองที่ <#signup> แล้ว แรงค์ให้เลือก: ฟ้า, ทอง, แดง, โซน/);
   const panel = [...messages.values()].at(-1)!;
   assert.deepEqual(panel.ids, [[`tp:reg:${GUILD}`, `tp:out:${GUILD}`, `tp:list:${GUILD}`]]);
   assert.match(panel.text, /ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง/);
@@ -236,8 +239,14 @@ test("people sign up with name, UID, Facebook, optional phone and position, then
   const positions = ["GUARD", "GUARD", "FORWARD", "CENTER", "ALL", "CENTER"];
   for (let n = 1; n <= 6; n++) await signUp(u(n), { name: `Zone${n}`, uid: `90000000${n}`, position: positions[n - 1], phone: n === 1 ? "081-234-5678" : "" }, "โซน");
   const { form: first, pick } = await signUp(u(7), { name: "Blue1", uid: "800000001", position: "FORWARD", facebook: "https://www.facebook.com/blue1" }, "ฟ้า");
-  assert.match(reply(first), /ลงชื่อแล้ว: \*\*Blue1\*\* \(UID 800000001\) · บอลรอง/);
-  assert.match(reply(pick), /บันทึกแล้ว: \*\*Blue1\*\* · บอลรอง · แรงค์ฟ้า/);
+  assert.match(reply(first), /อีกขั้นเดียว: \*\*เลือกแรงค์ของคุณ\*\*/, "the rank is required, so it is asked for before saving");
+  assert.match(reply(pick), /ลงชื่อแล้ว: \*\*Blue1\*\* \(UID 800000001\) · บอลรอง · แรงค์ ฟ้า/);
+
+  // The form alone saves nothing: without a rank there is no sign-up.
+  const halfway = form(u(9), { name: "Half", uid: "900000009", position: "GUARD" });
+  await pool.onModal(halfway);
+  assert.match(reply(halfway), /เลือกแรงค์ของคุณ/);
+  assert.equal((await api.get<{ data: any }>(`/members/${u(9)}/reserve`)).data, null);
 
   // A UID that belongs to someone else's account is refused.
   const copy = form(u(8), { name: "Copycat", uid: "900000001", position: "GUARD" });
@@ -245,7 +254,7 @@ test("people sign up with name, UID, Facebook, optional phone and position, then
   assert.match(reply(copy), /ผูกกับบัญชี Discord อื่น/);
   assert.match(panel.text, /ลงชื่อแล้ว \*\*8\*\* คน/);
   assert.match(panel.text, /บอลหลัก \*\*2\*\* · บอลรอง \*\*2\*\* · เซนเตอร์ \*\*2\*\* · All Around \*\*1\*\*/);
-  assert.match(panel.text, /แรงค์ฟ้า \*\*1\*\* · แรงค์ทอง \*\*1\*\* · แรงค์แดง \*\*0\*\* · แรงค์โซน \*\*6\*\*/);
+  assert.match(panel.text, /ฟ้า \*\*1\*\* · ทอง \*\*1\*\* · แดง \*\*0\*\* · โซน \*\*6\*\*/);
 
   // Editing re-uses the same form, filled in with their own details; the rank is kept.
   const again = press(`tp:reg:${GUILD}`, u(7), panel);
@@ -254,7 +263,7 @@ test("people sign up with name, UID, Facebook, optional phone and position, then
   assert.equal(again.modal.components[4].component.options.find((o: any) => o.default)?.value, "FORWARD");
   const moved = form(u(7), { name: "Blue1", uid: "800000001", position: "CENTER", facebook: "Blue One" });
   await pool.onModal(moved);
-  assert.match(reply(moved), /แก้ข้อมูลแล้ว[\s\S]*เซนเตอร์[\s\S]*แรงค์ฟ้า/);
+  assert.match(reply(moved), /แก้ข้อมูลแล้ว[\s\S]*เซนเตอร์ · แรงค์ ฟ้า/);
 
   // The old sign-up has no position yet: picking a rank asks for the form first.
   const oldie = choose(`tp:rank:${GUILD}`, LEGACY, ["โซน"], new Msg("private", {}));
@@ -280,7 +289,7 @@ test("organizers draw four Zone players for A vs B; swaps, a player who can't ma
   assert.match(reply(notOrg), /สำหรับผู้จัด/);
   const tooMany = command("draw", { rank: "โซน", count: 7, player_a: A, player_b: B }, ORG);
   await pool.onCommand(tooMany, organizer);
-  assert.match(reply(tooMany), /แรงค์โซน มีคนว่างให้สุ่มแค่ 6 คน \(ต้องการ 7 คน\)/);
+  assert.match(reply(tooMany), /แรงค์ โซน มีคนว่างให้สุ่มแค่ 6 คน \(ต้องการ 7 คน\)/);
   const half = command("draw", { rank: "โซน", count: 4, player_a: A }, ORG);
   await pool.onCommand(half, organizer);
   assert.match(reply(half), /ทั้งคู่/);
@@ -293,7 +302,7 @@ test("organizers draw four Zone players for A vs B; swaps, a player who can't ma
   const picked = d.sides.flatMap((s) => s.players);
   assert.equal(new Set(picked).size, 4);
   assert.ok(picked.every((id) => [1, 2, 3, 4, 5, 6].map(u).includes(id)), "only the rank asked for");
-  assert.match(msg.text, /สุ่มผู้เล่นแรงค์โซน 4 คน/);
+  assert.match(msg.text, /สุ่มผู้เล่นแรงค์ โซน 4 คน/);
   assert.match(msg.text, new RegExp(`ทีม <@${A}>`));
   assert.match(msg.text, /\*\*Zone\d\*\* \(UID 90000000\d\) · /);
   assert.doesNotMatch(msg.text, /FB/, "contact details are never posted in the room");
@@ -362,7 +371,7 @@ test("organizers draw four Zone players for A vs B; swaps, a player who can't ma
   assert.equal(pool.pools.get(GUILD)!.draws[c.id].status, "CANCELLED");
   const both = command("draw", { rank: "โซน", position: "GUARD", count: 3 }, ORG);
   await pool.onCommand(both, organizer);
-  assert.match(both.last.text, /สุ่มผู้เล่นแรงค์โซน บอลหลัก 3 คน/, "two Zone Guards and the Zone All Around");
+  assert.match(both.last.text, /สุ่มผู้เล่นแรงค์ โซน บอลหลัก 3 คน/, "two Zone Guards and the Zone All Around");
   const g = Object.values(pool.pools.get(GUILD)!.draws).at(-1)!;
   assert.deepEqual(g.sides[0].players.sort(), [u(1), u(2), u(5)].sort());
   await pool.onButton(press(`tp:no:${g.id}`, ADMIN, both.last), admin);
@@ -374,8 +383,8 @@ test("organizers list with contact details, remove people; people leave; /pool r
   assert.match(reply(notOrg), /สำหรับผู้จัด/);
   const list = command("list", { rank: "โซน" }, ORG);
   await pool.onCommand(list, organizer);
-  assert.match(reply(list), /ตัวสำรอง แรงค์โซน\*\* \(6 คน\)/);
-  assert.match(reply(list), /\*\*Zone1\*\* \(UID 900000001\) · บอลหลัก · แรงค์โซน\n　FB: Zone1 FB · โทร 081-234-5678/);
+  assert.match(reply(list), /ตัวสำรอง แรงค์ โซน\*\* \(6 คน\)/);
+  assert.match(reply(list), /\*\*Zone1\*\* \(UID 900000001\) · บอลหลัก · แรงค์ โซน\n　FB: Zone1 FB · โทร 081-234-5678/);
   const guards = command("list", { position: "GUARD" }, ORG);
   await pool.onCommand(guards, organizer);
   assert.match(reply(guards), /\(3 คน\)/, "two Guards and the All Around");

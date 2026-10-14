@@ -2,7 +2,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { getMember } from "@/lib/member";
 import { discordEnabled } from "@/lib/discord";
-import type { MyCharacter, ReservePlayer } from "@/lib/types";
+import type { MyCharacter, ReservePlayer, GameRank } from "@/lib/types";
 import { siteOrigin } from "@/lib/site";
 import { allGames } from "@/lib/games";
 import { Avatar } from "@/components/ui";
@@ -58,11 +58,12 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
     );
   }
 
-  const [{ data: mine }, games, origin, { data: reserve }] = await Promise.all([
+  const [{ data: mine }, games, origin, { data: reserve }, { data: reserveRanks }] = await Promise.all([
     api<{ data: MyCharacter[] }>(`/members/${me.id}`),
     allGames(),
     siteOrigin(),
     api<{ data: ReservePlayer | null }>(`/members/${me.id}/reserve`),
+    api<{ data: GameRank[] }>("/special/ranks"),
   ]);
   return (
     <>
@@ -106,7 +107,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
         </section>
       )}
       {mine.length > 0 ? (
-        <ReserveForm characters={mine} current={reserve} />
+        <ReserveForm characters={mine} current={reserve} ranks={reserveRanks} />
       ) : (
         <section id="reserve" className="card mt">
           <h2 style={{ marginTop: 0 }}>📝 ลงชื่อตัวสำรอง เล่นเก่งปากเก่ง</h2>

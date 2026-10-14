@@ -9,11 +9,13 @@ import { z } from "zod";
 import { prisma } from "./db.js";
 import { fail, notFound } from "./errors.js";
 import { claimByUid } from "./members.js";
+import { findByUid } from "./players.js";
 import { MMR_K, MVP_BONUS, PLACEMENT_K, PLACEMENT_SERIES, START_MMR, SVP_BONUS } from "./mmr.js";
 import { MOVEMENT_DAYS, playerBoard, tierCounts, tierInfo, withRanks } from "./leaderboard.js";
 import { emptyPlayerStats, statLineSelect, statsByPlayer } from "./stats.js";
 import { positionField } from "./validate.js";
 import { teamSummary } from "./selects.js";
+import { ranksOf } from "./solo.js";
 
 const noControl = /^[^\u0000-\u001f\u007f]*$/;
 const FACEBOOK_HOSTS = /^(?:[a-z0-9-]+\.)*(?:facebook\.com|fb\.com|fb\.me|m\.me)$/i;
@@ -58,7 +60,8 @@ export const reserveInput = z.object({
   position: positionField.refine((p) => p !== null, { message: "Choose a position" }),
   facebook: facebookField,
   phone: phoneField,
-  rank: rankField,
+  /** One of the game's in-game ranks (the same list as solo tournaments). */
+  rank: rankField.refine((r) => r !== null, { message: "Choose a rank" }),
 });
 
 /** Admins may fix any field; leaving one out keeps it. */
@@ -76,7 +79,7 @@ const THAI_PROBLEMS: Record<string, string> = {
   position: "เลือกตำแหน่ง: บอลหลัก, บอลรอง, เซนเตอร์ หรือ All Around",
   facebook: "ใส่ชื่อ Facebook หรือลิงก์ facebook.com (2-200 ตัวอักษร)",
   phone: "เบอร์โทรต้องเป็นตัวเลขอย่างน้อย 6 หลัก (ไม่ใส่ก็ได้)",
-  rank: "แรงค์ไม่ถูกต้อง",
+  rank: "เลือกแรงค์ของคุณ",
 };
 
 /** Parses a form, turning the first problem into a Thai message that Discord and the website can show as is. */
@@ -119,10 +122,35 @@ async function ownPlayer(discordId: string, playerId: string) {
   return player;
 }
 
+/** The ranks to pick from: the game's in-game ranks, lowest first (the same list solo tournaments use). */
+export async function reserveRanks(gameId?: string | null) {
+  return ranksOf({ gameId: gameId ?? (await specialGame()) });
+}
+
+async function checkRank(rank: string, gameId: string | null) {
+  const ranks = await reserveRanks(gameId);
+  if (!ranks.some((r) => r.name === rank)) throw fail(400, "Unknown rank", `ไม่มีแรงค์ "${rank}" เลือกจาก: ${ranks.map((r) => r.name).join(", ")}`, { field: "rank" });
+}
+
+/** Checks a member's sign-up form without saving it, rank optional (Discord asks for the rank after the form). */
+export async function checkReserve(discordId: string, body: unknown) {
+  const input = parseThai(reserveInput.extend({ rank: rankField }), body);
+  if (input.rank) await checkRank(input.rank, null);
+  if (input.playerId) {
+    await ownPlayer(discordId, input.playerId);
+  } else if (input.uid) {
+    const owner = await findByUid(prisma, input.uid, null);
+    if (owner?.discordId && owner.discordId !== discordId) throw fail(409, "This player is linked to another Discord account", `UID ${input.uid} ผูกกับบัญชี Discord อื่นอยู่แล้ว ถ้าเป็นของคุณจริงให้ติดต่อผู้จัด`);
+    if (!owner && !input.name) throw fail(400, "Send a name for a new character", "ใส่ชื่อตัวละคร");
+  } else throw fail(400, "Send playerId or uid", THAI_PROBLEMS.playerId);
+}
+
 /** A member signs up (again to change their details or character). Their position becomes their position on the site too. */
 export async function joinReserve(discordId: string, body: unknown) {
   const input = parseThai(reserveInput, body);
   // Everything is checked before a character is linked or created, so a bad form leaves nothing behind.
+  const chosen = input.playerId ? await ownPlayer(discordId, input.playerId) : null;
+  await checkRank(input.rank!, chosen?.gameId ?? null);
   const playerId = input.playerId ?? (input.uid ? (await claimByUid(discordId, { uid: input.uid, server: null, name: input.name || null, gameId: await busiestGame() })).player.id : null);
   if (!playerId) throw fail(400, "Send playerId or uid", THAI_PROBLEMS.playerId);
   const player = await ownPlayer(discordId, playerId);
@@ -145,6 +173,11 @@ async function busiestGame() {
   return games.sort((a, b) => b._count.players - a._count.players)[0].id;
 }
 
+/** The game the special events are played in: the busiest one, or the only one. */
+async function specialGame() {
+  return (await busiestGame()) ?? (await prisma.game.findFirst({ select: { id: true } }))?.id ?? null;
+}
+
 /** The member's own sign-up, with their own contact details, or null. */
 export async function myReserve(discordId: string) {
   return prisma.reservePlayer.findUnique({ where: { discordId }, include: { player: { select: playerSelect } } });
@@ -157,8 +190,9 @@ export async function leaveReserve(discordId: string) {
 
 export async function editReserve(playerId: string, body: unknown) {
   const input = parseThai(reserveEdit, body);
-  const row = await prisma.reservePlayer.findUnique({ where: { playerId } });
+  const row = await prisma.reservePlayer.findUnique({ where: { playerId }, include: { player: { select: { gameId: true } } } });
   if (!row) throw notFound("Reserve player");
+  if (input.rank) await checkRank(input.rank, row.player.gameId);
   return prisma.$transaction(async (tx) => {
     if (input.position) await tx.player.update({ where: { id: playerId }, data: { role: input.position } });
     return tx.reservePlayer.update({ where: { playerId }, data: input, include: { player: { select: playerSelect } } });
@@ -204,7 +238,7 @@ const specialLines = (where: object = {}) =>
 
 /** The special board: MMR ladder, players still placing, per-player stats, the events and the substitutes list. */
 export async function specialBoard(gameId?: string | null) {
-  const [board, lines, events, reserve] = await Promise.all([
+  const [board, lines, events, reserve, ranks] = await Promise.all([
     playerBoard(gameId, new Date(), true),
     specialLines(),
     prisma.tournament.findMany({
@@ -213,6 +247,7 @@ export async function specialBoard(gameId?: string | null) {
       select: { id: true, name: true, status: true, startDate: true, _count: { select: { matches: true } } },
     }),
     reserveList(),
+    reserveRanks(gameId),
   ]);
   const stats = statsByPlayer(lines);
   const players = await prisma.player.findMany({ where: { id: { in: [...stats.keys()] } }, select: playerSelect });
@@ -229,6 +264,7 @@ export async function specialBoard(gameId?: string | null) {
     stats: statRows,
     events: events.map(({ _count, ...t }) => ({ ...t, matches: _count.matches })),
     reserve,
+    ranks,
     rules: { start: START_MMR, k: MMR_K, placementK: PLACEMENT_K, placementSeries: PLACEMENT_SERIES, mvpBonus: MVP_BONUS, svpBonus: SVP_BONUS, movementDays: MOVEMENT_DAYS },
   };
 }

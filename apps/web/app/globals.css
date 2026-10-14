@@ -790,4 +790,6 @@ h4 { font-size: 15px; font-weight: 700; }
   .special-card { flex-wrap: wrap; }
 }
 .reserve-list li > .muted { white-space: nowrap; }
+.reserve-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; white-space: nowrap; }
+.reserve-meta .rank-badge img { width: 20px; height: 20px; }
 .special-card > .grow { flex: 1; min-width: 0; }
