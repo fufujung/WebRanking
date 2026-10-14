@@ -105,7 +105,14 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
           ))}
         </section>
       )}
-      {mine.length > 0 && <ReserveForm characters={mine} current={reserve} />}
+      {mine.length > 0 ? (
+        <ReserveForm characters={mine} current={reserve} />
+      ) : (
+        <section id="reserve" className="card mt">
+          <h2 style={{ marginTop: 0 }}>📝 ลงชื่อตัวสำรอง เล่นเก่งปากเก่ง</h2>
+          <p className="muted" style={{ margin: 0 }}>ผูกตัวละครของคุณด้านล่างก่อน (ใส่ชื่อในเกมและ UID) แล้วฟอร์มลงชื่อตัวสำรองจะขึ้นตรงนี้</p>
+        </section>
+      )}
       <ClaimForm first={mine.length === 0} games={games} />
       <p className="muted small mt">ชื่อในเกม ทีม และสถิติ อัปเดตจากผลการแข่งและบอท Discord อัตโนมัติ ถ้าข้อมูลผิด แจ้งผู้จัดได้เลย</p>
     </>

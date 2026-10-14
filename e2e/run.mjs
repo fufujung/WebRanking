@@ -1027,7 +1027,9 @@ if (!(await page.locator(".btn-discord").count())) {
   step("organizer drew 2 balanced teams (every team has G/F/C), redrew and saved; the page shows the teams");
 
   console.log("— เล่นเก่งปากเก่ง (substitutes list)");
-  await page.goto(base + "/me");
+  await page.goto(base + "/special");
+  await page.locator(".special-cta a:has-text('ลงชื่อตัวสำรอง')").click();
+  await page.waitForURL(/\/me#reserve$/);
   const reserve = page.locator("#reserve");
   if (await reserve.locator('select[name="playerId"]').count()) await reserve.locator('select[name="playerId"]').selectOption({ label: `Disc-${uniq} (UID 77${uniq})` });
   await reserve.locator('select[name="position"]').selectOption("GUARD");

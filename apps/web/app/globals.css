@@ -343,6 +343,10 @@ h4 { font-size: 15px; font-weight: 700; }
   background: radial-gradient(circle at 85% -20%, rgba(217, 18, 31, 0.55), transparent 55%), radial-gradient(circle at 0% 120%, rgba(217, 18, 31, 0.25), transparent 50%), var(--hero-bg); }
 .ladder-hero h1 { font-size: 34px; color: var(--on-black); margin-bottom: 6px; }
 .ladder-hero p { max-width: 560px; margin: 0; }
+.special-cta { margin-top: 16px; gap: 12px; align-items: center; flex-wrap: wrap; }
+.special-cta .muted { color: var(--on-black-muted); min-width: 0; flex: 1 1 220px; }
+.special-cta .btn { white-space: normal; text-align: center; }
+.special-hero > div:first-child { min-width: 0; flex: 1 1 320px; }
 .ladder-hero .muted { color: var(--on-black-muted); }
 .eyebrow { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #ff6b74; margin-bottom: 4px; }
 .ladder-hero-stats { display: flex; gap: 12px; flex-wrap: wrap; }

@@ -4,6 +4,8 @@ import type { SpecialBoard } from "@/lib/types";
 import { fmtDate, fmtRating, signed } from "@/lib/format";
 import { POSITIONS, positionLabel } from "@/lib/solo";
 import { currentGame } from "@/lib/games";
+import { getMember } from "@/lib/member";
+import { discordEnabled } from "@/lib/discord";
 import { Avatar, Empty, PlayerLink, StatusBadge } from "@/components/ui";
 import { Form, RankMove, TierBadge, TierProgress } from "@/components/Tier";
 import { GameTabs } from "@/components/GameTabs";
@@ -16,7 +18,7 @@ const winRate = (p: { wins: number; series: number }) => (p.series ? Math.round(
 export default async function SpecialPage({ searchParams }: { searchParams: Promise<{ game?: string }> }) {
   const sp = await searchParams;
   const { games, game } = await currentGame(sp.game);
-  const board = await api<SpecialBoard>(`/special${qs({ gameId: game?.id })}`);
+  const [board, me] = await Promise.all([api<SpecialBoard>(`/special${qs({ gameId: game?.id })}`), getMember()]);
   const byPosition = POSITIONS.map((p) => ({ p, players: board.reserve.filter((r) => r.position === p) }));
   const noPosition = board.reserve.filter((r) => !r.position);
 
@@ -31,9 +33,14 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
             สถิติและ MMR ของรายการนี้แยกจาก <Link href="/rankings/players">Ranking หลัก</Link> ทุกคนเริ่มที่ {board.rules.start} MMR
             {" "}ผลการแข่งรายการนี้ไม่ไปเพิ่มหรือลด MMR ของรายการหลัก
           </p>
-          <p className="muted small" style={{ marginBottom: 0 }}>
-            อยากเป็นตัวสำรอง: กด 📝 <strong>ลงชื่อ</strong> ในห้องลงชื่อของ Discord หรือที่ <Link href="/me#reserve">โปรไฟล์ของฉัน</Link> เปิดรับตลอด ใช้ได้ทุกงาน
-          </p>
+          <div className="row special-cta">
+            {me ? (
+              <Link href="/me#reserve" className="btn btn-primary">📝 ลงชื่อตัวสำรอง / แก้ข้อมูล</Link>
+            ) : discordEnabled() ? (
+              <a href="/api/auth/discord?next=/me" className="btn btn-primary">📝 ลงชื่อตัวสำรอง</a>
+            ) : null}
+            <span className="muted small">{me ? "" : "เข้าสู่ระบบด้วย Discord แล้วกรอกฟอร์มได้เลย · "}หรือกดปุ่ม 📝 ในห้องลงชื่อของ Discord · เปิดรับตลอด ใช้ได้ทุกงาน</span>
+          </div>
         </div>
         <div className="ladder-hero-stats">
           <div><strong>{board.reserve.length}</strong><span>ตัวสำรอง</span></div>
