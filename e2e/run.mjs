@@ -128,6 +128,22 @@ await page.goto(base + "/rankings");
 await page.screenshot({ path: OUT + "/mobile-rankings.png", fullPage: true });
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
 console.log("mobile horizontal overflow:", overflow);
+if (overflow) throw new Error("/rankings is wider than a phone screen");
+
+// Phone header: the menu folds behind ☰ and closes after moving to another page; no page is wider than the screen.
+if (await page.locator(".header .nav").isVisible()) throw new Error("menu should be folded away on a phone");
+await page.click('button[aria-label="เปิดเมนู"]');
+await page.locator('.header .nav a[href="/tournaments"]').click();
+await page.waitForURL(/\/tournaments$/);
+await page.waitForFunction(() => !document.querySelector(".header")?.dataset.open);
+if (await page.locator(".header .nav").isVisible()) throw new Error("menu stayed open after navigating");
+await page.click('button[aria-label="ค้นหา"]');
+if (!(await page.locator(".header-search input").isVisible())) throw new Error("search box did not open on a phone");
+for (const href of ["/", "/teams", "/matches", "/special", "/blacklist"]) {
+  await page.goto(base + href);
+  if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error(`${href} is wider than a phone screen`);
+}
+step("phone: menu and search fold behind buttons, menu closes after navigating, pages fit the screen");
 
 // Dark is the default; the toggle switches to light and the choice survives a reload.
 const bodyBg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);

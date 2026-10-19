@@ -103,7 +103,9 @@ main.container { padding-top: 24px; padding-bottom: 64px; }
 .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 900px) { .grid-3, .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 640px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } .header-search { width: 100%; } }
+@media (max-width: 640px) { .grid-2, .grid-3 { grid-template-columns: minmax(0, 1fr); } .header-search { width: 100%; } }
+/* A wide table scrolls inside its own box instead of pushing the page sideways. */
+.grid > *, .stack > * { min-width: 0; }
 .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .between { justify-content: space-between; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
@@ -254,7 +256,21 @@ input[type="checkbox"] { accent-color: var(--accent); }
 td { vertical-align: middle; }
 .stat-table th, .stat-table td { padding: 8px 6px; }
 .header-tools { display: flex; gap: 8px; align-items: center; }
-@media (max-width: 760px) { .header-tools { flex: 1 1 100%; } }
+.header-mobile-btn { display: none; }
+@media (max-width: 760px) {
+  /* Phones: one short header row (logo, theme, search, menu); the menu and the search box open below it. */
+  .header-inner { gap: 8px; min-height: 56px; flex-wrap: wrap; }
+  .brand { margin-right: auto; font-size: 16px; min-width: 0; }
+  .brand-mark { width: 30px; height: 30px; }
+  .header-tools { display: contents; }
+  .theme-toggle { width: 40px; height: 40px; order: 1; }
+  .header-mobile-btn { display: grid; place-items: center; }
+  .header .nav, .header .header-search { display: none; }
+  .header[data-open="menu"] .nav { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; order: 3; flex: 1 0 100%; overflow: visible; padding: 4px 0 8px; }
+  .header[data-open="menu"] .nav a { display: flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: 10px; background: var(--nav-hover); color: var(--on-black); white-space: normal; }
+  .header[data-open="search"] .header-search { display: flex; order: 3; flex: 1 0 100%; min-width: 0; padding-bottom: 8px; }
+  .header-search .btn { min-height: 44px; }
+}
 .theme-toggle { background: transparent; border: 1px solid var(--search-border); color: var(--on-black); border-radius: 9px; width: 42px; height: 42px; flex: none; font-size: 18px; line-height: 1; cursor: pointer; font-family: inherit; }
 .theme-toggle:hover { border-color: var(--on-black-muted); }
 
@@ -793,3 +809,25 @@ h4 { font-size: 15px; font-weight: 700; }
 .reserve-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; white-space: nowrap; }
 .reserve-meta .rank-badge img { width: 20px; height: 20px; }
 .special-card > .grow { flex: 1; min-width: 0; }
+
+/* Phones: the player's name stays in view while the numbers scroll, and small buttons are easier to tap. */
+.score-table th:first-child, .score-table td:first-child { position: sticky; left: 0; z-index: 1; background: var(--card); }
+@media (max-width: 640px) {
+  .score-table td:first-child { box-shadow: 1px 0 0 var(--border); }
+  .btn-sm { min-height: 36px; padding: 7px 12px; }
+  .row.between > a.small, .row.between > a.muted { display: inline-flex; align-items: center; min-height: 36px; }
+}
+@media (max-width: 760px) {
+  .header-inner { flex-wrap: nowrap; }
+  .header[data-open] .header-inner { flex-wrap: wrap; }
+  .brand { flex: 1 1 0; overflow: hidden; }
+  .brand-name { overflow: hidden; text-overflow: ellipsis; }
+  .theme-toggle { flex-shrink: 0; }
+}
+@media (max-width: 480px) {
+  .reserve-list li { flex-wrap: wrap; }
+  .reserve-meta { margin-left: 46px; }
+  .ladder-hero-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .ladder-hero-stats > div { min-width: 0; padding: 10px 6px; }
+  .ladder-hero-stats span { white-space: normal; text-align: center; }
+}

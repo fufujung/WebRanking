@@ -10,6 +10,7 @@ import { isAdmin } from "@/lib/auth";
 import { getMember } from "@/lib/member";
 import { discordEnabled } from "@/lib/discord";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { MobileHeader } from "@/components/MobileHeader";
 import { AdBanner, AdPopupSlot } from "@/components/ads/Ads";
 import { HideOnAdmin } from "@/components/ads/HideOnAdmin";
 
@@ -29,7 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <div className="container header-inner">
             <Link href="/" className="brand">
               <span className="brand-mark">🏆</span>
-              Tournament Ranking
+              <span className="brand-name">Tournament Ranking</span>
             </Link>
             <nav className="nav">
               <Link href="/rankings/players">Ranking ผู้เล่น</Link>
@@ -57,6 +58,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <button className="btn btn-primary" type="submit">ค้นหา</button>
             </form>
             <ThemeToggle initial={theme} />
+            <MobileHeader />
             </div>
           </div>
         </header>
