@@ -283,12 +283,13 @@ export async function saveRoster(tournamentId: string, teamId: string, players: 
 }
 
 /** An organizer puts a team together by picking players from the substitutes or season list. */
-export async function registerPickedTeam(tournamentId: string, teamName: string, playerIds: string[], captainDiscordId: string | null) {
+/** A new team from players ticked on a list ({ playerId }) and/or typed in ({ name, uid }). */
+export async function registerPickedTeam(tournamentId: string, teamName: string, players: ({ playerId: string } | { name: string; uid: string | null })[], captainDiscordId: string | null) {
   if (!teamName.trim()) return { error: "ใส่ชื่อทีม" } as FormState;
-  if (!playerIds.length) return { error: "เลือกผู้เล่นอย่างน้อย 1 คน" } as FormState;
+  if (!players.length) return { error: "เลือกหรือพิมพ์ผู้เล่นอย่างน้อย 1 คน" } as FormState;
   return bracketRun(
     tournamentId,
-    () => api(`/tournaments/${encodeURIComponent(tournamentId)}/registrations`, { method: "POST", json: { teamName: teamName.trim(), players: playerIds.map((playerId) => ({ playerId })), captainDiscordId, override: true } }),
+    () => api(`/tournaments/${encodeURIComponent(tournamentId)}/registrations`, { method: "POST", json: { teamName: teamName.trim(), players, captainDiscordId, override: true } }),
     `เพิ่มทีม ${teamName.trim()} แล้ว`,
   );
 }

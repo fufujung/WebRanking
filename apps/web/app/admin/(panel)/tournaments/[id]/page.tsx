@@ -32,10 +32,10 @@ export default async function EditTournament({ params, searchParams }: { params:
   // Organizers put teams together from the season's list (when the event has a season) or the substitutes list.
   const stories = (await api<{ data: Story[] }>(`/tournaments/${t.id}/stories`)).data;
   const [reserve, season] = await Promise.all([
-    t.format ? api<{ data: ReservePlayer[] }>(`/special/reserve/private${qs({ gameId: t.gameId })}`).then((r) => r.data) : [],
-    t.format && t.seasonId ? apiOrNull<SeasonView>(`/special/seasons/${encodeURIComponent(t.seasonId)}`) : null,
+    api<{ data: ReservePlayer[] }>(`/special/reserve/private${qs({ gameId: t.gameId })}`).then((r) => r.data),
+    t.seasonId ? apiOrNull<SeasonView>(`/special/seasons/${encodeURIComponent(t.seasonId)}`) : null,
   ]);
-  const takenBy = new Map((bracket?.teams ?? []).flatMap((e) => e.roster.map((p) => [p.playerId, e.name] as const)));
+  const takenBy = new Map((bracket?.teams ?? t.teams).flatMap((e) => e.roster.map((p) => [p.playerId, e.name] as const)));
   const signUp = new Map(reserve.map((r) => [r.playerId, r]));
   const candidates: Candidate[] = (season
     ? season.players.map((p) => ({ id: p.id, name: p.name, uid: p.uid ?? null, server: p.server ?? null, mmr: p.specialMmr }))
@@ -44,7 +44,7 @@ export default async function EditTournament({ params, searchParams }: { params:
     const r = signUp.get(p.id);
     return { playerId: p.id, name: p.name, uid: p.uid, server: p.server, discordId: r?.discordId ?? null, position: r?.position ?? null, rank: r?.rank ?? null, mmr: p.mmr, takenBy: takenBy.get(p.id) ?? null };
   });
-  const canAdd = t.format && (t.bracketStatus === "NONE" || t.bracketStatus === "DRAFT");
+  const canAdd = t.bracketStatus === "NONE" || t.bracketStatus === "DRAFT";
   return (
     <>
       <div className="page-head">
@@ -80,7 +80,7 @@ export default async function EditTournament({ params, searchParams }: { params:
       <EntryManager tournamentId={t.id} entries={t.teams} teams={teams} />
       {canAdd && (
         <>
-          <h3 className="mt" id="pick">จัดทีมจากรายชื่อ{season ? ` ${season.name}` : "ตัวสำรอง"}</h3>
+          <h3 className="mt" id="pick">สร้างทีมใหม่: พิมพ์รายชื่อเอง หรือติ๊กจากรายชื่อ{season ? ` ${season.name}` : "ตัวสำรอง"}</h3>
           <PickTeam
             tournamentId={t.id}
             candidates={candidates}

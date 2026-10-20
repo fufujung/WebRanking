@@ -1158,6 +1158,18 @@ if (!(await page.locator(".btn-discord").count())) {
   await rAdmin.screenshot({ path: OUT + "/story.png", fullPage: true });
   step("organizer saved two Facebook posts as ต้นเรื่อง (another site is refused) and moved one up; the tournament page and /special/story list them in order");
   step("organizer ticked a season player to make a team (name and UID filled from the list); the player then shows as taken; fits a phone");
+  // A free-record event (no bracket): the organizer types a team's players in (name + UID), no team made beforehand.
+  const ft = await apiCall("POST", "/tournaments", { name: `Typed ${uniq}`, startDate: new Date(Date.now() + 86400_000).toISOString(), rosterMin: 1, rosterMax: 3, special: true });
+  await rAdmin.goto(base + `/admin/tournaments/${ft.id}`);
+  const typedCard = rAdmin.locator(".pick-team-card");
+  await typedCard.locator("textarea").fill(`Typed${uniq} 88${uniq}\n66${uniq}\tSheet${uniq}`);
+  await typedCard.locator("p:has-text('เลือกแล้ว 2/3')").waitFor();
+  await typedCard.locator('label:has-text("ชื่อทีม") input').fill(`Typed Team ${uniq}`);
+  await typedCard.locator("button:has-text('+ เพิ่มทีมนี้')").click();
+  await typedCard.locator(".success:has-text('เพิ่มทีม Typed Team')").waitFor();
+  const typedRoster = (await apiCall("GET", `/tournaments/${ft.id}`)).teams.find((e) => e.name === `Typed Team ${uniq}`)?.roster ?? [];
+  if (typedRoster.map((r) => `${r.name} ${r.uid}`).join() !== `Typed${uniq} 88${uniq},Sheet${uniq} 66${uniq}`) throw new Error(`the typed team's roster is wrong: ${JSON.stringify(typedRoster)}`);
+  step("organizer typed a team's players (name + UID, pasted from a sheet) on a no-bracket event and added the team in one go");
   // A season keeps its own ต้นเรื่อง, even before it has events.
   await rAdmin.goto(base + `/admin/seasons/${seasonId}`);
   const seasonStory = rAdmin.locator("#story ~ .card").first();
