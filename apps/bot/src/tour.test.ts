@@ -1659,18 +1659,41 @@ describe("predictions in Discord", () => {
     assert.match(card.embed.description, /Hawks\*\*\n`[▰▱]+` 63% · 50 เหรียญ · 1 คน/);
     assert.match(card.embed.description, /รวม 80 เหรียญ จาก 2 คน/);
 
-    // The result closes the card and pays the winners.
-    await api.post(`/tournaments/${t.id}/bracket/matches/M1/result`, { scoreA: 2, scoreB: 1 });
+    // A BO3: each game has its own pick behind the card's "per game" button.
+    const perGame = card.buttons.find((x: any) => x.custom_id.startsWith("pk:games:"));
+    assert.equal(perGame?.label, "ทายรายเกม (BO3)");
+    const games = press(perGame.custom_id, fan, card);
+    await bot.onButton(games);
+    const list = last(games.replies);
+    assert.match(text(list), /\*\*เกม 1\*\* · Hawks 0% \/ Wolves 0%/);
+    assert.match(text(list), /\*\*เกม 3\*\*/);
+    const gameButtons = list.components.flatMap((r: any) => r.toJSON().components);
+    assert.deepEqual(gameButtons.map((x: any) => x.label).slice(0, 4), ["เกม 1 · Hawks", "เกม 1 · Wolves", "เกม 2 · Hawks", "เกม 2 · Wolves"]);
+    assert.equal(gameButtons.length, 6);
+    const game1 = (label: string) => gameButtons.find((x: any) => x.label === `เกม 1 · ${label}`).custom_id.replace("pk:bet:", "pk:amt:");
+    const g1 = submitForm(game1("Hawks"), fan, ANNOUNCE, { amount: "10" });
+    await bot.onModal(g1);
+    assert.match(text(last(g1.replies)), /ทายแล้ว 10 เหรียญ · เหลือ 60 เหรียญ/);
+    await bot.onModal(submitForm(game1("Wolves"), other, ANNOUNCE, { amount: "10" }));
+    const again2 = press(perGame.custom_id, fan, card);
+    await bot.onButton(again2);
+    assert.match(text(last(again2.replies)), /\*\*เกม 1\*\* · Hawks 50% \/ Wolves 50% · 20 เหรียญ · คุณทาย Hawks 10/);
+    assert.equal(announce.sent.filter((m) => /เกม/.test(m.embed?.title ?? "")).length, 0, "games get no cards of their own");
+
+    // The result closes the card and pays the winners (game by game too: Hawks took game 1).
+    const g = (scoreA: number, scoreB: number) => ({ scoreA, scoreB });
+    await api.post(`/tournaments/${t.id}/bracket/matches/M1/result`, { games: [g(21, 18), g(15, 21), g(21, 11)] });
     await bot.predict.sync(fakeClient);
     assert.match(card.embed.description, /ผล: \*\*Hawks\*\* ชนะ \(2:1\)/);
     assert.equal(card.buttons.length, 0, "no more buttons");
 
     const board = command("predict", "board", { tournament: t.id }, other);
     await bot.onCommand(board);
-    assert.match(JSON.stringify(last(board.replies)), /1\.\*\* Fan · \+30 \(ถูก 1\/1\)/);
+    assert.match(JSON.stringify(last(board.replies)), /1\.\*\* Fan · \+40 \(ถูก 2\/2\)/);
     const me = command("predict", "me", {}, fan);
     await bot.onCommand(me);
-    assert.match(JSON.stringify(last(me.replies)), /🪙 150 เหรียญ/);
+    assert.match(JSON.stringify(last(me.replies)), /🪙 160 เหรียญ/);
+    assert.match(JSON.stringify(last(me.replies)), /Predict Cup คู่ที่ 1 · เกม 1: Hawks 10 เหรียญ · ได้ 20/);
 
     // A prize from the code pool: the winner gets a DM with the code, once.
     await api.post("/predict/codes", { label: "ส่วนลด 50", text: "OTSHOP0001" });
@@ -1682,5 +1705,46 @@ describe("predictions in Discord", () => {
     assert.match(dm[1], /`OTSHOP0001`/);
     await bot.predict.sync(fakeClient);
     assert.equal(dms.filter(([id]) => id === fan).length, 1, "one DM per prize");
+  });
+});
+
+describe("organizers make teams from the list in Discord", () => {
+  test("/tour addteam picks players from the season list by autocomplete; nobody types a name or UID", async () => {
+    const gameId = (await api.post<{ id: string }>("/games", { name: "Pick Rivals" })).id;
+    const season = await api.post<any>("/special/seasons", { name: "Pick Season", gameId, startDate: new Date(Date.now() - 86400_000).toISOString() });
+    const added = await api.post<any>(`/special/seasons/${season.id}/players`, { text: "Rook 96100001\nPawn 96100002\nKnight 96100003" });
+    const [rook, pawn, knight] = added.added.map((a: any) => a.id);
+    const t = await api.post<any>("/tournaments", { name: "Pick Cup", startDate: new Date(Date.now() + 86400_000).toISOString(), format: "SINGLE_ELIMINATION", rosterMin: 1, rosterMax: 3, special: true, seasonId: season.id, gameId });
+    await bot.onCommand(command("tour", "link", { event: t.id, organizer_role: ORG_ROLE }));
+
+    const ac = command("tour", "addteam", { focused: "pick1", value: "961", tournament: t.id }, OWNER);
+    await bot.onAutocomplete(ac);
+    assert.deepEqual(last<any>(ac.replies).map((c: any) => c.name), ["Knight · UID 96100003", "Pawn · UID 96100002", "Rook · UID 96100001"]);
+    // A player already picked in another box is not offered again.
+    const ac2 = command("tour", "addteam", { focused: "pick2", value: "", pick1: rook, tournament: t.id }, OWNER);
+    await bot.onAutocomplete(ac2);
+    assert.deepEqual(last<any>(ac2.replies).map((c: any) => c.value), [knight, pawn]);
+
+    const no = command("tour", "addteam", { team: "Chess", pick1: rook, tournament: t.id }, person(71));
+    await bot.onCommand(no);
+    assert.match(text(last(no.replies)), /ผู้จัดเท่านั้น/);
+
+    const add = command("tour", "addteam", { team: "Chess", pick1: rook, pick2: pawn, tournament: t.id }, OWNER);
+    await bot.onCommand(add);
+    assert.match(text(last(add.replies)), /เพิ่มทีม \*\*Chess\*\* แล้ว/);
+    assert.match(text(last(add.replies)), /Rook/);
+    const entry = (await api.get<any>(`/tournaments/${t.id}/bracket`)).teams.find((e: any) => e.name === "Chess");
+    assert.deepEqual(entry.roster.map((r: any) => [r.name, r.uid]), [["Rook", "96100001"], ["Pawn", "96100002"]]);
+
+    // Taken players drop out of the list, and picking one anyway says which team has them.
+    const ac3 = command("tour", "addteam", { focused: "pick1", value: "", tournament: t.id }, OWNER);
+    await bot.onAutocomplete(ac3);
+    assert.deepEqual(last<any>(ac3.replies).map((c: any) => c.value), [knight]);
+    const again = command("tour", "addteam", { team: "Pieces", pick1: pawn, pick2: knight, tournament: t.id }, OWNER);
+    await bot.onCommand(again);
+    assert.match(text(last(again.replies)), /Pawn อยู่ทีม Chess/);
+    const typed = command("tour", "addteam", { team: "Pieces", pick1: "Knight 96100003", tournament: t.id }, OWNER);
+    await bot.onCommand(typed);
+    assert.match(text(last(typed.replies)), /เลือกผู้เล่นจากรายการ/);
   });
 });

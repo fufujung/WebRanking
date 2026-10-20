@@ -509,6 +509,8 @@ export class TourManager {
         await this.sync(i.client, tid);
         return void (await i.editReply(`✅ ตั้งเวลา ${when(at, "F")} ให้ ${res.updated.map((n) => `M${n}`).join(", ")}`));
       }
+      case "addteam":
+        return void (await i.editReply(await this.addPickedTeam(i, tour)));
       case "winner": {
         const b = await this.bracket(tid);
         const m = b.matches.find((x) => x.number === i.options.getInteger("match", true));
@@ -707,6 +709,50 @@ export class TourManager {
     await this.announceSignup(i.client, tour, entry);
   }
 
+  /**
+   * Who an organizer can put on a team: the season's players when the tournament has a season, else the
+   * substitutes list of its game, with their position and rank from the sign-up and the team they are already on.
+   */
+  async candidates(tid: string) {
+    const t = await this.api.get<{ gameId: string | null; seasonId: string | null }>(`/tournaments/${encodeURIComponent(tid)}`);
+    const [reserve, season, b] = await Promise.all([
+      this.api.get<{ data: { playerId: string; discordId?: string | null; position: string | null; rank: string | null; player: { name: string; uid: string | null } }[] }>(
+        `/special/reserve/private${t.gameId ? `?gameId=${encodeURIComponent(t.gameId)}` : ""}`,
+      ).then((r) => r.data),
+      t.seasonId ? this.api.get<{ players: { id: string; name: string; uid: string | null }[] }>(`/special/seasons/${encodeURIComponent(t.seasonId)}`) : null,
+      this.bracket(tid),
+    ]);
+    const takenBy = new Map(b.teams.flatMap((e) => e.roster.map((p) => [p.playerId, e.name] as const)));
+    const signUp = new Map(reserve.map((r) => [r.playerId, r]));
+    const people = season ? season.players.map((p) => ({ id: p.id, name: p.name, uid: p.uid })) : reserve.map((r) => ({ id: r.playerId, name: r.player.name, uid: r.player.uid }));
+    return people.map((p) => {
+      const r = signUp.get(p.id);
+      const label = [p.name, p.uid ? `UID ${p.uid}` : null, r?.position ? positionLabel(r.position) : null, r?.rank ? `แรงค์ ${r.rank}` : null].filter(Boolean).join(" · ");
+      return { playerId: p.id, name: p.name, label, takenBy: takenBy.get(p.id) ?? null };
+    });
+  }
+
+  /** /tour addteam: an organizer makes a team from the list, no names or UIDs typed. */
+  private async addPickedTeam(i: ChatInputCommandInteraction, tour: TourConfig) {
+    const picks = [...new Set([1, 2, 3, 4, 5].map((n) => i.options.getString(`pick${n}`)).filter((x): x is string => Boolean(x)))];
+    const list = await this.candidates(tour.tournamentId);
+    const byId = new Map(list.map((c) => [c.playerId, c]));
+    const unknown = picks.filter((id) => !byId.has(id));
+    if (unknown.length) return `เลือกผู้เล่นจากรายการที่ขึ้นให้เลือก (ไม่พบ ${unknown.length} คนในรายชื่อ)`;
+    const taken = picks.map((id) => byId.get(id)!).filter((c) => c.takenBy);
+    if (taken.length) return `${taken.map((c) => `${c.name} อยู่ทีม ${c.takenBy}`).join(", ")} แล้ว`;
+    const entry = await this.api.post<Entry>(`/tournaments/${tour.tournamentId}/registrations`, {
+      teamName: i.options.getString("team", true),
+      captainDiscordId: i.options.getUser("captain")?.id ?? null,
+      players: picks.map((playerId) => ({ playerId })),
+      override: true,
+    });
+    await this.refreshPanel(i.client, tour);
+    const b = await this.bracket(tour.tournamentId);
+    if (b.status === "DRAFT") await this.postDraft(i.client, tour, b);
+    return { content: `✅ เพิ่มทีม **${entry.name}** แล้ว\n${rosterLines(entry)}`, allowedMentions: { parse: [] } };
+  }
+
   private async announceSignup(client: Client, tour: TourConfig, entry: Entry) {
     const channel = await client.channels.fetch(tour.announceChannelId).catch(() => null);
     if (channel?.isSendable()) await channel.send({ content: `📝 ทีม **${entry.name}** สมัครแล้ว (หัวหน้าทีม <@${entry.captainDiscordId}>)`, allowedMentions: { parse: [] } }).catch(() => null);
@@ -767,6 +813,17 @@ export class TourManager {
       }
       const tour = this.pick(i.guildId!, i.options.getString("tournament"));
       if (!tour) return void (await i.respond([]));
+      if (focused.name.startsWith("pick")) {
+        // Players not on a team yet and not picked in another box, matched by name, UID, position or rank.
+        const chosen = new Set([1, 2, 3, 4, 5].map((n) => `pick${n}`).filter((n) => n !== focused.name).map((n) => i.options.getString(n)).filter(Boolean));
+        const list = (await this.candidates(tour.tournamentId)).filter((c) => !c.takenBy && !chosen.has(c.playerId));
+        return void (await i.respond(
+          list
+            .filter((c) => !q || c.label.toLowerCase().includes(q))
+            .slice(0, 25)
+            .map((c) => ({ name: c.label.slice(0, 100), value: c.playerId })),
+        ));
+      }
       const b = await this.bracket(tour.tournamentId);
       if (focused.name === "round") {
         const rounds = new Map<string, { label: string; numbers: number[] }>();

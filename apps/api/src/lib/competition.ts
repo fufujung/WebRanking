@@ -514,7 +514,7 @@ async function liveContext(tournamentId: string, ref: string, allowDone = false)
 
 const wins = (bestOf: number) => Math.ceil(bestOf / 2);
 /** A match's best of: the final can be set longer (or shorter) than the other rounds. */
-const bestOfFor = (t: { format: string | null; bestOf: number; finalBestOf: number | null }, s: Pick<Slot, "stage" | "round">, slots: Pick<Slot, "stage" | "round">[]) =>
+export const bestOfFor = (t: { format: string | null; bestOf: number; finalBestOf: number | null }, s: Pick<Slot, "stage" | "round">, slots: Pick<Slot, "stage" | "round">[]) =>
   t.format && isFinal(t.format as Format, s, slots) ? (t.finalBestOf ?? t.bestOf) : t.bestOf;
 
 /** Undoes results and deletes the series behind them (other than `keep`). */

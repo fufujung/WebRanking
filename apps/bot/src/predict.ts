@@ -57,8 +57,10 @@ interface Team {
 }
 export interface MarketView {
   id: string;
-  kind: "MATCH" | "CHAMPION";
+  kind: "MATCH" | "GAME" | "CHAMPION";
   key: string;
+  game: number | null;
+  match: string | null;
   number: number | null;
   status: "OPEN" | "CLOSED" | "SETTLED" | "REFUNDED";
   open: boolean;
@@ -91,7 +93,7 @@ interface WalletView {
   dailyClaimed: boolean;
   nextDaily: number;
   welcome: number;
-  bets: { teamName: string; amount: number; payout: number | null; market: { id: string; kind: string; key: string; status: string; tournament: { name: string } } }[];
+  bets: { teamName: string; amount: number; payout: number | null; market: { id: string; kind: string; key: string; label: string; status: string; tournament: { name: string } } }[];
   rewards: { title: string; code: string | null; status: string; place: number | null }[];
 }
 interface PendingReward {
@@ -152,8 +154,8 @@ export function marketEmbed(t: { id: string; name: string }, m: MarketView, site
   });
 }
 
-/** One button per team (Discord allows five in a row), plus "my pick". */
-export function marketButtons(m: MarketView) {
+/** One button per team (Discord allows five in a row), plus "my pick" and, for a series, "per game". */
+export function marketButtons(m: MarketView, games?: { tournamentId: string; count: number }) {
   if (!m.open) return [];
   const rows: ActionRowBuilder<ButtonBuilder>[] = [];
   const teams = m.options.slice(0, 20);
@@ -168,9 +170,40 @@ export function marketButtons(m: MarketView) {
     new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder().setCustomId(`pk:mine:${m.id}`).setLabel("คำทายของฉัน").setEmoji("🧾").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`pk:cancel:${m.id}`).setLabel("ยกเลิกคำทาย").setStyle(ButtonStyle.Secondary),
+      ...(games?.count && m.kind === "MATCH"
+        ? [new ButtonBuilder().setCustomId(`pk:games:${games.tournamentId}:${m.key}`).setLabel(`ทายรายเกม (BO${games.count})`).setEmoji("🎯").setStyle(ButtonStyle.Success)]
+        : []),
     ),
   );
   return rows;
+}
+
+/** The games of a series that are still open for this match card, so its "per game" button knows how many there are. */
+const gamesOf = (markets: MarketView[], m: MarketView) => markets.filter((g) => g.kind === "GAME" && g.match === m.key && g.open);
+
+/** Per-game picks of one series: a line per game with the split and the member's pick, and a button per team. */
+export function gamesReply(games: (MarketView & { mine?: { teamId: string; amount: number } | null })[]) {
+  const name = (g: MarketView, id: string) => g.options.find((o) => o.team.id === id)?.team.name ?? "ทีม";
+  const lines = games.map(
+    (g) =>
+      `**เกม ${g.game}** · ${g.options.map((o) => `${o.team.name} ${o.percent}%`).join(" / ")} · ${g.pool} เหรียญ${g.mine ? ` · คุณทาย ${name(g, g.mine.teamId)} ${g.mine.amount}` : ""}${g.open ? "" : " · ปิดแล้ว"}`,
+  );
+  const open = games.filter((g) => g.open);
+  const perRow = open.length > 5 ? 2 : 1;
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  for (let i = 0; i < open.length && rows.length < 5; i += perRow) {
+    rows.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        open.slice(i, i + perRow).flatMap((g) =>
+          g.options.slice(0, 2).map((o) => new ButtonBuilder().setCustomId(`pk:bet:${g.id}:${o.team.id}`).setLabel(`เกม ${g.game} · ${o.team.name}`.slice(0, 80)).setStyle(g.mine?.teamId === o.team.id ? ButtonStyle.Success : ButtonStyle.Primary)),
+        ),
+      ),
+    );
+  }
+  return {
+    content: [`🎯 ทายรายเกม: กดทีมที่คิดว่าชนะเกมนั้น แต่ละเกมแบ่งเหรียญแยกกัน เกมที่ไม่ได้แข่ง (เช่นจบ 3-0) คืนเหรียญ`, ...lines].join("\n"),
+    components: rows,
+  };
 }
 
 export function amountModal(marketId: string, teamId: string, teamName: string, coins?: number) {
@@ -229,22 +262,24 @@ export class PredictManager {
       const tracked = this.cards.entries().some(([, c]) => c.tournamentId === t.id && !c.done);
       if (!t.open && !tracked) continue;
       const { markets } = await this.api.get<{ markets: MarketView[] }>(`/predict/tournaments/${encodeURIComponent(t.id)}`);
-      for (const m of markets) {
-        for (const channelId of channels) await this.showCard(client, t, m, channelId);
+      // Per-game picks live behind the match card's "per game" button, not as cards of their own.
+      for (const m of markets.filter((x) => x.kind !== "GAME")) {
+        for (const channelId of channels) await this.showCard(client, t, m, channelId, gamesOf(markets, m).length);
       }
     }
     await this.notifyRewards(client);
   }
 
-  private async showCard(client: Client, t: PredictTournament, m: MarketView, channelId: string) {
+  private async showCard(client: Client, t: PredictTournament, m: MarketView, channelId: string, games = 0) {
     const key = `${channelId}:${m.id}`;
     const card = this.cards.get(key);
-    const shown = JSON.stringify([m.status, m.open, m.pool, m.people, m.locksAt, m.winnerTeamId]);
+    const shown = JSON.stringify([m.status, m.open, m.pool, m.people, m.locksAt, m.winnerTeamId, games]);
+    const components = marketButtons(m, { tournamentId: t.id, count: games });
     if (!card) {
       if (!m.open) return;
       const channel = await client.channels.fetch(channelId).catch(() => null);
       if (!channel?.isSendable()) return;
-      const msg = await channel.send({ embeds: [marketEmbed(t, m, this.opts.siteUrl)], components: marketButtons(m) }).catch((e) => void this.opts.log("prediction card failed:", e?.message));
+      const msg = await channel.send({ embeds: [marketEmbed(t, m, this.opts.siteUrl)], components }).catch((e) => void this.opts.log("prediction card failed:", e?.message));
       if (msg) this.cards.set(key, { channelId, messageId: msg.id, tournamentId: t.id, marketId: m.id, shown, done: false, createdAt: Date.now() });
       return;
     }
@@ -252,7 +287,7 @@ export class PredictManager {
     const channel = await client.channels.fetch(channelId).catch(() => null);
     const msg = channel?.isTextBased() ? await channel.messages.fetch(card.messageId).catch(() => null) : null;
     const done = m.status === "SETTLED" || m.status === "REFUNDED";
-    if (msg) await msg.edit({ embeds: [marketEmbed(t, m, this.opts.siteUrl)], components: marketButtons(m) }).catch((e) => this.opts.log("prediction card edit failed:", e?.message));
+    if (msg) await msg.edit({ embeds: [marketEmbed(t, m, this.opts.siteUrl)], components }).catch((e) => this.opts.log("prediction card edit failed:", e?.message));
     this.cards.set(key, { ...card, shown, done: done || !msg });
   }
 
@@ -274,6 +309,16 @@ export class PredictManager {
         const w = await this.api.get<WalletView>(`/predict/members/${i.user.id}`);
         const name = i.component && "label" in i.component ? String(i.component.label ?? "ทีม") : "ทีม";
         return void (await i.showModal(amountModal(marketId, teamId, name, w.coins + (w.welcome || 0))));
+      }
+      if (action === "games" && marketId && teamId) {
+        // pk:games:<tournamentId>:<match key>
+        await i.deferReply({ ephemeral: true });
+        const { markets } = await this.api.get<{ markets: (MarketView & { mine: { teamId: string; amount: number } | null })[] }>(
+          `/predict/tournaments/${encodeURIComponent(marketId)}?discordId=${encodeURIComponent(i.user.id)}`,
+        );
+        const games = markets.filter((g) => g.kind === "GAME" && g.match === teamId);
+        if (!games.length) return void (await i.editReply("แมตช์นี้ไม่มีให้ทายรายเกม"));
+        return void (await i.editReply(gamesReply(games)));
       }
       if (action === "mine" && marketId) {
         await i.deferReply({ ephemeral: true });
@@ -345,7 +390,7 @@ export class PredictManager {
         const w = await this.api.get<WalletView>(`/predict/members/${i.user.id}`);
         const picks = w.bets.slice(0, 8).map((b) => {
           const result = b.payout === null ? "รอผล" : b.market.status === "REFUNDED" ? "คืนเหรียญ" : b.payout > 0 ? `ได้ ${b.payout}` : "พลาด";
-          return `• ${b.market.tournament.name} ${b.market.kind === "CHAMPION" ? "แชมป์" : b.market.key}: ${b.teamName} ${b.amount} เหรียญ · ${result}`;
+          return `• ${b.market.tournament.name} ${b.market.label}: ${b.teamName} ${b.amount} เหรียญ · ${result}`;
         });
         const prizes = w.rewards.map((r) => `🎁 ${r.title}${r.code ? ` · \`${r.code}\`` : r.status === "PENDING" ? " · รอผู้จัดส่ง" : ""}`);
         return void (await i.editReply({
@@ -376,10 +421,10 @@ export class PredictManager {
         let shown = 0;
         for (const t of open) {
           const { markets } = await this.api.get<{ markets: MarketView[] }>(`/predict/tournaments/${encodeURIComponent(t.id)}`);
-          for (const m of markets.filter((x) => x.open)) {
+          for (const m of markets.filter((x) => x.open && x.kind !== "GAME")) {
             if (shown >= 5) return;
             shown++;
-            await i.followUp({ ephemeral: true, embeds: [marketEmbed(t, m, this.opts.siteUrl)], components: marketButtons(m) });
+            await i.followUp({ ephemeral: true, embeds: [marketEmbed(t, m, this.opts.siteUrl)], components: marketButtons(m, { tournamentId: t.id, count: gamesOf(markets, m).length }) });
           }
         }
         return;

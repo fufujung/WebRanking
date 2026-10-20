@@ -99,10 +99,7 @@ export function PickTeam({ tournamentId, candidates, source, rosterMin, rosterMa
                 <span className="muted small"> · {c.uid ? `UID ${c.uid}` : "ไม่มี UID"}</span>
               </span>
               <span className="small muted pick-meta">
-                {c.position ? positionLabel[c.position] : ""}
-                {c.rank ? ` · ${c.rank}` : ""}
-                {` · ${c.mmr} MMR`}
-                {c.takenBy ? ` · อยู่ทีม ${c.takenBy}` : ""}
+                {[c.position ? positionLabel[c.position] : null, c.rank, `${c.mmr} MMR`, c.takenBy ? `อยู่ทีม ${c.takenBy}` : null].filter(Boolean).join(" · ")}
               </span>
             </label>
           );

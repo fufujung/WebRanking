@@ -13,6 +13,8 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
 import { fail, notFound } from "./errors.js";
+import { bestOfFor } from "./competition.js";
+import type { Slot } from "./bracket.js";
 
 type Tx = Prisma.TransactionClient;
 
@@ -164,31 +166,45 @@ const sameTeams = (a: string[], b: string[]) => a.length === b.length && a.every
 async function syncTournament(tx: Tx, tournamentId: string) {
   const t = await tx.tournament.findUnique({
     where: { id: tournamentId },
-    select: { id: true, format: true, bracketStatus: true, entries: { select: { teamId: true, placement: true } }, bracketMatches: true, markets: true },
+    select: { id: true, format: true, bestOf: true, finalBestOf: true, bracketStatus: true, entries: { select: { teamId: true, placement: true } }, bracketMatches: true, markets: true },
   });
   if (!t) return;
   const markets = new Map(t.markets.map((m) => [m.key, m]));
   const live = new Set<string>();
+  /** The market of a match (or of one game in it), made or brought up to date with its teams and start time. */
+  const ensure = async (kind: "MATCH" | "GAME", key: string, teams: string[], locksAt: Date | null) => {
+    live.add(key);
+    let m = markets.get(key);
+    if (!m) return tx.market.create({ data: { tournamentId, kind, key, teamIds: JSON.stringify(teams), locksAt } });
+    if (!sameTeams(parseIds(m.teamIds), teams)) {
+      await clearBets(tx, m.id);
+      m = await tx.market.update({ where: { id: m.id }, data: { teamIds: JSON.stringify(teams), status: "OPEN", winnerTeamId: null, settledAt: null } });
+    }
+    if ((m.locksAt?.getTime() ?? null) !== (locksAt?.getTime() ?? null)) m = await tx.market.update({ where: { id: m.id }, data: { locksAt } });
+    return m;
+  };
   for (const slot of t.bracketMatches) {
     if (!slot.teamAId || !slot.teamBId) continue;
-    live.add(slot.code);
     const teams = [slot.teamAId, slot.teamBId];
-    let m = markets.get(slot.code);
-    if (!m) {
-      m = await tx.market.create({ data: { tournamentId, kind: "MATCH", key: slot.code, teamIds: JSON.stringify(teams), locksAt: slot.scheduledAt } });
-    } else {
-      if (!sameTeams(parseIds(m.teamIds), teams)) {
-        await clearBets(tx, m.id);
-        m = await tx.market.update({ where: { id: m.id }, data: { teamIds: JSON.stringify(teams), status: "OPEN", winnerTeamId: null, settledAt: null } });
-      }
-      if ((m.locksAt?.getTime() ?? null) !== (slot.scheduledAt?.getTime() ?? null)) m = await tx.market.update({ where: { id: m.id }, data: { locksAt: slot.scheduledAt } });
-    }
-    const outcome: Outcome =
-      slot.status !== "DONE" ? { kind: "none" } : slot.outcome === "PLAYED" && slot.winnerId && teams.includes(slot.winnerId) ? { kind: "winner", teamId: slot.winnerId } : { kind: "refund" };
+    const m = await ensure("MATCH", slot.code, teams, slot.scheduledAt);
+    const played = slot.status === "DONE" && slot.outcome === "PLAYED";
+    const outcome: Outcome = slot.status !== "DONE" ? { kind: "none" } : played && slot.winnerId && teams.includes(slot.winnerId) ? { kind: "winner", teamId: slot.winnerId } : { kind: "refund" };
     await applyOutcome(tx, m.id, outcome);
+
+    // Each game of a series (BO3 = 3 games, BO5 = 5) is predicted on its own. Games that were not
+    // played (a 3-0 in a BO5) or a series recorded without game scores give the coins back.
+    const bestOf = bestOfFor(t, slot as Pick<Slot, "stage" | "round">, t.bracketMatches as Pick<Slot, "stage" | "round">[]);
+    if (bestOf < 3) continue;
+    const match = played && slot.matchId ? await tx.match.findUnique({ where: { id: slot.matchId }, select: { teamAId: true, teamBId: true, games: { select: { number: true, scoreA: true, scoreB: true } } } }) : null;
+    for (let n = 1; n <= bestOf; n++) {
+      const g = await ensure("GAME", `${slot.code}#${n}`, teams, slot.scheduledAt);
+      const game = match?.games.find((x) => x.number === n);
+      const winner = game && game.scoreA !== game.scoreB ? (game.scoreA > game.scoreB ? match!.teamAId : match!.teamBId) : null;
+      await applyOutcome(tx, g.id, slot.status !== "DONE" ? { kind: "none" } : winner && teams.includes(winner) ? { kind: "winner", teamId: winner } : { kind: "refund" });
+    }
   }
-  // Matches gone from the bracket (reset, or a team moved out): everyone gets their coins back.
-  for (const m of t.markets) if (m.kind === "MATCH" && !live.has(m.key) && m.status !== "REFUNDED") await applyOutcome(tx, m.id, { kind: "refund" });
+  // Matches and games gone from the bracket (reset, a team moved out, fewer games): everyone gets their coins back.
+  for (const m of t.markets) if (m.kind !== "CHAMPION" && !live.has(m.key) && m.status !== "REFUNDED") await applyOutcome(tx, m.id, { kind: "refund" });
 
   // The champion: open while teams sign up and the bracket is drafted, closed once play starts.
   const teams = t.entries.map((e) => e.teamId);
@@ -268,7 +284,7 @@ export async function placeBet(discordId: string, body: unknown, now = new Date(
     prisma.$transaction(async (tx) => {
       const m = await tx.market.findUniqueOrThrow({ where: { id: input.marketId }, include: { tournament: { select: { bracketStatus: true } } } });
       if (!marketOpen(m, m.tournament, now)) {
-        const why = m.kind === "MATCH" && !m.locksAt && m.status === "OPEN" ? "แมตช์นี้ยังไม่ได้ตั้งเวลาแข่ง ยังทายไม่ได้" : "ปิดทายแมตช์นี้แล้ว";
+        const why = m.kind !== "CHAMPION" && !m.locksAt && m.status === "OPEN" ? "แมตช์นี้ยังไม่ได้ตั้งเวลาแข่ง ยังทายไม่ได้" : "ปิดทายแมตช์นี้แล้ว";
         throw fail(409, "Predictions are closed", why);
       }
       const teams = parseIds(m.teamIds);
@@ -336,7 +352,8 @@ export async function tournamentMarkets(tournamentId: string, discordId?: string
     .filter((m) => m.status !== "REFUNDED" || m.bets.length)
     .map((m) => {
       const pool = m.bets.reduce((n, b) => n + b.amount, 0);
-      const slot = m.kind === "MATCH" ? slotByCode.get(m.key) : undefined;
+      const [code, game] = m.kind === "GAME" ? m.key.split("#") : [m.key, null];
+      const slot = m.kind !== "CHAMPION" ? slotByCode.get(code) : undefined;
       const options = parseIds(m.teamIds).map((id) => {
         const on = m.bets.filter((b) => b.teamId === id);
         const coins = on.reduce((n, b) => n + b.amount, 0);
@@ -348,6 +365,9 @@ export async function tournamentMarkets(tournamentId: string, discordId?: string
         id: m.id,
         kind: m.kind,
         key: m.key,
+        /** The game in the series (1..BO) for a per-game market; the series market itself has none. */
+        game: game ? Number(game) : null,
+        match: m.kind === "GAME" ? code : null,
         number: slot?.number ?? null,
         stage: slot?.stage ?? null,
         round: slot?.round ?? null,
@@ -355,7 +375,7 @@ export async function tournamentMarkets(tournamentId: string, discordId?: string
         open: marketOpen(m, t, now),
         locksAt: m.locksAt,
         winnerTeamId: m.winnerTeamId,
-        score: slot && slot.status === "DONE" ? { a: slot.scoreA, b: slot.scoreB } : null,
+        score: m.kind === "MATCH" && slot && slot.status === "DONE" ? { a: slot.scoreA, b: slot.scoreB } : null,
         pool,
         people: m.bets.length,
         options,
@@ -369,7 +389,7 @@ export async function tournamentMarkets(tournamentId: string, discordId?: string
           : [],
       };
     })
-    .sort((a, b) => (a.kind === b.kind ? (a.number ?? 0) - (b.number ?? 0) : a.kind === "CHAMPION" ? -1 : 1));
+    .sort((a, b) => Number(b.kind === "CHAMPION") - Number(a.kind === "CHAMPION") || (a.number ?? 0) - (b.number ?? 0) || (a.game ?? 0) - (b.game ?? 0));
   return { tournament: t, markets: rows };
 }
 
@@ -417,6 +437,14 @@ export async function wallet(discordId: string, now = new Date()) {
     prisma.reward.findMany({ where: { discordId }, orderBy: { createdAt: "desc" }, include: { code: { select: { code: true, label: true } } } }),
   ]);
   const teams = new Map((await prisma.team.findMany({ where: { id: { in: bets.map((b) => b.teamId) } }, select: { id: true, name: true } })).map((t) => [t.id, t.name]));
+  const slots = await prisma.bracketMatch.findMany({ where: { tournamentId: { in: [...new Set(bets.map((b) => b.market.tournament.id))] } }, select: { tournamentId: true, code: true, number: true } });
+  const numberOf = new Map(slots.map((s) => [`${s.tournamentId}/${s.code}`, s.number]));
+  /** "แชมป์", "คู่ที่ 3" or "คู่ที่ 3 · เกม 2". */
+  const label = (m: (typeof bets)[number]["market"]) => {
+    if (m.kind === "CHAMPION") return "แชมป์";
+    const [code, game] = m.key.split("#");
+    return `คู่ที่ ${numberOf.get(`${m.tournament.id}/${code}`) ?? code}${game ? ` · เกม ${game}` : ""}`;
+  };
   return {
     discordId,
     name: p?.name ?? null,
@@ -428,7 +456,7 @@ export async function wallet(discordId: string, now = new Date()) {
     welcome: p ? 0 : COINS.welcome,
     watchedToday: p?.watchDay === today ? p.watchToday : 0,
     rules: COINS,
-    bets: bets.map((b) => ({ ...b, teamName: teams.get(b.teamId) ?? "ทีม" })),
+    bets: bets.map((b) => ({ ...b, market: { ...b.market, label: label(b.market) }, teamName: teams.get(b.teamId) ?? "ทีม" })),
     rewards: rewards.map(({ code, ...r }) => ({ ...r, code: code?.code ?? null, codeLabel: code?.label ?? null })),
   };
 }
@@ -464,7 +492,7 @@ export async function predictionTournaments(now = new Date()) {
   return shown
     .map(({ _count, ...t }) => {
       const mine = markets.filter((m) => m.tournamentId === t.id);
-      return { ...t, teams: _count.entries, open: mine.filter((m) => marketOpen(m, t, now)).length, markets: mine.length, picks: mine.reduce((n, m) => n + m._count.bets, 0) };
+      return { ...t, teams: _count.entries, open: mine.filter((m) => m.kind !== "GAME" && marketOpen(m, t, now)).length, markets: mine.length, picks: mine.reduce((n, m) => n + m._count.bets, 0) };
     })
     .sort((a, b) => Number(b.bracketStatus === "LIVE") - Number(a.bracketStatus === "LIVE") || b.open - a.open || Number(a.bracketStatus === "DONE") - Number(b.bracketStatus === "DONE"));
 }

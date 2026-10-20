@@ -219,6 +219,47 @@ describe("predictions", () => {
     assert.equal((await wallet(bob)).coins, before);
   });
 
+  test("each game of a BO5 is predicted on its own; games that were not played give the coins back", async () => {
+    const t = await newTournament({ bestOf: 5 });
+    const a = await registerTeam(t.id, "Gulls");
+    const b = await registerTeam(t.id, "Hawks");
+    await ok("POST", `/tournaments/${t.id}/bracket/seed`, { method: "manual", order: [a.id, b.id] });
+    await ok("POST", `/tournaments/${t.id}/bracket/start`);
+    await ok("POST", `/tournaments/${t.id}/bracket/schedule`, { match: "M1", scheduledAt: soon() });
+    const view = await markets(t.id);
+    const series = view.markets.find((m: any) => m.kind === "MATCH");
+    const games = view.markets.filter((m: any) => m.kind === "GAME");
+    assert.deepEqual(games.map((g: any) => [g.match, g.game, g.number, g.open]), [1, 2, 3, 4, 5].map((n) => [series.key, n, 1, true]));
+    assert.deepEqual(view.markets.map((m: any) => m.kind), ["CHAMPION", "MATCH", "GAME", "GAME", "GAME", "GAME", "GAME"], "games follow their match");
+    assert.equal((await ok("GET", "/predict/tournaments")).data.find((x: any) => x.id === t.id).open, 1, "a series counts once");
+
+    const before = { alice: (await wallet(alice)).coins, bob: (await wallet(bob)).coins };
+    assert.equal((await bet(alice, games[0].id, a.id, 10)).status, 200);
+    assert.equal((await bet(bob, games[0].id, b.id, 20)).status, 200);
+    assert.equal((await bet(alice, games[1].id, b.id, 5)).status, 200);
+    assert.equal((await bet(bob, games[1].id, a.id, 5)).status, 200);
+    assert.equal((await bet(bob, games[3].id, a.id, 15)).status, 200);
+
+    // Gulls win 3-0: game 1 pays Alice, game 2 pays Bob, game 3 had no picks, game 4 was never played.
+    const g = (scoreA: number, scoreB: number) => ({ scoreA, scoreB });
+    await ok("POST", `/tournaments/${t.id}/bracket/matches/M1/result`, { games: [g(21, 15), g(21, 19), g(21, 10)] });
+    const done = (await markets(t.id)).markets.filter((m: any) => m.kind === "GAME");
+    assert.deepEqual(done.map((m: any) => m.status), ["SETTLED", "SETTLED", "REFUNDED"], "games without picks are not listed");
+    assert.deepEqual(done.map((m: any) => m.game), [1, 2, 4]);
+    assert.equal(done[0].winnerTeamId, a.id);
+    const after = { alice: (await wallet(alice)).coins, bob: (await wallet(bob)).coins };
+    assert.equal(after.alice - before.alice, 20 - 5, "won Bob's 20 on game 1, lost 5 on game 2");
+    assert.equal(after.bob - before.bob, -20 + 5, "won Alice's 5 on game 2, game 4 came back");
+
+    // A correction with only the series score: game picks come back too.
+    await ok("POST", `/tournaments/${t.id}/bracket/matches/M1/result`, { scoreA: 3, scoreB: 1, replace: true });
+    assert.deepEqual({ alice: (await wallet(alice)).coins, bob: (await wallet(bob)).coins }, before, "no game scores: every game pick is refunded");
+    for (const who of [alice, bob]) {
+      const sum = await prisma.coinTx.aggregate({ where: { discordId: who }, _sum: { amount: true } });
+      assert.equal(sum._sum.amount, (await wallet(who)).coins);
+    }
+  });
+
   test("organizers paste shop codes and give them to the top of a leaderboard; codes stay private", async () => {
     const pasted = await ok("POST", "/predict/codes", { label: "ส่วนลด 50", text: "AAAA1111\nBBBB2222, CCCC3333\nAAAA1111\nbad code!" });
     assert.equal(pasted.added, 3);
