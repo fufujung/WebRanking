@@ -87,6 +87,7 @@ describe("predictions", () => {
     const first = await ok("POST", `/predict/members/${alice}/daily`, { name: "Alice" });
     assert.equal(first.amount, 20);
     assert.equal(first.coins, 120, "100 welcome + 20 daily");
+    assert.equal(first.welcome, 100);
     const again = await call("POST", `/predict/members/${alice}/daily`, {});
     assert.equal(again.status, 409);
     assert.match(again.body.details.th, /วันนี้รับเหรียญไปแล้ว/);

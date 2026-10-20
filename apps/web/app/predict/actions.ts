@@ -19,10 +19,11 @@ export async function claimDaily(): Promise<PredictState> {
   const m = await getMember();
   if (!m) return { error: "เข้าสู่ระบบด้วย Discord ก่อน" };
   try {
-    const r = await api<{ amount: number; streak: number; coins: number }>(`/predict/members/${m.id}/daily`, { method: "POST", json: profile(m) });
+    const r = await api<{ amount: number; welcome: number; streak: number; coins: number }>(`/predict/members/${m.id}/daily`, { method: "POST", json: profile(m) });
     revalidatePath("/predict");
     revalidatePath("/me");
-    return { ok: `รับ ${r.amount} เหรียญแล้ว (เข้าต่อเนื่อง ${r.streak} วัน) มีทั้งหมด ${r.coins} เหรียญ` };
+    const got = r.welcome ? `รับ ${r.welcome + r.amount} เหรียญแล้ว (ต้อนรับ ${r.welcome} + รายวัน ${r.amount})` : `รับ ${r.amount} เหรียญแล้ว (เข้าต่อเนื่อง ${r.streak} วัน)`;
+    return { ok: `${got} มีทั้งหมด ${r.coins} เหรียญ` };
   } catch (e) {
     return { error: explain(e) };
   }

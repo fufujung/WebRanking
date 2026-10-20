@@ -84,6 +84,7 @@ export function claimDaily(discordId: string, body: unknown, now = new Date()) {
   const profile = profileInput.parse(body ?? {});
   return serial(() =>
     prisma.$transaction(async (tx) => {
+      const welcome = (await tx.predictor.count({ where: { discordId } })) ? 0 : COINS.welcome;
       const p = await predictor(tx, discordId, profile);
       const today = thaiDay(now);
       if (p.lastDaily === today) throw fail(409, "Already claimed today", "วันนี้รับเหรียญไปแล้ว พรุ่งนี้มารับใหม่นะ", { coins: p.coins, streak: p.streak });
@@ -91,7 +92,7 @@ export function claimDaily(discordId: string, body: unknown, now = new Date()) {
       const amount = dailyAmount(streak);
       await tx.predictor.update({ where: { discordId }, data: { streak, lastDaily: today } });
       await addCoins(tx, discordId, amount, "DAILY", { note: `เข้าเว็บต่อเนื่อง ${streak} วัน` });
-      return { amount, streak, coins: p.coins + amount };
+      return { amount, welcome, streak, coins: p.coins + amount };
     }),
   );
 }

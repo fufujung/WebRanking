@@ -36,6 +36,8 @@ tags:
   - name: Blacklist
   - name: Special
     description: "The special \"เล่นเก่งปากเก่ง\" events: a standing substitutes list and a separate MMR and stats board"
+  - name: Predictions
+    description: "The prediction game: free coins (daily login, watching live), picks on matches and champions, leaderboards and prizes. Coins cannot be bought, sold or cashed out."
   - name: Players
   - name: Tournaments
   - name: Brackets
@@ -345,6 +347,202 @@ paths:
       responses:
         "204": { description: Removed }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/predict/rules:
+    get:
+      tags: [Predictions]
+      summary: How many coins the daily login and watching give
+      responses:
+        "200": { description: "{ welcome, daily, streakStep, streakMax, watch, watchEveryMinutes, watchPerDay }" }
+  /api/v1/predict/tournaments:
+    get:
+      tags: [Predictions]
+      summary: Tournaments to predict (being signed up for or played, or ended in the last two weeks)
+      responses:
+        "200": { description: "{ data: [{ id, name, bracketStatus, special, season, teams, open, markets, picks }] }" }
+  /api/v1/predict/tournaments/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: discordId, in: query, schema: { type: string }, description: "Also return this account's own pick (admin key only)" }
+    get:
+      tags: [Predictions]
+      summary: A tournament's markets (each match and the champion) with how the coins are split
+      description: Counts and percentages only; who picked what is never listed. Markets open, settle, refund and reopen with the bracket.
+      responses:
+        "200": { description: "{ tournament, markets: [{ id, kind, key, number, status, open, locksAt, winnerTeamId, score, pool, people, options: [{ team, coins, people, percent }], mine, topWinners }] }" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/predict/leaderboard:
+    get:
+      tags: [Predictions]
+      summary: The best predictors of a tournament or season (coins won minus staked), or overall (coins in hand)
+      parameters:
+        - { name: tournamentId, in: query, schema: { type: string } }
+        - { name: seasonId, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200": { description: "{ data: [{ rank, discordId, name, avatarUrl, coins, net, correct, picks }] }" }
+  /api/v1/predict/members/{discordId}:
+    parameters:
+      - { name: discordId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Predictions]
+      summary: A member's coins, daily streak, recent picks and prizes with their codes (admin key, for the website and bot)
+      responses:
+        "200": { description: Wallet }
+  /api/v1/predict/members/{discordId}/daily:
+    parameters:
+      - { name: discordId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Predictions]
+      summary: The daily coins, once per Thai day (admin key). The first time also gives the welcome coins.
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string }, avatarUrl: { type: string } } }
+      responses:
+        "200": { description: "{ amount, streak, coins }" }
+        "409": { description: Already claimed today }
+  /api/v1/predict/members/{discordId}/watch:
+    parameters:
+      - { name: discordId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Predictions]
+      summary: Coins for watching while a tournament is live, every few minutes, a few times a day (admin key)
+      responses:
+        "200": { description: "{ amount, coins, live, watchedToday, max }" }
+  /api/v1/predict/members/{discordId}/bets:
+    parameters:
+      - { name: discordId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Predictions]
+      summary: Place or change a pick until the market locks (admin key). Players cannot pick their own games.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [marketId, teamId, amount]
+              properties:
+                marketId: { type: string }
+                teamId: { type: string }
+                amount: { type: integer, minimum: 1 }
+                name: { type: string }
+                avatarUrl: { type: string }
+      responses:
+        "200": { description: "{ bet, coins }" }
+        "400": { description: Not enough coins or not a team of this market }
+        "403": { description: The account plays in this match or tournament }
+        "409": { description: Predictions are closed }
+  /api/v1/predict/members/{discordId}/bets/{marketId}:
+    parameters:
+      - { name: discordId, in: path, required: true, schema: { type: string } }
+      - { name: marketId, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [Predictions]
+      summary: Take a pick back before the market locks (admin key)
+      responses:
+        "204": { description: Cancelled; coins returned }
+  /api/v1/predict/members/{discordId}/rewards/{id}/received:
+    parameters:
+      - { name: discordId, in: path, required: true, schema: { type: string } }
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Predictions]
+      summary: The winner confirms a prize arrived (admin key)
+      responses:
+        "200": { description: Reward }
+  /api/v1/predict/markets/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Predictions]
+      summary: Close a market early or open it again (admin)
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { status: { type: string, enum: [OPEN, CLOSED] } } }
+      responses:
+        "200": { description: Market }
+  /api/v1/predict/codes:
+    get:
+      tags: [Predictions]
+      summary: The prize code pool by label (admin). Codes themselves are never listed.
+      responses:
+        "200": { description: "{ data: [{ label, total, left }] }" }
+    post:
+      tags: [Predictions]
+      summary: Paste single-use shop codes into the pool under a label (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [label, text], properties: { label: { type: string }, text: { type: string, description: One code per line } } }
+      responses:
+        "201": { description: "{ added, duplicates, invalid }" }
+    delete:
+      tags: [Predictions]
+      summary: Remove the unused codes of a label (admin)
+      parameters:
+        - { name: label, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: "{ deleted }" }
+  /api/v1/predict/rewards:
+    get:
+      tags: [Predictions]
+      summary: Prizes given (admin; codes hidden)
+      responses:
+        "200": { description: "{ data: [Reward] }" }
+    post:
+      tags: [Predictions]
+      summary: Give prizes to places of a tournament or season leaderboard, or to one Discord account (admin)
+      description: Only people who came out ahead win. CODE prizes each take one unused code of the label (all or none). Prizes go by rank, never by draw.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                kind: { type: string, enum: [CODE, ITEM] }
+                codeLabel: { type: string }
+                note: { type: string }
+                tournamentId: { type: string }
+                seasonId: { type: string }
+                from: { type: integer }
+                to: { type: integer }
+                discordId: { type: string }
+      responses:
+        "201": { description: "{ data: [Reward], given }" }
+        "409": { description: Nobody in those places, or not enough codes }
+  /api/v1/predict/rewards/unnotified:
+    get:
+      tags: [Predictions]
+      summary: Prizes whose winner still needs a DM, with the code (admin; for the bot)
+      responses:
+        "200": { description: "{ data: [Reward with code] }" }
+  /api/v1/predict/rewards/{id}/notified:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Predictions]
+      summary: Mark a prize's DM as sent (admin)
+      responses:
+        "200": { description: "{ ok }" }
+  /api/v1/predict/rewards/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Predictions]
+      summary: Change a prize's status (PENDING, SENT, RECEIVED) or note (admin)
+      responses:
+        "200": { description: Reward }
+    delete:
+      tags: [Predictions]
+      summary: Take a prize back (admin). An unsent code returns to the pool.
+      responses:
+        "204": { description: Removed }
   /api/v1/members/{discordId}/reserve/check:
     parameters:
       - { $ref: "#/components/parameters/discordId" }

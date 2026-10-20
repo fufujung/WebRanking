@@ -311,10 +311,10 @@ export class PredictManager {
     try {
       if (i.commandName === "coins") {
         await i.deferReply({ ephemeral: true });
-        const r = await this.api.post<{ amount: number; streak: number; coins: number }>(`/predict/members/${i.user.id}/daily`, profile(i.user)).catch((e) => e);
+        const r = await this.api.post<{ amount: number; welcome?: number; streak: number; coins: number }>(`/predict/members/${i.user.id}/daily`, profile(i.user)).catch((e) => e);
         const link = siteLink(this.opts.siteUrl, "/predict");
         const tail = isPublicUrl(link) ? `\nทายผลได้ที่การ์ดในห้องประกาศ หรือ ${link}` : "";
-        if (r && typeof r.amount === "number") return void (await i.editReply(`🪙 รับ ${r.amount} เหรียญแล้ว (เข้าต่อเนื่อง ${r.streak} วัน) · มีทั้งหมด **${r.coins}** เหรียญ${tail}`));
+        if (r && typeof r.amount === "number") return void (await i.editReply(`🪙 รับ ${r.amount} เหรียญแล้ว (เข้าต่อเนื่อง ${r.streak} วัน)${r.welcome ? ` + เหรียญต้อนรับ ${r.welcome}` : ""} · มีทั้งหมด **${r.coins}** เหรียญ${tail}`));
         const coins = (r?.details as { coins?: number } | undefined)?.coins;
         return void (await i.editReply(`${thaiError(r)}${coins !== undefined ? ` · มี **${coins}** เหรียญ` : ""}${tail}`));
       }

@@ -139,7 +139,7 @@ await page.waitForFunction(() => !document.querySelector(".header")?.dataset.ope
 if (await page.locator(".header .nav").isVisible()) throw new Error("menu stayed open after navigating");
 await page.click('button[aria-label="ค้นหา"]');
 if (!(await page.locator(".header-search input").isVisible())) throw new Error("search box did not open on a phone");
-for (const href of ["/", "/teams", "/matches", "/special", "/blacklist"]) {
+for (const href of ["/", "/teams", "/matches", "/special", "/blacklist", "/predict"]) {
   await page.goto(base + href);
   if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error(`${href} is wider than a phone screen`);
 }
@@ -1126,6 +1126,76 @@ if (!(await page.locator(".btn-discord").count())) {
   await page.goto(base + "/special?season=all");
   await page.locator(".season-tabs .tab-active:has-text('ทุกซีซั่น')").waitFor();
   step("organizer made a season and pasted its players (a line without a UID is reported); the tournament form offers it; /special shows the season and its list");
+
+  // Predictions: a tournament with an open match; the member takes the daily coins, picks a team, wins,
+  // and the organizer gives them a shop code from the pool.
+  const pt = await apiCall("POST", "/tournaments", { name: `Predict ${uniq}`, startDate: new Date(Date.now() + 86400_000).toISOString(), format: "SINGLE_ELIMINATION", registrationOpen: true, rosterMin: 1, rosterMax: 3 });
+  const pReg = (name, n) => apiCall("POST", `/tournaments/${pt.id}/registrations`, { teamName: `${name} ${uniq}`, captainDiscordId: `71${uniq}0000${n}`, players: [{ name: `${name}P-${uniq}`, discordId: `71${uniq}0000${n}` }] });
+  const pA = await pReg("Hawks", 1);
+  const pB = await pReg("Wolves", 2);
+  await apiCall("POST", `/tournaments/${pt.id}/bracket/seed`, { method: "manual", order: [pA.id, pB.id] });
+  await apiCall("POST", `/tournaments/${pt.id}/bracket/start`, {});
+  await apiCall("POST", `/tournaments/${pt.id}/bracket/schedule`, { match: "M1", scheduledAt: new Date(Date.now() + 3600_000).toISOString() });
+  await page.goto(base + `/tournaments/${pt.id}`);
+  await page.click("a:has-text('ทายผลรายการนี้')");
+  await page.waitForURL(new RegExp(`/predict\\?t=${pt.id}$`));
+  await page.click("button:has-text('รับ 120 เหรียญวันนี้')");
+  await page.locator(".predict-daily .success:has-text('รับ 120 เหรียญแล้ว')").waitFor();
+  const card = page.locator(".market-card:has-text('คู่ที่ 1')");
+  await card.locator(`label:has-text('Hawks ${uniq}')`).click();
+  await card.locator('input[name="amount"]').fill("100000");
+  if (await card.locator('input[name="amount"]').evaluate((el) => el.checkValidity())) throw new Error("more coins than the member has is accepted");
+  await card.locator('input[name="amount"]').fill("30");
+  await card.locator("button:has-text('ทายเลย')").click();
+  await card.locator(".success:has-text('ทายแล้ว เหลือ 90 เหรียญ')").waitFor();
+  await page.reload();
+  await page.locator(".market-card:has-text('คู่ที่ 1') .market-mine:has-text('30 เหรียญ')").waitFor();
+  await page.screenshot({ path: OUT + "/predict.png", fullPage: true });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.reload();
+  if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error("/predict is wider than a phone screen");
+  await page.screenshot({ path: OUT + "/predict-mobile.png", fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  // Someone else backs the other team; Hawks win.
+  const rival = `72${uniq}000001`;
+  await apiCall("POST", `/predict/members/${rival}/daily`, { name: "Rival" });
+  const market = (await apiCall("GET", `/predict/tournaments/${pt.id}`)).markets.find((m) => m.kind === "MATCH");
+  await apiCall("POST", `/predict/members/${rival}/bets`, { marketId: market.id, teamId: pB.id, amount: 20 });
+  await apiCall("POST", `/tournaments/${pt.id}/bracket/matches/M1/result`, { scoreA: 2, scoreB: 0 });
+  await page.reload();
+  await page.locator(".market-card:has-text('คู่ที่ 1') .market-mine:has-text('ได้ 50 เหรียญ')").waitFor();
+  await page.locator(`table tr:has-text('E2E Discord'):has-text('+20')`).first().waitFor();
+  step("member took the daily coins, picked a team on /predict (more coins than they have is refused), won the other side's coins; /predict fits a phone");
+
+  const pAdminCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const pAdmin = await pAdminCtx.newPage();
+  pAdmin.on("pageerror", (e) => problems.push(`pageerror: ${e.message} @ ${pAdmin.url()}`));
+  await pAdmin.goto(base + LOGIN);
+  await pAdmin.fill('input[name="password"]', PASSWORD);
+  await pAdmin.click("button:has-text('เข้าสู่ระบบ')");
+  await pAdmin.waitForURL(base + "/admin");
+  await pAdmin.click('.side-nav a[href="/admin/predict"]');
+  await pAdmin.waitForURL(base + "/admin/predict");
+  await pAdmin.fill('form:has-text("เพิ่มโค้ดเข้าคลัง") input[name="label"]', `ลด 50 ${uniq}`);
+  await pAdmin.fill('form:has-text("เพิ่มโค้ดเข้าคลัง") textarea[name="text"]', `OT${uniq}AAA\nOT${uniq}BBB\nOT${uniq}AAA`);
+  await pAdmin.click("button:has-text('+ เพิ่มโค้ด')");
+  await pAdmin.locator(".success:has-text('เพิ่ม 2 โค้ด · ซ้ำ 1 โค้ด')").waitFor();
+  await pAdmin.reload();
+  const give = pAdmin.locator('form:has-text("แจกรางวัล")');
+  await give.locator('input[name="title"]').fill(`อันดับ 1 Predict ${uniq}`);
+  await give.locator('select[name="codeLabel"]').selectOption(`ลด 50 ${uniq}`);
+  await give.locator('select[name="scope"]').selectOption(`t:${pt.id}`);
+  await give.locator("button:has-text('แจกรางวัล')").click();
+  await give.locator(".success:has-text('แจกรางวัลแล้ว 1 คน')").waitFor();
+  await pAdmin.reload();
+  await pAdmin.locator(`tr:has-text('อันดับ 1 Predict ${uniq}'):has-text('E2E Discord')`).waitFor();
+  if ((await pAdmin.locator("main").textContent()).includes(`OT${uniq}`)) throw new Error("the admin page shows prize codes");
+  await pAdmin.screenshot({ path: OUT + "/predict-admin.png", fullPage: true });
+  await pAdminCtx.close();
+  await page.goto(base + "/me");
+  await page.locator(`#rewards li:has-text('อันดับ 1 Predict ${uniq}') .reward-code`).waitFor();
+  if (!/^OT\d+(AAA|BBB)$/.test((await page.locator("#rewards .reward-code").first().textContent()).trim())) throw new Error("the winner does not see their code");
+  step("organizer pasted shop codes (duplicates skipped) and gave one to the top predictor; only the winner sees the code, on /me");
 
   await page.goto(base + "/me");
   page.once("dialog", (d) => d.accept());
