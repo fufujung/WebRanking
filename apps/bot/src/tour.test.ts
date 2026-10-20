@@ -1748,3 +1748,19 @@ describe("organizers make teams from the list in Discord", () => {
     assert.match(text(last(typed.replies)), /เลือกผู้เล่นจากรายการ/);
   });
 });
+
+describe("story posts in Discord", () => {
+  test("/season story lists an event's Facebook posts in order; autocomplete offers events with stories", async () => {
+    const t = await api.post<any>("/tournaments", { name: "Drama Cup", startDate: new Date(Date.now() + 86400_000).toISOString(), special: true });
+    await api.put(`/tournaments/${t.id}/stories`, { stories: [{ title: "ตอนที่ 1 [จุดเริ่ม]", url: "https://www.facebook.com/ot/posts/1" }, { url: "https://fb.watch/xyz/" }] });
+    const ac = command("season", "story", { focused: "event", value: "drama" }, person(80));
+    await bot.onAutocomplete(ac);
+    assert.deepEqual(last<any>(ac.replies), [{ name: "Drama Cup (2 โพสต์)", value: t.id }]);
+    const show = command("season", "story", { event: t.id }, person(80));
+    await bot.onCommand(show);
+    const embed = JSON.stringify(last(show.replies));
+    assert.match(embed, /📖 ต้นเรื่อง · Drama Cup/);
+    assert.match(embed, /\*\*1\.\*\* \[ตอนที่ 1 จุดเริ่ม\]\(https:\/\/www\.facebook\.com\/ot\/posts\/1\)/);
+    assert.match(embed, /\*\*2\.\*\* \[โพสต์ที่ 2\]\(https:\/\/fb\.watch\/xyz\/\)/);
+  });
+});

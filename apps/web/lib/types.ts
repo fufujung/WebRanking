@@ -733,3 +733,11 @@ export interface Wallet {
   bets: { id: string; teamId: string; teamName: string; amount: number; payout: number | null; createdAt: string; market: { id: string; kind: "MATCH" | "GAME" | "CHAMPION"; key: string; label: string; status: Market["status"]; winnerTeamId: string | null; tournament: { id: string; name: string } } }[];
   rewards: Reward[];
 }
+
+/** A story post (ต้นเรื่อง) of an event: a Facebook link with an optional title. */
+export interface Story {
+  id: string;
+  title: string | null;
+  url: string;
+  position: number;
+}

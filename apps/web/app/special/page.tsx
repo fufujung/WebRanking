@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { api, qs } from "@/lib/api";
-import type { SeasonView, SpecialBoard, SpecialSeason } from "@/lib/types";
+import type { PredictTournament, SeasonView, SpecialBoard, SpecialSeason } from "@/lib/types";
+import { CheerSection } from "@/components/predict/Cheer";
 import { fmtDate, fmtRating, signed } from "@/lib/format";
 import { POSITIONS, positionLabel } from "@/lib/solo";
 import { currentGame } from "@/lib/games";
@@ -23,11 +24,14 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
   const seasons = (await api<{ data: SpecialSeason[] }>(`/special/seasons${qs({ gameId: game?.id })}`)).data;
   const current = seasons.find((x) => new Date(x.startDate) <= new Date()) ?? null;
   const seasonId = sp.season === "all" ? null : (seasons.find((x) => x.id === sp.season) ?? current)?.id ?? null;
-  const [board, me, season] = await Promise.all([
+  const [board, me, season, predicting] = await Promise.all([
     api<SpecialBoard>(`/special${qs({ gameId: game?.id, seasonId })}`),
     getMember(),
     seasonId ? api<SeasonView>(`/special/seasons/${encodeURIComponent(seasonId)}`) : null,
+    api<{ data: PredictTournament[] }>("/predict/tournaments").then((r) => r.data).catch(() => [] as PredictTournament[]),
   ]);
+  // Special events open for picks right now (this season's, when one is picked): cheer buttons at the top.
+  const cheering = predicting.filter((t) => t.special && t.open > 0 && (!seasonId || t.season?.id === seasonId)).slice(0, 3);
   const byPosition = POSITIONS.map((p) => ({ p, players: board.reserve.filter((r) => r.position === p) }));
   const noPosition = board.reserve.filter((r) => !r.position);
 
@@ -75,7 +79,12 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
         {season && <a href="#season" className="badge">รายชื่อซีซั่น</a>}
         <a href="#reserve" className="badge">ตัวสำรอง</a>
         <a href="#events" className="badge">งานที่จัด</a>
+        <Link href={`/special/story${seasonId ? `?season=${seasonId}` : ""}`} className="badge badge-accent">📖 ต้นเรื่อง</Link>
       </nav>
+
+      {cheering.map((t) => (
+        <CheerSection key={t.id} tournamentId={t.id} next={`/special${seasonId ? `?season=${seasonId}` : ""}#cheer`} title={`🔮 เชียร์ทีมไหน · ${t.name}`} />
+      ))}
 
       <section id="ladder" className="mt">
         <h2>อันดับ MMR เล่นเก่งปากเก่ง{board.season ? ` · ${board.season.name}` : ""}</h2>

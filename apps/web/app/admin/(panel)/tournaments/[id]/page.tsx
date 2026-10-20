@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { api, apiOrNull, qs } from "@/lib/api";
 import { fetchAll } from "@/lib/fetchAll";
-import type { Bracket, ReservePlayer, SeasonView, SoloView, Team, TournamentDetail } from "@/lib/types";
+import type { Bracket, ReservePlayer, SeasonView, SoloView, Story, Team, TournamentDetail } from "@/lib/types";
+import { StoryEditor } from "@/components/admin/StoryEditor";
 import { TournamentForm } from "@/components/admin/TournamentForm";
 import { EntryManager } from "@/components/admin/EntryManager";
 import { DeleteButton } from "@/components/admin/DeleteButton";
@@ -29,6 +30,7 @@ export default async function EditTournament({ params, searchParams }: { params:
     t.entryMode === "SOLO" ? apiOrNull<SoloView>(`/tournaments/${t.id}/solo`) : null,
   ]);
   // Organizers put teams together from the season's list (when the event has a season) or the substitutes list.
+  const stories = (await api<{ data: Story[] }>(`/tournaments/${t.id}/stories`)).data;
   const [reserve, season] = await Promise.all([
     t.format ? api<{ data: ReservePlayer[] }>(`/special/reserve/private${qs({ gameId: t.gameId })}`).then((r) => r.data) : [],
     t.format && t.seasonId ? apiOrNull<SeasonView>(`/special/seasons/${encodeURIComponent(t.seasonId)}`) : null,
@@ -67,6 +69,8 @@ export default async function EditTournament({ params, searchParams }: { params:
           <BracketAdmin tournamentId={t.id} format={t.format} bracket={bracket} entries={bracket?.teams ?? t.teams} />
         </>
       )}
+      <h2 className="mt" id="story">📖 ต้นเรื่อง ({stories.length})</h2>
+      <StoryEditor tournamentId={t.id} stories={stories} />
       <h2 className="mt">ทีมที่ลงแข่ง ({t.teams.length})</h2>
       <p className="muted small">
         {t.format

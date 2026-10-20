@@ -16,6 +16,12 @@ export const seasonCommand: ApplicationCommandData = {
   dmPermission: false,
   options: [
     { type: O.Subcommand, name: "list", description: "ดูซีซั่นทั้งหมด" },
+    {
+      type: O.Subcommand,
+      name: "story",
+      description: "ต้นเรื่อง: ลิงก์โพสต์ Facebook ที่มาของรายการเล่นเก่งปากเก่ง",
+      options: [{ type: O.String, name: "event", description: "รายการ (ไม่ใส่ = รายการล่าสุดที่มีต้นเรื่อง)", autocomplete: true }],
+    },
     { type: O.Subcommand, name: "players", description: "ดูรายชื่อผู้เล่นของซีซั่น", options: [seasonOption(false)] },
     {
       type: O.Subcommand,
@@ -61,6 +67,12 @@ interface SeasonDetail extends SeasonBase {
   game: { id: string; name: string } | null;
   players: { id: string; name: string; nickname: string | null; uid: string | null }[];
   tournaments: { id: string; name: string; status: string }[];
+}
+/** A special event with its story posts (GET /special/stories). */
+interface StoryEvent {
+  id: string;
+  name: string;
+  stories: { title: string | null; url: string }[];
 }
 interface AddResult {
   added: { id: string; name: string; uid: string | null; created: boolean }[];
@@ -112,6 +124,26 @@ export class SeasonCommands {
 
   async onCommand(i: ChatInputCommandInteraction, organizer: boolean) {
     const sub = i.options.getSubcommand();
+    if (sub === "story") {
+      await i.deferReply();
+      const { data } = await this.api.get<{ data: StoryEvent[] }>("/special/stories");
+      const id = i.options.getString("event");
+      const e = id ? data.find((x) => x.id === id) : data[0];
+      if (!e) return void (await i.editReply(id ? "รายการนี้ยังไม่มีต้นเรื่อง" : "ยังไม่มีต้นเรื่อง ผู้จัดเพิ่มลิงก์โพสต์ได้ในหน้าแก้ไขทัวร์นาเมนต์บนเว็บ"));
+      const link = siteLink(this.siteUrl, `/tournaments/${e.id}#story`);
+      return void (await i.editReply({
+        embeds: [
+          fitEmbed({
+            title: `📖 ต้นเรื่อง · ${e.name}`,
+            url: isPublicUrl(link) ? link : undefined,
+            color: RED,
+            description: e.stories.map((x, n) => `**${n + 1}.** [${(x.title || `โพสต์ที่ ${n + 1}`).replace(/[[\]]/g, "")}](${x.url.replace(/\)/g, "%29")})`).join("\n"),
+            footer: { text: "เปิดอ่านใน Facebook ตามลำดับ" },
+          }),
+        ],
+        allowedMentions: { parse: [] },
+      }));
+    }
     if (sub === "list") {
       await i.deferReply();
       const { data } = await this.api.get<{ data: SeasonRow[] }>("/special/seasons");
@@ -181,6 +213,10 @@ export class SeasonCommands {
     const q = String(focused.value).toLowerCase();
     try {
       if (focused.name === "season") return void (await i.respond(await seasonChoices(this.api, q)));
+      if (focused.name === "event") {
+        const { data } = await this.api.get<{ data: StoryEvent[] }>("/special/stories");
+        return void (await i.respond(data.filter((e) => e.name.toLowerCase().includes(q)).slice(0, 25).map((e) => ({ name: `${e.name} (${e.stories.length} โพสต์)`.slice(0, 100), value: e.id }))));
+      }
       if (focused.name === "game") {
         const { data } = await this.api.get<{ data: { id: string; name: string }[] }>("/games");
         return void (await i.respond(data.filter((g) => g.name.toLowerCase().includes(q)).slice(0, 25).map((g) => ({ name: g.name.slice(0, 100), value: g.id }))));

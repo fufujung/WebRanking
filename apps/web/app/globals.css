@@ -881,3 +881,31 @@ label.pick-row { display: flex; flex-direction: row; align-items: center; text-a
 .pick-row-taken { opacity: 0.5; cursor: not-allowed; }
 .pick-meta { flex-shrink: 0; text-align: right; }
 @media (max-width: 640px) { .pick-row { flex-wrap: wrap; } .pick-meta { flex-basis: 100%; text-align: left; padding-left: 26px; } }
+
+/* "เชียร์ทีมไหน": big team buttons on tournament pages and /special */
+.mt-sm { margin-top: 10px; }
+.cheer-card { display: grid; gap: 10px; }
+.cheer-teams { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cheer-many { grid-template-columns: 1fr; }
+.cheer-team { position: relative; overflow: hidden; min-height: 64px; padding: 10px 14px; border-radius: 12px; border: 2px solid var(--border); background: var(--bg-soft); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color .15s, transform .1s; }
+.cheer-team:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px); }
+.cheer-team:disabled { cursor: default; }
+.cheer-team-on { border-color: var(--accent); }
+.cheer-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent-soft); transition: width .6s ease; }
+.cheer-label { position: relative; display: grid; gap: 2px; min-width: 0; }
+.cheer-name { font-weight: 700; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cheer-amount { flex-wrap: wrap; gap: 6px; align-items: center; }
+.cheer-amount .chip { cursor: pointer; color: var(--text); font: inherit; font-size: 13px; }
+.chip-on { border-color: var(--accent); background: var(--accent-soft); }
+.cheer-input { width: 90px; padding: 4px 8px; }
+@media (max-width: 480px) { .cheer-teams { grid-template-columns: 1fr; } }
+
+/* ต้นเรื่อง: Facebook posts as link cards */
+.story-list { display: grid; gap: 10px; counter-reset: story; }
+.story-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--text); text-decoration: none; min-width: 0; }
+.story-card:hover { border-color: var(--accent); }
+.story-card::before { counter-increment: story; content: counter(story); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 700; flex-shrink: 0; }
+.story-text { display: grid; min-width: 0; }
+.story-text strong, .story-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.story-editor-row { display: grid; grid-template-columns: 1fr 2fr auto; gap: 8px; align-items: end; }
+@media (max-width: 640px) { .story-editor-row { grid-template-columns: 1fr; } }

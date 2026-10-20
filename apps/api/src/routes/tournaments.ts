@@ -13,6 +13,7 @@ import { syncBlacklist } from "../lib/blacklist.js";
 import { refundTournament, syncPredictions } from "../lib/predict.js";
 import { confirmTeams, drawTeams, removeSignup, soloView } from "../lib/solo.js";
 import { tournamentSeason } from "../lib/seasons.js";
+import { setStories, tournamentStories } from "../lib/stories.js";
 
 export const tournaments = Router();
 
@@ -205,6 +206,16 @@ async function slotAfter(tid: string, ref: string) {
   const m = view.matches.find((x) => x.id === ref || x.code === ref || (n && x.number === Number(n[1])))!;
   return comp.slotView(tid, m.id);
 }
+
+/** "ต้นเรื่อง": the event's Facebook posts, in order. */
+tournaments.get("/:id/stories", async (req, res) => {
+  res.json({ data: await tournamentStories(String(req.params.id)) });
+});
+
+/** Saves the whole list (add, remove and reorder in one go). */
+tournaments.put("/:id/stories", requireAdmin, async (req, res) => {
+  res.json({ data: await setStories(String(req.params.id), req.body) });
+});
 
 tournaments.get("/:id/bracket", async (req, res) => {
   res.json(await comp.bracketView(String(req.params.id)));
