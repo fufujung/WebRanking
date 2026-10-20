@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, useEffect } from "react";
 import { registerPickedTeam, type FormState } from "@/app/admin/actions";
 import { POSITIONS, positionLabel } from "@/lib/solo";
 import type { SoloPosition } from "@/lib/types";
@@ -61,6 +61,8 @@ function useFilter(candidates: Candidate[]) {
 export function PickTeam({ tournamentId, candidates, source, rosterMin, rosterMax, nextName }: { tournamentId: string; candidates: Candidate[]; source: string; rosterMin: number; rosterMax: number; nextName: string }) {
   const [picked, setPicked] = useState<string[]>([]);
   const [teamName, setTeamName] = useState(nextName);
+  // After a team is added the page suggests the next name ("ทีม 3"); the success message stays.
+  useEffect(() => setTeamName(nextName), [nextName]);
   const [captain, setCaptain] = useState("");
   const [state, setState] = useState<FormState>();
   const [pending, start] = useTransition();

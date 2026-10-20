@@ -1122,7 +1122,9 @@ if (!(await page.locator(".btn-discord").count())) {
   const kt = await apiCall("POST", "/tournaments", { name: `Picked ${uniq}`, startDate: new Date(Date.now() + 86400_000).toISOString(), format: "SINGLE_ELIMINATION", rosterMin: 1, rosterMax: 3, special: true, seasonId });
   await rAdmin.goto(base + `/admin/tournaments/${kt.id}`);
   const pickCard = rAdmin.locator(".pick-team-card");
-  await pickCard.locator(`label.pick-row:has-text('Rookie${uniq}')`).click();
+  // check() retries until the box is ticked, so a click before the page is interactive is not lost.
+  await pickCard.locator(`label.pick-row:has-text('Rookie${uniq}') input`).check();
+  await pickCard.locator("p:has-text('เลือกแล้ว 1/3')").waitFor();
   await pickCard.locator('label:has-text("ชื่อทีม") input').fill(`Picked Team ${uniq}`);
   await pickCard.locator("button:has-text('+ เพิ่มทีมนี้')").click();
   await pickCard.locator(".success:has-text('เพิ่มทีม Picked Team')").waitFor();
@@ -1190,12 +1192,29 @@ if (!(await page.locator(".btn-discord").count())) {
   await apiCall("POST", `/predict/members/${rival}/bets`, { marketId: market.id, teamId: pB.id, amount: 20 });
   const rivalGame1 = (await apiCall("GET", `/predict/tournaments/${pt.id}`)).markets.find((m) => m.kind === "GAME" && m.game === 1);
   await apiCall("POST", `/predict/members/${rival}/bets`, { marketId: rivalGame1.id, teamId: pB.id, amount: 10 });
+  // The stream overlay (vMix / OBS): the open match with the split and the payout per side.
+  const ov = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  ov.on("pageerror", (e) => problems.push(`pageerror: ${e.message} @ ${ov.url()}`));
+  await ov.goto(base + `/overlay/predict?t=${pt.id}`);
+  await ov.locator("#card.show #nameA:has-text('Hawks')").waitFor();
+  await ov.locator("#ratioA:has-text('x1.66')").waitFor();
+  await ov.locator("#ratioB:has-text('x2.50')").waitFor();
+  await ov.locator("#state.open:has-text('ทายได้อีก')").waitFor();
+  if ((await ov.evaluate(() => getComputedStyle(document.body).backgroundColor)) !== "rgba(0, 0, 0, 0)") throw new Error("the overlay background is not transparent");
+  await ov.waitForTimeout(1200);
+  await ov.screenshot({ path: OUT + "/overlay.png", omitBackground: true });
   await apiCall("POST", `/tournaments/${pt.id}/bracket/matches/M1/result`, { games: [{ scoreA: 21, scoreB: 12 }, { scoreA: 21, scoreB: 18 }] });
+  await ov.locator("#banner.on:has-text('ชนะ! ทายถูก 1 คน')").waitFor({ timeout: 10000 });
+  await ov.waitForTimeout(1200);
+  await ov.screenshot({ path: OUT + "/overlay-result.png", omitBackground: true });
+  await ov.goto(base + "/overlay/predict?preview=1&pos=top");
+  await ov.locator("#card.show #nameA:has-text('Team Alpha')").waitFor();
+  await ov.close();
   await page.reload();
   await page.locator(".market-card:has-text('คู่ที่ 1') > .market-mine:has-text('ได้ 50 เหรียญ')").waitFor();
   await page.locator(".market-card:has-text('คู่ที่ 1') .market-game .market-mine:has-text('ได้ 20 เหรียญ')").waitFor();
   await page.locator(`table tr:has-text('E2E Discord'):has-text('+30')`).first().waitFor();
-  step("member took the daily coins, picked a team and game 1 of the BO3 on /predict (more coins than they have is refused), won the other side's coins on both; /predict fits a phone");
+  step("member took the daily coins, picked a team and game 1 of the BO3 on /predict (more coins than they have is refused), won the other side's coins on both; /predict fits a phone; the stream overlay shows the split, the payout per side and the result");
 
   const pAdminCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const pAdmin = await pAdminCtx.newPage();

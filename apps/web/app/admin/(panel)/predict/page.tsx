@@ -5,7 +5,7 @@ import type { Reward, Tournament } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
 import { Avatar, Empty } from "@/components/ui";
 import { ListHead } from "@/components/admin/ListParts";
-import { CodePaste, DeleteFreeCodes, GiveRewards, RewardActions } from "@/components/admin/PredictAdmin";
+import { CodePaste, DeleteFreeCodes, GiveRewards, OverlayLink, RewardActions } from "@/components/admin/PredictAdmin";
 
 export const metadata = { title: "ทายผล · รางวัล" };
 
@@ -52,6 +52,7 @@ export default async function AdminPredict() {
         </section>
       </div>
       <div className="mt"><GiveRewards labels={pool} scopes={scopes} /></div>
+      <div className="mt"><OverlayLink tournaments={tournaments.filter((t) => t.format && t.status !== "COMPLETED").map((t) => ({ id: t.id, name: t.name }))} /></div>
       <section className="mt">
         <h2>รางวัลที่แจกแล้ว ({rewards.length})</h2>
         {rewards.length === 0 ? (
