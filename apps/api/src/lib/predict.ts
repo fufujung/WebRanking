@@ -431,3 +431,13 @@ export async function wallet(discordId: string, now = new Date()) {
     rewards: rewards.map(({ code, ...r }) => ({ ...r, code: code?.code ?? null, codeLabel: code?.label ?? null })),
   };
 }
+
+/** Before a tournament is deleted: every stake goes back, and won coins are taken back, as if it never ran. */
+export function refundTournament(tournamentId: string) {
+  return serial(() =>
+    prisma.$transaction(async (tx) => {
+      const markets = await tx.market.findMany({ where: { tournamentId }, select: { id: true } });
+      for (const m of markets) await applyOutcome(tx, m.id, { kind: "refund" });
+    }),
+  );
+}

@@ -10,6 +10,7 @@ import * as comp from "../lib/competition.js";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { matchInclude, matchOrder } from "../lib/selects.js";
 import { syncBlacklist } from "../lib/blacklist.js";
+import { refundTournament, syncPredictions } from "../lib/predict.js";
 import { confirmTeams, drawTeams, removeSignup, soloView } from "../lib/solo.js";
 import { tournamentSeason } from "../lib/seasons.js";
 
@@ -105,6 +106,7 @@ tournaments.patch("/:id", requireAdmin, async (req, res) => {
 });
 
 tournaments.delete("/:id", requireAdmin, async (req, res) => {
+  await refundTournament(String(req.params.id));
   await prisma.tournament.delete({ where: { id: String(req.params.id) } });
   await recomputeRatings();
   res.status(204).end();
@@ -136,12 +138,14 @@ tournaments.post("/:id/entries", requireAdmin, async (req, res) => {
     create: { tournamentId: tournament.id, teamId: team.id, placement: input.placement ?? null },
     update: input.placement === undefined ? {} : { placement: input.placement },
   });
+  await syncPredictions(tournament.id);
   res.status(201).json(entry);
 });
 
 tournaments.delete("/:id/entries/:teamId", requireAdmin, async (req, res) => {
   const { id, teamId } = z.object({ id: z.string(), teamId: z.string() }).parse(req.params);
   await comp.withdraw(id, teamId);
+  await bracketChanged(id);
   res.status(204).end();
 });
 
@@ -151,6 +155,7 @@ tournaments.delete("/:id/entries/:teamId", requireAdmin, async (req, res) => {
 tournaments.post("/:id/registrations", requireAdmin, async (req, res) => {
   const entry = await comp.register(String(req.params.id), req.body);
   await adoptGame(String(req.params.id));
+  await syncPredictions(String(req.params.id));
   res.status(201).json(entry);
 });
 
@@ -176,6 +181,7 @@ tournaments.post("/:id/solo/draw", requireAdmin, async (req, res) => {
 tournaments.post("/:id/solo/teams", requireAdmin, async (req, res) => {
   const view = await confirmTeams(String(req.params.id), req.body);
   await adoptGame(String(req.params.id));
+  await syncPredictions(String(req.params.id));
   res.json(view);
 });
 
@@ -185,9 +191,15 @@ tournaments.delete("/:id/solo/:playerId", requireAdmin, async (req, res) => {
 
 // ---------- Bracket ----------
 
-/** After a result changes: the blacklist follows walkovers, then the slot is shown with its blacklist entries. */
-async function slotAfter(tid: string, ref: string) {
+/** After the bracket changes: the blacklist follows walkovers and the predictions follow results. */
+async function bracketChanged(tid: string) {
   await syncBlacklist(tid);
+  await syncPredictions(tid);
+}
+
+/** After a result changes: the slot is shown with its blacklist entries. */
+async function slotAfter(tid: string, ref: string) {
+  await bracketChanged(tid);
   const view = await comp.bracketView(tid);
   const n = /^m?(\d+)$/i.exec(ref);
   const m = view.matches.find((x) => x.id === ref || x.code === ref || (n && x.number === Number(n[1])))!;
@@ -201,29 +213,35 @@ tournaments.get("/:id/bracket", async (req, res) => {
 /** Seeds the teams (by rating, at random, or by hand) and builds a bracket to review. */
 tournaments.post("/:id/bracket/seed", requireAdmin, async (req, res) => {
   const b = await comp.seed(String(req.params.id), req.body);
-  await syncBlacklist(String(req.params.id));
+  await bracketChanged(String(req.params.id));
   res.json(b);
 });
 
 /** Confirms the reviewed bracket: the tournament starts and registration closes. */
 tournaments.post("/:id/bracket/start", requireAdmin, async (req, res) => {
-  res.json(await comp.start(String(req.params.id)));
+  const started = await comp.start(String(req.params.id));
+  await syncPredictions(String(req.params.id));
+  res.json(started);
 });
 
 /** Ends a running tournament now, even with matches left unplayed. */
 tournaments.post("/:id/bracket/end", requireAdmin, async (req, res) => {
-  res.json(await comp.endBracket(String(req.params.id)));
+  const ended = await comp.endBracket(String(req.params.id));
+  await bracketChanged(String(req.params.id));
+  res.json(ended);
 });
 
 tournaments.delete("/:id/bracket", requireAdmin, async (req, res) => {
   await comp.resetBracket(String(req.params.id), req.query.force === "true");
-  await syncBlacklist(String(req.params.id));
+  await bracketChanged(String(req.params.id));
   res.status(204).end();
 });
 
 /** Sets the start time of a match ({ match }) or of a whole round ({ stage, round }). */
 tournaments.post("/:id/bracket/schedule", requireAdmin, async (req, res) => {
-  res.json(await comp.schedule(String(req.params.id), req.body));
+  const scheduled = await comp.schedule(String(req.params.id), req.body);
+  await syncPredictions(String(req.params.id));
+  res.json(scheduled);
 });
 
 tournaments.get("/:id/bracket/matches/:match", async (req, res) => {
