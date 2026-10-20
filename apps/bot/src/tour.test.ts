@@ -190,8 +190,11 @@ const fakeGuild: any = {
     },
   },
 };
+/** Private messages the bot sent, as [userId, text]. */
+const dms: [string, string][] = [];
 const fakeClient: any = {
   user: { id: "bot-user" },
+  users: { fetch: async (id: string) => ({ id, send: async (p: any) => void dms.push([id, typeof p === "string" ? p : p.content]) }) },
   channels: { fetch: async (id: string) => channels.get(id) ?? null },
   guilds: { fetch: async () => fakeGuild },
 };
@@ -1593,5 +1596,91 @@ describe("/season in Discord", () => {
     await bot.onCommand(remove);
     assert.match(text(last(remove.replies)), /เอา Lynx · 7730586 ออกจาก Season 1 แล้ว/);
     assert.equal((await api.get<any>(`/special/seasons/${seasonId}`)).players.length, 1);
+  });
+});
+
+describe("predictions in Discord", () => {
+  test("open matches get a card with team buttons; picks go through a form; /coins, the board and prize DMs", async () => {
+    const fan = person(501);
+    const other = person(502);
+    members.set(fan, { roles: [], manage: false, name: "Fan" });
+    members.set(other, { roles: [], manage: false, name: "Other" });
+    bot.settings.set(GUILD, { ...bot.settingsFor(GUILD), announceChannelId: ANNOUNCE });
+
+    const daily = command("coins", null, {}, fan);
+    await bot.onCommand(daily);
+    assert.match(text(last(daily.replies)), /รับ 20 เหรียญแล้ว .* มีทั้งหมด \*\*120\*\* เหรียญ/);
+    const again = command("coins", null, {}, fan);
+    await bot.onCommand(again);
+    assert.match(text(last(again.replies)), /วันนี้รับเหรียญไปแล้ว .* มี \*\*120\*\* เหรียญ/);
+    await bot.onCommand(command("coins", null, {}, other));
+
+    // A tournament run on the website: two teams, a bracket and a start time.
+    const t = await api.post<any>("/tournaments", { name: "Predict Cup", startDate: new Date(Date.now() + 86400_000).toISOString(), format: "SINGLE_ELIMINATION", registrationOpen: true, rosterMin: 1, rosterMax: 3 });
+    const reg = (name: string, n: number) => api.post<any>(`/tournaments/${t.id}/registrations`, { teamName: name, captainDiscordId: person(n), players: [{ name: `${name} P1`, discordId: person(n) }] });
+    const a = await reg("Hawks", 601);
+    const b = await reg("Wolves", 602);
+    await api.post(`/tournaments/${t.id}/bracket/seed`, { method: "manual", order: [a.id, b.id] });
+    await api.post(`/tournaments/${t.id}/bracket/start`, {});
+    await api.post(`/tournaments/${t.id}/bracket/schedule`, { match: "M1", scheduledAt: new Date(Date.now() + 3600_000).toISOString() });
+
+    const announce = channels.get(ANNOUNCE)!;
+    await bot.predict.sync(fakeClient);
+    const card = announce.sent.find((m) => /ทายผลคู่ที่ 1 · Predict Cup/.test(m.embed?.title ?? ""))!;
+    assert.ok(card, "a card for the open match");
+    assert.deepEqual(card.buttons.map((x: any) => x.label).slice(0, 2), ["Hawks", "Wolves"]);
+    await bot.predict.sync(fakeClient);
+    assert.equal(announce.sent.filter((m) => /ทายผลคู่ที่ 1 · Predict Cup/.test(m.embed?.title ?? "")).length, 1, "posted once");
+
+    // Pressing a team asks how many coins.
+    const hawks = card.buttons.find((x: any) => x.label === "Hawks");
+    const pressHawks = press(hawks.custom_id, fan, card);
+    pressHawks.component = { label: "Hawks" };
+    await bot.onButton(pressHawks);
+    assert.match(JSON.stringify(pressHawks.modal), /ทาย Hawks/);
+    const bad = submitForm(pressHawks.modal.custom_id, fan, ANNOUNCE, { amount: "abc" });
+    await bot.onModal(bad);
+    assert.match(text(last(bad.replies)), /ตัวเลข/);
+    const pick = submitForm(pressHawks.modal.custom_id, fan, ANNOUNCE, { amount: "50" });
+    await bot.onModal(pick);
+    assert.match(text(last(pick.replies)), /ทายแล้ว 50 เหรียญ · เหลือ 70 เหรียญ/);
+    const wolves = card.buttons.find((x: any) => x.label === "Wolves");
+    await bot.onModal(submitForm(wolves.custom_id.replace("pk:bet:", "pk:amt:"), other, ANNOUNCE, { amount: "30" }));
+    // A player cannot pick their own match.
+    const own = submitForm(wolves.custom_id.replace("pk:bet:", "pk:amt:"), person(602), ANNOUNCE, { amount: "10" });
+    await bot.onModal(own);
+    assert.match(text(last(own.replies)), /ทายแมตช์ของตัวเองไม่ได้/);
+
+    const mine = press(card.buttons.find((x: any) => x.custom_id.startsWith("pk:mine:")).custom_id, fan, card);
+    await bot.onButton(mine);
+    assert.match(text(last(mine.replies)), /คุณทาย \*\*Hawks\*\* 50 เหรียญ/);
+
+    await bot.predict.sync(fakeClient);
+    assert.match(card.embed.description, /Hawks\*\*\n`[▰▱]+` 63% · 50 เหรียญ · 1 คน/);
+    assert.match(card.embed.description, /รวม 80 เหรียญ จาก 2 คน/);
+
+    // The result closes the card and pays the winners.
+    await api.post(`/tournaments/${t.id}/bracket/matches/M1/result`, { scoreA: 2, scoreB: 1 });
+    await bot.predict.sync(fakeClient);
+    assert.match(card.embed.description, /ผล: \*\*Hawks\*\* ชนะ \(2:1\)/);
+    assert.equal(card.buttons.length, 0, "no more buttons");
+
+    const board = command("predict", "board", { tournament: t.id }, other);
+    await bot.onCommand(board);
+    assert.match(JSON.stringify(last(board.replies)), /1\.\*\* Fan · \+30 \(ถูก 1\/1\)/);
+    const me = command("predict", "me", {}, fan);
+    await bot.onCommand(me);
+    assert.match(JSON.stringify(last(me.replies)), /🪙 150 เหรียญ/);
+
+    // A prize from the code pool: the winner gets a DM with the code, once.
+    await api.post("/predict/codes", { label: "ส่วนลด 50", text: "OTSHOP0001" });
+    await api.post("/predict/rewards", { title: "อันดับ 1 Predict Cup", codeLabel: "ส่วนลด 50", tournamentId: t.id });
+    await bot.predict.sync(fakeClient);
+    const dm = dms.find(([id]) => id === fan);
+    assert.ok(dm);
+    assert.match(dm[1], /อันดับ 1 Predict Cup/);
+    assert.match(dm[1], /`OTSHOP0001`/);
+    await bot.predict.sync(fakeClient);
+    assert.equal(dms.filter(([id]) => id === fan).length, 1, "one DM per prize");
   });
 });

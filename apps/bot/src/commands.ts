@@ -1,6 +1,7 @@
 import { ApplicationCommandOptionType, ApplicationCommandType, ChannelType, PermissionFlagsBits, type ApplicationCommandData, type ApplicationCommandOptionData, type ApplicationCommandSubCommandData } from "discord.js";
 import { blacklistCommand } from "./blacklist.js";
 import { seasonCommand } from "./season.js";
+import { coinsCommand, predictCommand } from "./predict.js";
 import { PLAYER_SORTS } from "./format.js";
 import { POSITIONS } from "./positions.js";
 
@@ -284,4 +285,6 @@ export const commandData: ApplicationCommandData[] = [
   poolCommand,
   blacklistCommand,
   seasonCommand,
+  coinsCommand,
+  predictCommand,
 ];

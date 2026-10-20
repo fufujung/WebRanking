@@ -169,6 +169,7 @@ model Tournament {
   bracketMatches BracketMatch[]
   soloSignups    SoloSignup[]
   blacklist      BlacklistEntry[]
+  markets        Market[]
   gameRef        Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
   season         SpecialSeason?    @relation(fields: [seasonId], references: [id], onDelete: SetNull)
 
@@ -479,4 +480,123 @@ model BlacklistEntry {
   @@unique([tournamentId, slotCode, playerId])
   @@index([playerId])
   @@index([createdAt])
+}
+
+/**
+ * Free prediction coins (เหรียญทายผล) of one Discord account. Coins are only given away (daily login,
+ * watching a live tournament, winning predictions): never sold, bought or exchanged for money.
+ */
+model Predictor {
+  discordId  String    @id
+  name       String
+  avatarUrl  String?
+  coins      Int       @default(0)
+  /// Days in a row with the daily coins claimed, and the Thai date (yyyy-mm-dd) of the last claim.
+  streak     Int       @default(0)
+  lastDaily  String?
+  /// Coins for watching while a tournament is live: the Thai date, how many today, and when last given.
+  watchDay   String?
+  watchToday Int       @default(0)
+  lastWatch  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  bets    Bet[]
+  ledger  CoinTx[]
+  rewards Reward[]
+}
+
+/// Every change to a predictor's coins, so the balance can always be explained.
+model CoinTx {
+  id        String   @id @default(cuid())
+  discordId String
+  amount    Int
+  kind      String // WELCOME | DAILY | WATCH | BET | PAYOUT | REFUND | ADJUST
+  marketId  String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  predictor Predictor @relation(fields: [discordId], references: [discordId], onDelete: Cascade)
+
+  @@index([discordId, createdAt])
+}
+
+/**
+ * Something to predict in a tournament: the winner of one bracket match (MATCH, key = the slot code)
+ * or the champion (CHAMPION, key = "CHAMPION"). Bets close at locksAt; the API settles them from the bracket.
+ */
+model Market {
+  id           String    @id @default(cuid())
+  tournamentId String
+  kind         String // MATCH | CHAMPION
+  key          String
+  /// The teams to pick from, as a JSON array of team ids.
+  teamIds      String
+  status       String    @default("OPEN") // OPEN | CLOSED (by an organizer) | SETTLED | REFUNDED
+  locksAt      DateTime?
+  winnerTeamId String?
+  settledAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  bets       Bet[]
+
+  @@unique([tournamentId, key])
+}
+
+/// One account's pick in a market. payout is what came back once settled (stake included; 0 = lost).
+model Bet {
+  id        String   @id @default(cuid())
+  marketId  String
+  discordId String
+  teamId    String
+  amount    Int
+  payout    Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  market    Market    @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  predictor Predictor @relation(fields: [discordId], references: [discordId], onDelete: Cascade)
+
+  @@unique([marketId, discordId])
+  @@index([discordId])
+}
+
+/**
+ * A prize given to a predictor: a shop discount code from the code pool (CODE) or a physical item such
+ * as gaming gear (ITEM). Codes are private: only the winner and admins see them. No addresses are kept;
+ * shipping is arranged in Discord DMs.
+ */
+model Reward {
+  id           String    @id @default(cuid())
+  discordId    String
+  title        String
+  kind         String // CODE | ITEM
+  status       String    @default("PENDING") // PENDING | SENT | RECEIVED
+  place        Int?
+  tournamentId String?
+  seasonId     String?
+  note         String?
+  notifiedAt   DateTime? // when the bot sent the winner a DM
+  deliveredAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  predictor Predictor   @relation(fields: [discordId], references: [discordId], onDelete: Cascade)
+  code      RewardCode?
+
+  @@index([discordId])
+}
+
+/// A pool of single-use shop codes, pasted by an admin and handed to winners in order.
+model RewardCode {
+  id        String   @id @default(cuid())
+  label     String // e.g. "ส่วนลด 50 บาท"
+  code      String   @unique
+  rewardId  String?  @unique
+  createdAt DateTime @default(now())
+
+  reward Reward? @relation(fields: [rewardId], references: [id], onDelete: SetNull)
+
+  @@index([label])
 }

@@ -13,6 +13,7 @@ import { keys } from "./routes/keys.js";
 import { games } from "./routes/games.js";
 import { members } from "./routes/members.js";
 import { special } from "./routes/special.js";
+import { predict } from "./routes/predict.js";
 import { matches } from "./routes/matches.js";
 import { players } from "./routes/players.js";
 import { rankings } from "./routes/rankings.js";
@@ -72,6 +73,7 @@ export function createApp() {
   v1.use("/blacklist", blacklist);
   v1.use("/members", members);
   v1.use("/special", special);
+  v1.use("/predict", predict);
   v1.use(uploads);
   app.use("/api/v1", v1);
 

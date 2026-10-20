@@ -2,7 +2,9 @@ import Link from "next/link";
 import { api, qs } from "@/lib/api";
 import { getMember } from "@/lib/member";
 import { discordEnabled } from "@/lib/discord";
-import type { MyCharacter, ReservePlayer, GameRank } from "@/lib/types";
+import type { MyCharacter, ReservePlayer, GameRank, Wallet } from "@/lib/types";
+import { fmtDate } from "@/lib/format";
+import { ConfirmReward } from "@/app/predict/PredictForms";
 import { siteOrigin } from "@/lib/site";
 import { allGames } from "@/lib/games";
 import { Avatar } from "@/components/ui";
@@ -58,11 +60,12 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
     );
   }
 
-  const [{ data: mine }, games, origin, { data: reserves }] = await Promise.all([
+  const [{ data: mine }, games, origin, { data: reserves }, wallet] = await Promise.all([
     api<{ data: MyCharacter[] }>(`/members/${me.id}`),
     allGames(),
     siteOrigin(),
     api<{ data: (ReservePlayer & { player: { gameId: string | null } })[] }>(`/members/${me.id}/reserves`),
+    api<Wallet>(`/predict/members/${me.id}`),
   ]);
   // เล่นเก่งปากเก่ง keeps a list per game (UIDs and names differ between games): one form for each game the member plays.
   const byGame = [...new Map(mine.map((c) => [c.game?.id ?? "", c.game])).values()];
@@ -88,6 +91,40 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
       </div>
       {error && <div className="error" style={{ marginBottom: 16 }}>{error}</div>}
       {sp.joined && <div className="success" style={{ marginBottom: 16 }}>เข้าร่วมทีมแล้ว ยินดีต้อนรับ!</div>}
+
+      <section id="rewards" className="card me-coins" style={{ marginBottom: 24 }}>
+        <div className="row between">
+          <h2 style={{ margin: 0 }}>🔮 ทายผล · {wallet.coins} เหรียญ</h2>
+          <Link href="/predict" className="btn btn-sm btn-primary">{wallet.dailyClaimed ? "ไปทายผล" : "รับเหรียญวันนี้"}</Link>
+        </div>
+        {wallet.rewards.length === 0 ? (
+          <p className="muted small" style={{ marginBottom: 0 }}>ยังไม่มีรางวัล ติดอันดับคนทายของรายการหรือซีซั่นเพื่อลุ้นโค้ดส่วนลดและอุปกรณ์เกมมิ่ง</p>
+        ) : (
+          <ul className="reward-list">
+            {wallet.rewards.map((r) => (
+              <li key={r.id}>
+                <div>
+                  <strong>🎁 {r.title}</strong>
+                  {r.place ? <span className="muted small"> · อันดับ {r.place}</span> : null}
+                  <span className="muted small"> · {fmtDate(r.createdAt)}</span>
+                  {r.note && <div className="muted small">{r.note}</div>}
+                </div>
+                {r.code ? (
+                  <code className="reward-code" title={r.codeLabel ?? undefined}>{r.code}</code>
+                ) : r.status === "RECEIVED" ? (
+                  <span className="badge">ได้รับแล้ว</span>
+                ) : (
+                  <span className="row" style={{ gap: 8 }}>
+                    <span className="badge">{r.status === "SENT" ? "ส่งแล้ว" : "รอผู้จัดส่ง (ติดต่อทาง Discord DM)"}</span>
+                    {r.status === "SENT" && <ConfirmReward id={r.id} />}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {wallet.rewards.some((r) => r.code) && <p className="muted small" style={{ marginBottom: 0 }}>นำโค้ดไปใช้ที่ร้าน Overtimeboosboos ได้เลย โค้ดใช้ได้ครั้งเดียว อย่าส่งให้คนอื่น</p>}
+      </section>
 
       {mine.length > 0 && (
         <section className="stack" style={{ marginBottom: 24 }}>

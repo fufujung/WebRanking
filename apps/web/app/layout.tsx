@@ -11,6 +11,7 @@ import { getMember } from "@/lib/member";
 import { discordEnabled } from "@/lib/discord";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { MobileHeader } from "@/components/MobileHeader";
+import { WatchCoins } from "@/components/WatchCoins";
 import { AdBanner, AdPopupSlot } from "@/components/ads/Ads";
 import { HideOnAdmin } from "@/components/ads/HideOnAdmin";
 
@@ -41,6 +42,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/players">ผู้เล่น</Link>
               <Link href="/matches">ผลการแข่ง</Link>
               <Link href="/special">เล่นเก่งปากเก่ง</Link>
+              <Link href="/predict">ทายผล</Link>
               <Link href="/blacklist">Blacklist</Link>
               {admin && <Link href="/admin">จัดการข้อมูล</Link>}
               {member ? (
@@ -71,6 +73,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <HideOnAdmin>
           <AdPopupSlot />
         </HideOnAdmin>
+        {member && <WatchCoins />}
         <footer className="footer">
           <div className="container row between">
             <span className="row" style={{ gap: 16 }}>
