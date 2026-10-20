@@ -78,7 +78,6 @@ export default async function EditTournament({ params, searchParams }: { params:
         <>
           <h3 className="mt" id="pick">จัดทีมจากรายชื่อ{season ? ` ${season.name}` : "ตัวสำรอง"}</h3>
           <PickTeam
-            key={t.teams.length}
             tournamentId={t.id}
             candidates={candidates}
             source={season ? `รายชื่อ ${season.name}` : "รายชื่อตัวสำรอง"}

@@ -141,7 +141,7 @@ export function marketEmbed(t: { id: string; name: string }, m: MarketView, site
     url: isPublicUrl(link) ? link : undefined,
     color: done ? GREY : RED,
     description: [
-      ...m.options.map((o) => `${o.team.id === m.winnerTeamId ? "✅" : "•"} **${o.team.name}**\n\`${bar(o.percent)}\` ${o.percent}% · ${o.coins} เหรียญ · ${o.people} คน`),
+      ...m.options.map((o) => `${o.team.id === m.winnerTeamId ? "✅" : "•"} **${o.team.name}**\n\`${bar(o.percent)}\` ${o.percent}% · ${o.coins} เหรียญ · ${o.people} คน${o.coins > 0 && !done ? ` · ผลตอบแทน x${(Math.floor((m.pool / o.coins) * 100) / 100).toFixed(m.pool / o.coins >= 10 ? 1 : 2)}` : ""}`),
       "",
       `รวม ${m.pool} เหรียญ จาก ${m.people} คน`,
       state,

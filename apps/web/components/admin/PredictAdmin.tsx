@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { addRewardCodes, deleteFreeCodes, deleteReward, giveRewards, setRewardStatus, type FormState } from "@/app/admin/actions";
 import { useFormAction } from "./useFormAction";
 
@@ -131,5 +131,52 @@ export function RewardActions({ id, status, title }: { id: string; status: strin
       <button type="button" className="btn btn-sm btn-danger" disabled={pending} onClick={() => confirm(`ยกเลิกรางวัล "${title}"?`) && start(async () => setState(await deleteReward(id)))}>ยกเลิก</button>
       {state?.error && <span className="error small">{state.error}</span>}
     </span>
+  );
+}
+
+/** The stream overlay link for vMix / OBS: follows the current match by itself, or one pinned tournament. */
+export function OverlayLink({ tournaments }: { tournaments: { id: string; name: string }[] }) {
+  const [t, setT] = useState("");
+  const [pos, setPos] = useState("bottom");
+  const [copied, setCopied] = useState(false);
+  const params = new URLSearchParams();
+  if (t) params.set("t", t);
+  if (pos === "top") params.set("pos", "top");
+  const path = `/overlay/predict${params.size ? `?${params}` : ""}`;
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
+  const url = `${origin}${path}`;
+  return (
+    <section className="card stack">
+      <h3 style={{ margin: 0 }}>📺 Overlay ทายผลบนไลฟ์ (vMix / OBS)</h3>
+      <p className="muted small" style={{ margin: 0 }}>
+        ใน vMix: Add Input → Web Browser วางลิงก์นี้ ขนาด 1920×1080 พื้นหลังโปร่งใสอยู่แล้ว (OBS: Browser Source) ลิงก์เดียวใช้ได้ทั้งไลฟ์ จะโชว์คู่ที่เปิดทายอยู่ ถ้าไม่มีจะโชว์คู่ที่กำลังแข่ง แล้วโชว์ผลเมื่อบันทึกผล
+      </p>
+      <div className="form-row">
+        <label>
+          รายการ
+          <select value={t} onChange={(e) => setT(e.target.value)}>
+            <option value="">อัตโนมัติ (รายการที่กำลังแข่ง)</option>
+            {tournaments.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        </label>
+        <label>
+          ตำแหน่ง
+          <select value={pos} onChange={(e) => setPos(e.target.value)}>
+            <option value="bottom">ล่างจอ</option>
+            <option value="top">บนจอ</option>
+          </select>
+        </label>
+      </div>
+      <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label="ลิงก์ overlay" />
+      <div className="row">
+        <button type="button" className="btn btn-primary" onClick={() => navigator.clipboard?.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })}>
+          {copied ? "✓ ก๊อปแล้ว" : "ก๊อปลิงก์"}
+        </button>
+        <a className="btn" href={`${path}${params.size ? "&" : "?"}preview=1`} target="_blank" rel="noreferrer">ดูตัวอย่าง (ตัวเลขทดลอง)</a>
+        <a className="btn" href={path} target="_blank" rel="noreferrer">เปิดของจริง</a>
+      </div>
+      <p className="muted small" style={{ margin: 0 }}>ต่อท้ายลิงก์ด้วย <code>&amp;scale=0.8</code> เพื่อย่อขนาด หรือ <code>&amp;preview=1</code> เพื่อจัดตำแหน่งก่อนมีแมตช์จริง</p>
+    </section>
   );
 }

@@ -9,6 +9,9 @@ import { DailyButton, PickForm } from "./PredictForms";
 
 export const metadata = { title: "ทายผล · ใช้เหรียญฟรี ลุ้นรางวัล" };
 
+/** Twitch-style: what one coin on this side brings back if it wins (stake included). */
+const ratio = (m: Market, coins: number) => (coins > 0 ? ` · x${(Math.floor((m.pool / coins) * 100) / 100).toFixed(m.pool / coins >= 10 ? 1 : 2)}` : "");
+
 const STAGE: Record<string, string> = { W: "สายบน", L: "สายล่าง", GF: "ชิงชนะเลิศ", P3: "ชิงที่ 3", RR: "ตารางแข่ง" };
 const marketTitle = (m: Market) => (m.kind === "CHAMPION" ? "🏆 ใครจะเป็นแชมป์" : `คู่ที่ ${m.number ?? m.key}${m.stage && m.stage !== "W" ? ` · ${STAGE[m.stage] ?? m.stage}` : ""}`);
 
@@ -31,7 +34,7 @@ function Options({ m }: { m: Market }) {
               <span className="entity">
                 <strong>{won ? "✓ " : ""}{o.team.name}</strong>
               </span>
-              <span className="muted small">{o.percent}% · {o.coins} เหรียญ · {o.people} คน</span>
+              <span className="muted small">{o.percent}% · {o.coins} เหรียญ · {o.people} คน{ratio(m, o.coins)}</span>
             </div>
             <div className="market-bar" aria-hidden><span style={{ width: `${o.percent}%` }} /></div>
           </li>
@@ -94,7 +97,7 @@ function MarketCard({ m, games, coins, member }: { m: Market; games: Market[]; c
                   <Avatar src={o.team.logoUrl} name={o.team.name} />
                   <strong>{won ? "✓ " : ""}{o.team.name}</strong>
                 </Link>
-                <span className="muted small">{o.percent}% · {o.coins} เหรียญ · {o.people} คน</span>
+                <span className="muted small">{o.percent}% · {o.coins} เหรียญ · {o.people} คน{ratio(m, o.coins)}</span>
               </div>
               <div className="market-bar" aria-hidden><span style={{ width: `${o.percent}%` }} /></div>
             </li>
