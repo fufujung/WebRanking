@@ -672,3 +672,14 @@ export async function deleteReward(id: string): Promise<FormState> {
   revalidatePath("/admin/predict");
   return { ok: "ยกเลิกรางวัลแล้ว" };
 }
+
+/** ต้นเรื่อง: saves the event's Facebook posts in the given order (add, remove and reorder at once). */
+export async function saveStories(tournamentId: string, stories: { title: string; url: string }[]): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/tournaments/${encodeURIComponent(tournamentId)}/stories`, { method: "PUT", json: { stories: stories.filter((s) => s.url.trim() || s.title.trim()) } });
+  });
+  revalidatePath(`/tournaments/${tournamentId}`);
+  revalidatePath("/special/story");
+  revalidatePath(`/admin/tournaments/${tournamentId}`);
+  return result ?? { ok: "บันทึกต้นเรื่องแล้ว" };
+}

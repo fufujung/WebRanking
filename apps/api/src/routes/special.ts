@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAdmin } from "../lib/apiKeys.js";
+import { specialStories } from "../lib/stories.js";
 import { editReserve, importReserve, removeReserve, reserveList, reserveRanks, specialBoard } from "../lib/special.js";
 import { addSeasonPlayers, createSeason, deleteSeason, listSeasons, removeSeasonPlayer, seasonView, updateSeason } from "../lib/seasons.js";
 
@@ -14,6 +15,12 @@ export const special = Router();
 special.get("/", async (req, res) => {
   const q = z.object({ gameId: z.string().trim().min(1).max(40).optional(), seasonId: z.string().trim().min(1).max(40).optional() }).parse(req.query);
   res.json(await specialBoard(q.gameId, q.seasonId));
+});
+
+/** The stories (Facebook posts) of special events, optionally one season's. */
+special.get("/stories", async (req, res) => {
+  const q = z.object({ seasonId: z.string().trim().min(1).max(40).optional() }).parse(req.query);
+  res.json({ data: await specialStories(q.seasonId) });
 });
 
 /** Seasons: each lists the players (name + UID) allowed to play in its events. */

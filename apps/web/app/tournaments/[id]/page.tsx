@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { apiOrNull } from "@/lib/api";
-import type { Bracket, TournamentDetail } from "@/lib/types";
+import { api, apiOrNull } from "@/lib/api";
+import type { Bracket, Story, TournamentDetail } from "@/lib/types";
 import { fmtDate, fmtThaiTime, formatLabel } from "@/lib/format";
 import { BracketView, Rosters } from "@/components/Bracket";
 import { Empty, MatchCard, StatusBadge, TeamLink } from "@/components/ui";
 import { SoloSection } from "./SoloSection";
+import { CheerSection } from "@/components/predict/Cheer";
+import { StoryList } from "@/components/Stories";
 
 export default async function TournamentPage({ params }: { params: Promise<{ id: string }> }) {
   const t = await apiOrNull<TournamentDetail>(`/tournaments/${encodeURIComponent((await params).id)}`);
@@ -13,6 +15,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
   // Only a started bracket is public; a draft can still change.
   const bracket = t.format && (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") ? await apiOrNull<Bracket>(`/tournaments/${t.id}/bracket`) : null;
   const podium = t.teams.filter((x) => x.placement && x.placement <= 3);
+  const stories = (await api<{ data: Story[] }>(`/tournaments/${t.id}/stories`).catch(() => ({ data: [] as Story[] }))).data;
   return (
     <>
       <div className="page-head">
@@ -34,11 +37,22 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
               {t.entryMode === "SOLO" && <span className="badge">ลงเดี่ยว · สุ่มทีมละ {t.teamSize} คน</span>}
               {t.registrationOpen && t.entryMode !== "SOLO" && <span className="badge badge-accent">เปิดรับสมัครทาง Discord</span>}
               {t.teams.length >= 2 && <Link href={`/predict?t=${t.id}`} className="badge badge-accent">🔮 ทายผลรายการนี้</Link>}
+              {stories.length > 0 && <a href="#story" className="badge">📖 ต้นเรื่อง ({stories.length})</a>}
             </div>
           )}
         </div>
       </div>
       {t.description && <p className="card">{t.description}</p>}
+
+      {stories.length > 0 && (
+        <section className="mt" id="story">
+          <h2>📖 ต้นเรื่อง</h2>
+          <p className="muted small">ที่มาของรายการนี้ ตามอ่านได้ตามลำดับ</p>
+          <StoryList stories={stories} />
+        </section>
+      )}
+
+      {t.format && t.teams.length >= 2 && t.status !== "COMPLETED" && <CheerSection tournamentId={t.id} next={`/tournaments/${t.id}#cheer`} />}
 
       {podium.length > 0 && (
         <div className="grid grid-3 mt">

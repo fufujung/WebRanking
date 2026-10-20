@@ -314,3 +314,28 @@ describe("organizers pick players from the list", () => {
     assert.deepEqual(fixed.roster.map((r: any) => r.name), ["Moss"]);
   });
 });
+
+describe("story posts (ต้นเรื่อง)", () => {
+  test("organizers keep an ordered list of Facebook posts per event; other links are refused", async () => {
+    const t = await ok("POST", "/tournaments", { name: "Story Cup", startDate: "2026-11-02T12:00:00Z", special: true });
+    const saved = await ok("PUT", `/tournaments/${t.id}/stories`, {
+      stories: [
+        { title: "ตอนที่ 1 จุดเริ่มดราม่า", url: "https://www.facebook.com/overtime/posts/123" },
+        { title: "", url: "https://fb.watch/abcDEF/" },
+      ],
+    });
+    assert.deepEqual(saved.data.map((s: any) => [s.title, s.position]), [["ตอนที่ 1 จุดเริ่มดราม่า", 0], [null, 1]]);
+    // Reorder and remove by saving the list again.
+    await ok("PUT", `/tournaments/${t.id}/stories`, { stories: [{ url: "https://fb.watch/abcDEF/" }] });
+    assert.deepEqual((await ok("GET", `/tournaments/${t.id}/stories`)).data.map((s: any) => s.url), ["https://fb.watch/abcDEF/"]);
+    for (const url of ["https://evil.example/facebook.com", "http://www.facebook.com/x", "https://facebook.com.evil.example/x", "javascript:alert(1)"]) {
+      const bad = await call("PUT", `/tournaments/${t.id}/stories`, { stories: [{ url }] });
+      assert.equal(bad.status, 400, url);
+      assert.match(bad.body.details.th, /โพสต์ที่ 1: ใส่ลิงก์โพสต์ Facebook/);
+    }
+    assert.equal((await call("PUT", `/tournaments/${t.id}/stories`, { stories: [] }, reader)).status, 403);
+    assert.equal((await call("GET", `/tournaments/${t.id}/stories`, undefined, reader)).status, 200);
+    const listed = (await ok("GET", "/special/stories")).data.find((x: any) => x.id === t.id);
+    assert.equal(listed.stories.length, 1);
+  });
+});

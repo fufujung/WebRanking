@@ -170,6 +170,7 @@ model Tournament {
   soloSignups    SoloSignup[]
   blacklist      BlacklistEntry[]
   markets        Market[]
+  stories        TournamentStory[]
   gameRef        Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
   season         SpecialSeason?    @relation(fields: [seasonId], references: [id], onDelete: SetNull)
 
@@ -599,4 +600,18 @@ model RewardCode {
   reward Reward? @relation(fields: [rewardId], references: [id], onDelete: SetNull)
 
   @@index([label])
+}
+
+/// "ต้นเรื่อง": the Facebook posts behind an event, in the order the organizer put them.
+model TournamentStory {
+  id           String   @id @default(cuid())
+  tournamentId String
+  title        String?
+  url          String
+  position     Int
+  createdAt    DateTime @default(now())
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@index([tournamentId, position])
 }

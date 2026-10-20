@@ -273,6 +273,14 @@ paths:
       responses:
         "200": { description: "{ season, seasons, currentSeasonId, ranked, placing, tiers, stats, events, reserve, ranks, rules }" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/special/stories:
+    get:
+      tags: [Special]
+      summary: Special events that have story posts, newest first, with their posts
+      parameters:
+        - { name: seasonId, in: query, schema: { type: string } }
+      responses:
+        "200": { description: "{ data: [{ id, name, startDate, status, season, stories: [{ id, title, url, position }] }] }" }
   /api/v1/special/seasons:
     get:
       tags: [Special]
@@ -1217,6 +1225,33 @@ paths:
       summary: Remove one sign-up (admin)
       responses:
         "200": { description: The sign-up view }
+  /api/v1/tournaments/{id}/stories:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Tournaments]
+      summary: The event's story posts (ต้นเรื่อง), in order
+      responses:
+        "200": { description: "{ data: [{ id, title, url, position }] }" }
+    put:
+      tags: [Tournaments]
+      summary: Saves the whole list of story posts (add, remove and reorder at once); Facebook links only (admin key)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stories]
+              properties:
+                stories:
+                  type: array
+                  maxItems: 30
+                  items: { type: object, required: [url], properties: { title: { type: string, maxLength: 120, nullable: true }, url: { type: string, description: "https://www.facebook.com/… or https://fb.watch/…" } } }
+      responses:
+        "200": { description: "{ data: [{ id, title, url, position }] }" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/tournaments/{id}/bracket:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:

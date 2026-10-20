@@ -39,6 +39,9 @@ export async function placeBet(marketId: string, _: PredictState, form: FormData
       json: { ...profile(m), marketId, teamId: text(form, "teamId"), amount: text(form, "amount") },
     });
     revalidatePath("/predict");
+    // The cheer buttons on tournament pages and /special show the new split too.
+    revalidatePath("/tournaments/[id]", "page");
+    revalidatePath("/special");
     return { ok: `ทายแล้ว เหลือ ${r.coins} เหรียญ` };
   } catch (e) {
     return { error: explain(e) };

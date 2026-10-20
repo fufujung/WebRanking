@@ -1137,6 +1137,26 @@ if (!(await page.locator(".btn-discord").count())) {
   await rAdmin.reload();
   if (await rAdmin.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error("the team picker is wider than a phone screen");
   await rAdmin.screenshot({ path: OUT + "/pick-team-mobile.png", fullPage: true });
+  // ต้นเรื่อง: the organizer pastes Facebook posts in order; a non-Facebook link is refused.
+  const storyBox = rAdmin.locator("#story + .card");
+  await storyBox.locator('input[placeholder="https://www.facebook.com/…"]').first().fill("https://example.com/not-facebook");
+  await storyBox.locator("button:has-text('บันทึกต้นเรื่อง')").click();
+  await storyBox.locator(".error:has-text('ลิงก์โพสต์ Facebook')").waitFor();
+  await storyBox.locator('input[placeholder="https://www.facebook.com/…"]').first().fill("https://www.facebook.com/ot/posts/2");
+  await storyBox.locator("input[maxlength='120']").first().fill(`ตอนที่ 1 ${uniq}`);
+  await storyBox.locator("button:has-text('+ เพิ่มโพสต์')").click();
+  await storyBox.locator('input[placeholder="https://www.facebook.com/…"]').nth(1).fill("https://fb.watch/e2e/");
+  await storyBox.locator("button[aria-label='เลื่อนขึ้น']").nth(1).click();
+  await storyBox.locator("button:has-text('บันทึกต้นเรื่อง')").click();
+  await storyBox.locator(".success:has-text('บันทึกต้นเรื่องแล้ว')").waitFor();
+  const savedStories = (await apiCall("GET", `/tournaments/${kt.id}/stories`)).data.map((x) => x.url);
+  if (savedStories.join() !== "https://fb.watch/e2e/,https://www.facebook.com/ot/posts/2") throw new Error(`stories saved in the wrong order: ${savedStories}`);
+  await rAdmin.goto(base + `/tournaments/${kt.id}`);
+  await rAdmin.locator(`#story a.story-card:has-text('ตอนที่ 1 ${uniq}')`).waitFor();
+  await rAdmin.goto(base + "/special/story");
+  await rAdmin.locator(`section:has-text('Picked ${uniq}') a.story-card[href='https://fb.watch/e2e/']`).waitFor();
+  await rAdmin.screenshot({ path: OUT + "/story.png", fullPage: true });
+  step("organizer saved two Facebook posts as ต้นเรื่อง (another site is refused) and moved one up; the tournament page and /special/story list them in order");
   step("organizer ticked a season player to make a team (name and UID filled from the list); the player then shows as taken; fits a phone");
   await rAdminCtx.close();
   await page.goto(base + `/special?season=${seasonId}`);
@@ -1192,6 +1212,14 @@ if (!(await page.locator(".btn-discord").count())) {
   await apiCall("POST", `/predict/members/${rival}/bets`, { marketId: market.id, teamId: pB.id, amount: 20 });
   const rivalGame1 = (await apiCall("GET", `/predict/tournaments/${pt.id}`)).markets.find((m) => m.kind === "GAME" && m.game === 1);
   await apiCall("POST", `/predict/members/${rival}/bets`, { marketId: rivalGame1.id, teamId: pB.id, amount: 10 });
+  // "เชียร์ทีมไหน" on the tournament page: big team buttons for the open match; the member's pick is marked.
+  await page.goto(base + `/tournaments/${pt.id}`);
+  const cheerCard = page.locator("#cheer .cheer-card:has-text('คู่ที่ 1')");
+  await cheerCard.locator(`.cheer-team-on:has-text('Hawks ${uniq}')`).waitFor();
+  await cheerCard.locator(`button.cheer-team:has-text('Hawks ${uniq}')`).click();
+  await cheerCard.locator(".success:has-text('เชียร์แล้ว 30 เหรียญ')").waitFor();
+  step("the tournament page has cheer buttons for the open match; pressing a team picks it");
+  await page.goto(base + `/predict?t=${pt.id}`);
   // The stream overlay (vMix / OBS): the open match with the split and the payout per side.
   const ov = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   ov.on("pageerror", (e) => problems.push(`pageerror: ${e.message} @ ${ov.url()}`));
