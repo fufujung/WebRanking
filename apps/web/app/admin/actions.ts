@@ -674,12 +674,25 @@ export async function deleteReward(id: string): Promise<FormState> {
 }
 
 /** ต้นเรื่อง: saves the event's Facebook posts in the given order (add, remove and reorder at once). */
-export async function saveStories(tournamentId: string, stories: { title: string; url: string }[]): Promise<FormState> {
+export async function saveStories(owner: { tournamentId: string } | { seasonId: string }, stories: { title: string; url: string }[]): Promise<FormState> {
+  const path = "tournamentId" in owner ? `/tournaments/${encodeURIComponent(owner.tournamentId)}` : `/special/seasons/${encodeURIComponent(owner.seasonId)}`;
   const result = await run(async () => {
-    await api(`/tournaments/${encodeURIComponent(tournamentId)}/stories`, { method: "PUT", json: { stories: stories.filter((s) => s.url.trim() || s.title.trim()) } });
+    await api(`${path}/stories`, { method: "PUT", json: { stories: stories.filter((s) => s.url.trim() || s.title.trim()) } });
   });
-  revalidatePath(`/tournaments/${tournamentId}`);
+  if ("tournamentId" in owner) {
+    revalidatePath(`/tournaments/${owner.tournamentId}`);
+    revalidatePath(`/admin/tournaments/${owner.tournamentId}`);
+  } else revalidatePath(`/admin/seasons/${owner.seasonId}`);
   revalidatePath("/special/story");
-  revalidatePath(`/admin/tournaments/${tournamentId}`);
   return result ?? { ok: "บันทึกต้นเรื่องแล้ว" };
+}
+
+/** Site settings; "" clears the invite (the bot then makes one when it next starts). */
+export async function saveSettings(_: FormState, form: FormData): Promise<FormState> {
+  const res = await run(async () => {
+    await api("/settings", { method: "PATCH", json: { discordInvite: text(form, "discordInvite") } });
+  });
+  if (res) return res;
+  revalidatePath("/", "layout");
+  return { ok: "บันทึกแล้ว" };
 }

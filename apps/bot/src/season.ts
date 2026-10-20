@@ -68,11 +68,19 @@ interface SeasonDetail extends SeasonBase {
   players: { id: string; name: string; nickname: string | null; uid: string | null }[];
   tournaments: { id: string; name: string; status: string }[];
 }
-/** A special event with its story posts (GET /special/stories). */
+/** A special event, or a season, with its story posts (GET /special/stories). */
 interface StoryEvent {
   id: string;
   name: string;
   stories: { title: string | null; url: string }[];
+}
+/** Seasons' own posts first ("season:<id>"), then the events'. */
+async function storyEntries(api: Api): Promise<(StoryEvent & { path: string })[]> {
+  const { data, seasons = [] } = await api.get<{ data: StoryEvent[]; seasons?: StoryEvent[] }>("/special/stories");
+  return [
+    ...seasons.map((x) => ({ ...x, id: `season:${x.id}`, name: `📅 ${x.name}`, path: `/special/story?season=${encodeURIComponent(x.id)}` })),
+    ...data.map((x) => ({ ...x, path: `/tournaments/${x.id}#story` })),
+  ];
 }
 interface AddResult {
   added: { id: string; name: string; uid: string | null; created: boolean }[];
@@ -126,11 +134,11 @@ export class SeasonCommands {
     const sub = i.options.getSubcommand();
     if (sub === "story") {
       await i.deferReply();
-      const { data } = await this.api.get<{ data: StoryEvent[] }>("/special/stories");
+      const data = await storyEntries(this.api);
       const id = i.options.getString("event");
       const e = id ? data.find((x) => x.id === id) : data[0];
-      if (!e) return void (await i.editReply(id ? "รายการนี้ยังไม่มีต้นเรื่อง" : "ยังไม่มีต้นเรื่อง ผู้จัดเพิ่มลิงก์โพสต์ได้ในหน้าแก้ไขทัวร์นาเมนต์บนเว็บ"));
-      const link = siteLink(this.siteUrl, `/tournaments/${e.id}#story`);
+      if (!e) return void (await i.editReply(id ? "รายการนี้ยังไม่มีต้นเรื่อง" : "ยังไม่มีต้นเรื่อง ผู้จัดเพิ่มลิงก์โพสต์ได้ในหน้าแก้ไขทัวร์หรือหน้าซีซั่นบนเว็บ"));
+      const link = siteLink(this.siteUrl, e.path);
       return void (await i.editReply({
         embeds: [
           fitEmbed({
@@ -214,7 +222,7 @@ export class SeasonCommands {
     try {
       if (focused.name === "season") return void (await i.respond(await seasonChoices(this.api, q)));
       if (focused.name === "event") {
-        const { data } = await this.api.get<{ data: StoryEvent[] }>("/special/stories");
+        const data = await storyEntries(this.api);
         return void (await i.respond(data.filter((e) => e.name.toLowerCase().includes(q)).slice(0, 25).map((e) => ({ name: `${e.name} (${e.stories.length} โพสต์)`.slice(0, 100), value: e.id }))));
       }
       if (focused.name === "game") {

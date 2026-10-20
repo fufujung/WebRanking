@@ -1762,5 +1762,33 @@ describe("story posts in Discord", () => {
     assert.match(embed, /📖 ต้นเรื่อง · Drama Cup/);
     assert.match(embed, /\*\*1\.\*\* \[ตอนที่ 1 จุดเริ่ม\]\(https:\/\/www\.facebook\.com\/ot\/posts\/1\)/);
     assert.match(embed, /\*\*2\.\*\* \[โพสต์ที่ 2\]\(https:\/\/fb\.watch\/xyz\/\)/);
+    // A season's own posts are listed too.
+    const season = await api.post<any>("/special/seasons", { name: "Drama Season", startDate: new Date().toISOString() });
+    await api.put(`/special/seasons/${season.id}/stories`, { stories: [{ title: "เปิดซีซั่น", url: "https://www.facebook.com/ot/posts/2" }] });
+    const ac2 = command("season", "story", { focused: "event", value: "drama" }, person(80));
+    await bot.onAutocomplete(ac2);
+    assert.deepEqual(last<any>(ac2.replies)[0], { name: "📅 Drama Season (1 โพสต์)", value: `season:${season.id}` });
+    const showSeason = command("season", "story", { event: `season:${season.id}` }, person(80));
+    await bot.onCommand(showSeason);
+    assert.match(JSON.stringify(last(showSeason.replies)), /📖 ต้นเรื่อง · 📅 Drama Season.*เปิดซีซั่น/);
+  });
+});
+
+describe("Discord invite for the site's join button", () => {
+  test("the bot fills in an invite only when the organizer hasn't set one", async () => {
+    const { ensureSiteInvite } = await import("./invite.js");
+    await api.patch("/settings", { discordInvite: null });
+    let made = 0;
+    const create = async () => (made++, "https://discord.gg/AutoMade");
+    assert.equal(await ensureSiteInvite(api, create), "https://discord.gg/AutoMade");
+    assert.equal(made, 1);
+    // Already set (by the bot or on the admin page): left alone, no new invite.
+    await api.patch("/settings", { discordInvite: "https://discord.gg/BankPicked" });
+    assert.equal(await ensureSiteInvite(api, create), "https://discord.gg/BankPicked");
+    assert.equal(made, 1);
+    // No permission to invite: nothing saved.
+    await api.patch("/settings", { discordInvite: null });
+    assert.equal(await ensureSiteInvite(api, async () => null), null);
+    assert.equal((await api.get<any>("/settings")).discordInvite, null);
   });
 });

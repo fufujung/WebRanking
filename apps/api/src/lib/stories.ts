@@ -27,23 +27,42 @@ export const storiesInput = z.object({
 
 const select = { id: true, title: true, url: true, position: true } as const;
 
+type Owner = { tournamentId: string } | { seasonId: string };
+
 export async function tournamentStories(tournamentId: string) {
   return prisma.tournamentStory.findMany({ where: { tournamentId }, orderBy: { position: "asc" }, select });
 }
 
-export async function setStories(tournamentId: string, body: unknown) {
+export async function seasonStories(seasonId: string) {
+  return prisma.tournamentStory.findMany({ where: { seasonId }, orderBy: { position: "asc" }, select });
+}
+
+/** Saves an event's or a season's whole list (adding, removing and moving all save it again). */
+export async function setStories(owner: Owner, body: unknown) {
   const parsed = storiesInput.safeParse(body);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const row = typeof issue?.path[1] === "number" ? `โพสต์ที่ ${issue.path[1] + 1}: ` : "";
     throw fail(400, "Validation failed", `${row}${issue?.message ?? "ข้อมูลไม่ถูกต้อง"}`, { issues: parsed.error.issues });
   }
-  if (!(await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true } }))) throw notFound("Tournament");
+  if ("tournamentId" in owner) {
+    if (!(await prisma.tournament.findUnique({ where: { id: owner.tournamentId }, select: { id: true } }))) throw notFound("Tournament");
+  } else if (!(await prisma.specialSeason.findUnique({ where: { id: owner.seasonId }, select: { id: true } }))) throw notFound("Season");
   await prisma.$transaction([
-    prisma.tournamentStory.deleteMany({ where: { tournamentId } }),
-    prisma.tournamentStory.createMany({ data: parsed.data.stories.map((s, position) => ({ tournamentId, title: s.title, url: s.url, position })) }),
+    prisma.tournamentStory.deleteMany({ where: owner }),
+    prisma.tournamentStory.createMany({ data: parsed.data.stories.map((s, position) => ({ ...owner, title: s.title, url: s.url, position })) }),
   ]);
-  return tournamentStories(tournamentId);
+  return "tournamentId" in owner ? tournamentStories(owner.tournamentId) : seasonStories(owner.seasonId);
+}
+
+/** Seasons with their own story posts, newest first (optionally just one). */
+export async function seasonsWithStories(seasonId?: string) {
+  return prisma.specialSeason.findMany({
+    where: { stories: { some: {} }, ...(seasonId ? { id: seasonId } : {}) },
+    orderBy: { startDate: "desc" },
+    take: 20,
+    select: { id: true, name: true, startDate: true, stories: { orderBy: { position: "asc" }, select } },
+  });
 }
 
 /** Special events with their story posts, newest first; optionally one season's. */

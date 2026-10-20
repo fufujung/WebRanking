@@ -70,7 +70,7 @@ export default async function EditTournament({ params, searchParams }: { params:
         </>
       )}
       <h2 className="mt" id="story">📖 ต้นเรื่อง ({stories.length})</h2>
-      <StoryEditor tournamentId={t.id} stories={stories} />
+      <StoryEditor owner={{ tournamentId: t.id }} stories={stories} />
       <h2 className="mt">ทีมที่ลงแข่ง ({t.teams.length})</h2>
       <p className="muted small">
         {t.format

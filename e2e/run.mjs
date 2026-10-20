@@ -1158,6 +1158,38 @@ if (!(await page.locator(".btn-discord").count())) {
   await rAdmin.screenshot({ path: OUT + "/story.png", fullPage: true });
   step("organizer saved two Facebook posts as ต้นเรื่อง (another site is refused) and moved one up; the tournament page and /special/story list them in order");
   step("organizer ticked a season player to make a team (name and UID filled from the list); the player then shows as taken; fits a phone");
+  // A season keeps its own ต้นเรื่อง, even before it has events.
+  await rAdmin.goto(base + `/admin/seasons/${seasonId}`);
+  const seasonStory = rAdmin.locator("#story ~ .card").first();
+  await seasonStory.locator('input[placeholder="https://www.facebook.com/…"]').first().fill("https://www.facebook.com/ot/posts/season");
+  await seasonStory.locator("input[maxlength='120']").first().fill(`เปิดซีซั่น ${uniq}`);
+  await seasonStory.locator("button:has-text('บันทึกต้นเรื่อง')").click();
+  await seasonStory.locator(".success:has-text('บันทึกต้นเรื่องแล้ว')").waitFor();
+  await rAdmin.goto(base + `/special/story?season=${seasonId}`);
+  await rAdmin.locator(`section:has-text('📅 ${seasonName}') a.story-card:has-text('เปิดซีซั่น ${uniq}')`).waitFor();
+  step("organizer saved a season's own ต้นเรื่อง on the season page; /special/story shows it under the season");
+  // "เข้าร่วม Discord": hidden until there's an invite; only Discord invite links are taken.
+  await rAdmin.setViewportSize({ width: 1280, height: 900 });
+  await apiCall("PATCH", "/settings", { discordInvite: null });
+  await rAdmin.goto(base + "/");
+  if (await rAdmin.locator("a.discord-join").count()) throw new Error("the Discord button shows without an invite link");
+  await rAdmin.goto(base + "/admin/settings");
+  await rAdmin.fill('input[name="discordInvite"]', "https://evil.example/discord.gg/x");
+  await rAdmin.click("form button:has-text('บันทึก')");
+  await rAdmin.locator(".error:has-text('ลิงก์เชิญ Discord')").waitFor();
+  await rAdmin.fill('input[name="discordInvite"]', "discord.gg/e2eJoin");
+  await rAdmin.click("form button:has-text('บันทึก')");
+  await rAdmin.locator(".success:has-text('บันทึกแล้ว')").waitFor();
+  await rAdmin.goto(base + "/special");
+  await rAdmin.locator('.header a.nav-discord[href="https://discord.gg/e2eJoin"][target="_blank"]').waitFor();
+  await rAdmin.locator('.footer a.discord-join[href="https://discord.gg/e2eJoin"]').waitFor();
+  await rAdmin.locator('.special-cta a.discord-join[href="https://discord.gg/e2eJoin"]').waitFor();
+  await rAdmin.screenshot({ path: OUT + "/discord-join.png" });
+  await rAdmin.setViewportSize({ width: 375, height: 812 });
+  await rAdmin.reload();
+  await rAdmin.locator('.header a.header-discord[href="https://discord.gg/e2eJoin"]').waitFor({ state: "visible" });
+  await rAdmin.screenshot({ path: OUT + "/discord-join-mobile.png" });
+  step("organizer set the Discord invite on /admin/settings (another site is refused); the เข้าร่วม Discord button shows in the header, footer, /special and on phones");
   await rAdminCtx.close();
   await page.goto(base + `/special?season=${seasonId}`);
   await page.locator(`h1:has-text('${seasonName}')`).waitFor();

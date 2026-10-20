@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAdmin } from "../lib/apiKeys.js";
-import { specialStories } from "../lib/stories.js";
+import { seasonStories, seasonsWithStories, setStories, specialStories } from "../lib/stories.js";
 import { editReserve, importReserve, removeReserve, reserveList, reserveRanks, specialBoard } from "../lib/special.js";
 import { addSeasonPlayers, createSeason, deleteSeason, listSeasons, removeSeasonPlayer, seasonView, updateSeason } from "../lib/seasons.js";
 
@@ -20,7 +20,8 @@ special.get("/", async (req, res) => {
 /** The stories (Facebook posts) of special events, optionally one season's. */
 special.get("/stories", async (req, res) => {
   const q = z.object({ seasonId: z.string().trim().min(1).max(40).optional() }).parse(req.query);
-  res.json({ data: await specialStories(q.seasonId) });
+  const [data, seasons] = await Promise.all([specialStories(q.seasonId), seasonsWithStories(q.seasonId)]);
+  res.json({ data, seasons });
 });
 
 /** Seasons: each lists the players (name + UID) allowed to play in its events. */
@@ -31,6 +32,15 @@ special.get("/seasons", async (req, res) => {
 
 special.get("/seasons/:id", async (req, res) => {
   res.json(await seasonView(String(req.params.id)));
+});
+
+/** A season's own story posts (for the story told before any event of the season exists). */
+special.get("/seasons/:id/stories", async (req, res) => {
+  res.json({ data: await seasonStories(String(req.params.id)) });
+});
+
+special.put("/seasons/:id/stories", requireAdmin, async (req, res) => {
+  res.json({ data: await setStories({ seasonId: String(req.params.id) }, req.body) });
 });
 
 special.post("/seasons", requireAdmin, async (req, res) => {

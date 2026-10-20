@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { apiOrNull } from "@/lib/api";
+import { api, apiOrNull } from "@/lib/api";
 import { allGames } from "@/lib/games";
-import type { SeasonView } from "@/lib/types";
+import type { SeasonView, Story } from "@/lib/types";
+import { StoryEditor } from "@/components/admin/StoryEditor";
 import { fmtDate } from "@/lib/format";
 import { Avatar, Empty, StatusBadge } from "@/components/ui";
 import { RemoveSeasonPlayer, SeasonForm, SeasonPaste } from "@/components/admin/SeasonAdmin";
@@ -15,7 +16,7 @@ export default async function AdminSeason({ params, searchParams }: { params: Pr
   const q = ((await searchParams).q ?? "").trim().toLowerCase();
   const season = await apiOrNull<SeasonView>(`/special/seasons/${encodeURIComponent(id)}`);
   if (!season) notFound();
-  const games = await allGames();
+  const [games, { data: stories }] = await Promise.all([allGames(), api<{ data: Story[] }>(`/special/seasons/${encodeURIComponent(id)}/stories`)]);
   const players = season.players.filter((p) => !q || [p.name, p.nickname, p.uid].some((v) => v?.toLowerCase().includes(q)));
   return (
     <>
@@ -27,7 +28,10 @@ export default async function AdminSeason({ params, searchParams }: { params: Pr
             {season.game ? `${season.game.name} · ` : ""}{fmtDate(season.startDate)} – {season.endDate ? fmtDate(season.endDate) : "ไม่กำหนด"} · ผู้เล่น {season.players.length} คน · ทัวร์ {season.tournaments.length} รายการ
           </p>
         </div>
-        <Link className="btn" href={`/special?season=${season.id}`}>ดูหน้าเว็บ</Link>
+        <div className="row">
+          <a className="btn" href="#story">📖 ต้นเรื่อง ({stories.length})</a>
+          <Link className="btn" href={`/special?season=${season.id}`}>ดูหน้าเว็บ</Link>
+        </div>
       </div>
       <SeasonForm season={{ ...season, players: undefined, events: undefined }} games={games} />
       <SeasonPaste seasonId={season.id} />
@@ -80,6 +84,10 @@ export default async function AdminSeason({ params, searchParams }: { params: Pr
           ))}
         </ul>
       )}
+
+      <h2 className="mt" id="story">📖 ต้นเรื่องของซีซั่น</h2>
+      <p className="muted small">โพสต์ที่เล่าเรื่องของทั้งซีซั่น ใส่ได้เลยแม้ยังไม่มีทัวร์ ต้นเรื่องของแต่ละทัวร์ใส่ในหน้าทัวร์นั้น</p>
+      <StoryEditor owner={{ seasonId: season.id }} stories={stories} />
     </>
   );
 }

@@ -7,6 +7,8 @@ import { POSITIONS, positionLabel } from "@/lib/solo";
 import { currentGame } from "@/lib/games";
 import { getMember } from "@/lib/member";
 import { discordEnabled } from "@/lib/discord";
+import { siteSettings } from "@/lib/settings";
+import { DiscordJoin } from "@/components/DiscordJoin";
 import { Avatar, Empty, PlayerLink, StatusBadge } from "@/components/ui";
 import { Form, RankMove, TierBadge, TierProgress } from "@/components/Tier";
 import { GameTabs } from "@/components/GameTabs";
@@ -19,6 +21,7 @@ const winRate = (p: { wins: number; series: number }) => (p.series ? Math.round(
 /** The special "เล่นเก่งปากเก่ง" events: their own MMR ladder and stats, and the always-open substitutes list. */
 export default async function SpecialPage({ searchParams }: { searchParams: Promise<{ game?: string; season?: string }> }) {
   const sp = await searchParams;
+  const { discordInvite } = await siteSettings();
   const { games, game } = await currentGame(sp.game);
   // ?season=all shows every event; no season picked shows the season running now (if there is one).
   const seasons = (await api<{ data: SpecialSeason[] }>(`/special/seasons${qs({ gameId: game?.id })}`)).data;
@@ -63,6 +66,7 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
             ) : discordEnabled() ? (
               <a href="/api/auth/discord?next=/me" className="btn btn-primary">📝 ลงชื่อตัวสำรอง</a>
             ) : null}
+            <DiscordJoin href={discordInvite} />
             <span className="muted small">{me ? "" : "เข้าสู่ระบบด้วย Discord แล้วกรอกฟอร์มได้เลย · "}หรือกดปุ่ม 📝 ในห้องลงชื่อของ Discord · เปิดรับตลอด ใช้ได้ทุกงาน</span>
           </div>
         </div>

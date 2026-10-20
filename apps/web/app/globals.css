@@ -909,3 +909,14 @@ label.pick-row { display: flex; flex-direction: row; align-items: center; text-a
 .story-text strong, .story-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .story-editor-row { display: grid; grid-template-columns: 1fr 2fr auto; gap: 8px; align-items: end; }
 @media (max-width: 640px) { .story-editor-row { grid-template-columns: 1fr; } }
+
+/* "เข้าร่วม Discord": Discord's own purple wherever it sits (header, mobile menu, footer, page heroes). */
+.discord-join svg { flex: none; }
+.btn-discord.btn-sm { padding: 5px 12px; font-size: 13px; gap: 6px; }
+.btn-discord.btn-sm svg { width: 16px; height: 16px; }
+.nav a.nav-discord, .header[data-open="menu"] .nav a.nav-discord { background: #5865f2; color: #fff; gap: 6px; padding: 6px 12px; font-size: 14px; margin-left: 4px; border: 0; }
+.nav a.nav-discord:hover, .header[data-open="menu"] .nav a.nav-discord:hover { background: #4752c4; color: #fff; }
+.nav a.nav-discord svg { width: 16px; height: 16px; }
+@media (max-width: 760px) { .header[data-open="menu"] .nav a.nav-discord { margin-left: 0; justify-content: center; } }
+.header-discord { display: none; }
+@media (max-width: 760px) { .header-discord { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 10px; } }

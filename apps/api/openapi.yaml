@@ -46,6 +46,7 @@ tags:
   - name: Images
   - name: API keys
   - name: Ads
+  - name: Settings
 paths:
   /api/v1/games:
     get:
@@ -273,6 +274,25 @@ paths:
       responses:
         "200": { description: "{ season, seasons, currentSeasonId, ranked, placing, tiers, stats, events, reserve, ranks, rules }" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/settings:
+    get:
+      tags: [Settings]
+      summary: Site-wide settings (the Discord invite link the site's "เข้าร่วม Discord" button opens)
+      responses:
+        "200": { description: "{ discordInvite: string | null }" }
+    patch:
+      tags: [Settings]
+      summary: Change site settings (admin); send only the keys to change, null or "" clears one
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                discordInvite: { type: string, nullable: true, description: "https://discord.gg/… or https://discord.com/invite/…" }
+      responses:
+        "200": { description: "{ discordInvite: string | null }" }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /api/v1/special/stories:
     get:
       tags: [Special]
@@ -280,7 +300,30 @@ paths:
       parameters:
         - { name: seasonId, in: query, schema: { type: string } }
       responses:
-        "200": { description: "{ data: [{ id, name, startDate, status, season, stories: [{ id, title, url, position }] }] }" }
+        "200": { description: "{ data: [{ id, name, startDate, status, season, stories: [{ id, title, url, position }] }], seasons: [{ id, name, startDate, stories }] } (seasons = the seasons' own posts)" }
+  /api/v1/special/seasons/{id}/stories:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Special]
+      summary: A season's own story posts (ต้นเรื่อง), in order
+      responses:
+        "200": { description: "{ data: [{ id, title, url, position }] }" }
+    put:
+      tags: [Special]
+      summary: Replace a season's story posts (admin); Facebook https links only, up to 30
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stories]
+              properties:
+                stories: { type: array, maxItems: 30, items: { type: object, required: [url], properties: { title: { type: string, maxLength: 120, nullable: true }, url: { type: string } } } }
+      responses:
+        "200": { description: "{ data: [{ id, title, url, position }] }" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { description: Season not found }
   /api/v1/special/seasons:
     get:
       tags: [Special]
