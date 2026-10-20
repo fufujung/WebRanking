@@ -3,6 +3,7 @@
  * then the organizer draws them into teams that mix strong and weaker ranks and cover
  * Guard, Forward and Center (All Around fills any spot). The drawn teams then play a normal bracket.
  */
+import { assertOnSeason } from "./seasons.js";
 import { randomInt } from "node:crypto";
 import { z } from "zod";
 import { prisma } from "./db.js";
@@ -75,6 +76,7 @@ export async function signUp(discordId: string, tournamentId: string, body: unkn
   const player = await prisma.player.findUnique({ where: { id: input.playerId } });
   if (!player || player.discordId !== discordId) throw fail(403, "Not your character", "ตัวละครนี้ไม่ใช่ของคุณ");
   if (t.gameId && player.gameId && player.gameId !== t.gameId) throw fail(400, "This character plays another game", "ตัวละครนี้อยู่คนละเกมกับทัวร์นาเมนต์");
+  await assertOnSeason(prisma, t, [player.id]);
   await prisma.$transaction(async (tx) => {
     // Switching character replaces the earlier sign-up of this account.
     await tx.soloSignup.deleteMany({ where: { tournamentId, discordId, playerId: { not: player.id } } });

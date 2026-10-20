@@ -19,7 +19,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
         <div>
           <div className="row" style={{ marginBottom: 8 }}>
             <StatusBadge status={t.status} />
-            {t.special && <Link href="/special" className="badge badge-accent" title="สถิติและ MMR แยกจาก Ranking หลัก">⭐ รายการพิเศษ เล่นเก่งปากเก่ง</Link>}
+            {t.special && <Link href={t.season ? `/special?season=${t.season.id}` : "/special"} className="badge badge-accent" title="สถิติและ MMR แยกจาก Ranking หลัก">⭐ รายการพิเศษ เล่นเก่งปากเก่ง{t.season ? ` · ${t.season.name}` : ""}</Link>}
           </div>
           <h1>{t.name}</h1>
           <span className="muted">

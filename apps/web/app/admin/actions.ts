@@ -7,7 +7,7 @@ import { endSession, passwordMatches, requireAdmin, startSession } from "@/lib/a
 import { clearFailures, lockedFor, loginAddress, recordFailure } from "@/lib/loginGuard";
 import { explain } from "@/lib/explain";
 import { fromBangkokInput } from "@/lib/format";
-import type { SoloDraw } from "@/lib/types";
+import type { SeasonAddResult, SoloDraw } from "@/lib/types";
 
 export type FormState = {
   error?: string;
@@ -147,6 +147,8 @@ function bracketSettings(form: FormData) {
   if (n("teamSize") !== undefined) out.teamSize = n("teamSize");
   // Checkboxes: a hidden "present" marker tells unchecked apart from locked.
   for (const k of ["registrationOpen", "thirdPlaceMatch", "grandFinalReset", "special"]) if (form.has(`${k}Present`)) out[k] = form.get(k) === "on";
+  // A season only goes with a special event; unticking special leaves the season.
+  if (form.has("seasonId")) out.seasonId = out.special === false ? null : orNull(text(form, "seasonId"));
   return out;
 }
 
@@ -525,4 +527,70 @@ export async function unlinkDiscord(playerId: string): Promise<FormState> {
   if (result) return result;
   revalidatePath("/", "layout");
   return { ok: "ยกเลิกการผูก Discord แล้ว" };
+}
+
+// Seasons of the "เล่นเก่งปากเก่ง" events
+const seasonBody = (form: FormData) => ({
+  name: text(form, "name"),
+  gameId: orNull(text(form, "gameId")),
+  startDate: fromBangkokInput(`${text(form, "startDate")}T00:00`) ?? text(form, "startDate"),
+  // The whole end day counts (Thai time).
+  endDate: text(form, "endDate") ? (fromBangkokInput(`${text(form, "endDate")}T23:59`) ?? text(form, "endDate")) : null,
+});
+
+export async function createSeason(_: FormState, form: FormData): Promise<FormState> {
+  let id = "";
+  const result = await run(async () => {
+    id = (await api<{ id: string }>("/special/seasons", { method: "POST", json: seasonBody(form) })).id;
+  });
+  if (result) return result;
+  revalidatePath("/special");
+  redirect(`/admin/seasons/${id}`);
+}
+
+export async function saveSeason(id: string, _: FormState, form: FormData): Promise<FormState> {
+  const result = await run(async () => {
+    const { gameId, ...body } = seasonBody(form);
+    await api(`/special/seasons/${encodeURIComponent(id)}`, { method: "PATCH", json: form.has("gameId") ? { ...body, gameId } : body });
+  });
+  if (result) return result;
+  revalidatePath("/admin/seasons", "layout");
+  revalidatePath("/special");
+  return { ok: "บันทึกแล้ว" };
+}
+
+export async function deleteSeason(id: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/special/seasons/${encodeURIComponent(id)}`, { method: "DELETE" });
+  });
+  if (result) return result;
+  revalidatePath("/admin/seasons", "layout");
+  revalidatePath("/special");
+  redirect("/admin/seasons");
+}
+
+/** Pasted players, one "name UID" per line. Problems come back line by line; everything else is added. */
+export async function addSeasonPlayers(id: string, _: FormState, form: FormData): Promise<FormState> {
+  let res: SeasonAddResult | undefined;
+  const result = await run(async () => {
+    res = await api<SeasonAddResult>(`/special/seasons/${encodeURIComponent(id)}/players`, { method: "POST", json: { text: text(form, "text") } });
+  });
+  if (result) return result;
+  revalidatePath(`/admin/seasons/${id}`);
+  revalidatePath("/special");
+  const r = res!;
+  const created = r.added.filter((a) => a.created).length;
+  const ok = [`เพิ่ม ${r.added.length} คน`, created ? `(สร้างผู้เล่นใหม่ ${created} คน)` : "", r.already ? `· มีชื่ออยู่แล้ว ${r.already} คน` : ""].filter(Boolean).join(" ");
+  const error = r.problems.length ? [`เพิ่มไม่ได้ ${r.problems.length} บรรทัด:`, ...r.problems.map((p) => `บรรทัด ${p.line}: ${p.text} · ${p.reason}`)].join("\n") : undefined;
+  return { ok, ...(error ? { error } : {}) };
+}
+
+export async function removeSeasonPlayer(id: string, playerId: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/special/seasons/${encodeURIComponent(id)}/players/${encodeURIComponent(playerId)}`, { method: "DELETE" });
+  });
+  if (result) return result;
+  revalidatePath(`/admin/seasons/${id}`);
+  revalidatePath("/special");
+  return { ok: "เอาออกจากซีซั่นแล้ว" };
 }

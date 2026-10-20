@@ -267,8 +267,84 @@ paths:
       description: Results of tournaments with special = true move only this rating (specialMmr) and never the main ranking, team ratings or main stats.
       parameters:
         - { name: gameId, in: query, schema: { type: string } }
+        - { name: seasonId, in: query, description: "One season: the ladder of its players (the MMR carries on across seasons), its events and the stats of its games only", schema: { type: string } }
       responses:
-        "200": { description: "{ ranked, placing, tiers, stats, events, reserve, ranks, rules }" }
+        "200": { description: "{ season, seasons, currentSeasonId, ranked, placing, tiers, stats, events, reserve, ranks, rules }" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/special/seasons:
+    get:
+      tags: [Special]
+      summary: Seasons of the special events, newest first, with how many players and events each has
+      parameters:
+        - { name: gameId, in: query, schema: { type: string } }
+      responses:
+        "200": { description: "{ data: [{ id, name, gameId, startDate, endDate, players, events }] }" }
+    post:
+      tags: [Special]
+      summary: Create a season (admin)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, startDate]
+              properties:
+                name: { type: string, maxLength: 60 }
+                gameId: { type: string, nullable: true }
+                startDate: { type: string, format: date-time }
+                endDate: { type: string, format: date-time, nullable: true }
+      responses:
+        "201": { description: The season }
+        "400": { description: The first problem, in Thai in details.th }
+  /api/v1/special/seasons/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Special]
+      summary: One season with its players and events
+      responses:
+        "200": { description: "{ id, name, game, startDate, endDate, players[], tournaments[] }" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Special]
+      summary: Rename a season or change its game or dates (admin)
+      responses:
+        "200": { description: The season }
+    delete:
+      tags: [Special]
+      summary: Delete a season and its list; its events stay without a season (admin)
+      responses:
+        "204": { description: Deleted }
+  /api/v1/special/seasons/{id}/players:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Special]
+      summary: Add players to a season's list (admin). Only players on the list may sign up or be on a roster for the season's events.
+      description: A UID already on the site joins that player; a new UID needs a name and creates the player in the season's game. Rows that cannot be added are listed in problems.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                players:
+                  type: array
+                  maxItems: 300
+                  items: { type: object, properties: { playerId: { type: string }, uid: { type: string }, name: { type: string } } }
+                text: { type: string, description: "Pasted, one player per line: name and UID in any order" }
+      responses:
+        "200": { description: "{ added: [{ id, name, uid, created }], already, problems: [{ line, text, reason }] }" }
+  /api/v1/special/seasons/{id}/players/{playerId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: playerId, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [Special]
+      summary: Take a player off a season's list (admin)
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/members/{discordId}/reserve/check:
     parameters:
       - { $ref: "#/components/parameters/discordId" }
@@ -1486,6 +1562,7 @@ components:
         entryMode: { type: string, enum: [TEAM, SOLO], default: TEAM, description: "SOLO = players sign up alone and are drawn into teams" }
         teamSize: { type: integer, default: 3, description: Players per drawn team (SOLO) }
         special: { type: boolean, default: false, description: "A special \"เล่นเก่งปากเก่ง\" event: results move only the separate special MMR and stats" }
+        seasonId: { type: string, nullable: true, description: "The season of a special event (makes the event special); only players on the season's list may sign up or be on a roster (403 otherwise)" }
     RosterInput:
       type: object
       required: [players]

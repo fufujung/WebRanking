@@ -1,7 +1,7 @@
 import type { Format, Status } from "./types";
 
-const dateFmt = new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "numeric" });
-const dateTimeFmt = new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const dateFmt = new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok" });
+const dateTimeFmt = new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" });
 
 export const fmtDate = (d: string | null | undefined) => (d ? dateFmt.format(new Date(d)) : "-");
 export const fmtDateTime = (d: string | null | undefined) => (d ? dateTimeFmt.format(new Date(d)) : "-");

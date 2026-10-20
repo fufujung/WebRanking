@@ -120,6 +120,8 @@ export const tournamentInput = z.object({
   teamSize: z.coerce.number().int().min(2).max(10).default(3),
   /** A special "เล่นเก่งปากเก่ง" event: results move only the separate special MMR and stats. */
   special: z.boolean().default(false),
+  /** The season of a special event (setting one makes the event special). */
+  seasonId: optionalText(40),
 });
 
 export const rosterSizeOk = (t: { rosterMin?: number; rosterMax?: number }) => t.rosterMin === undefined || t.rosterMax === undefined || t.rosterMin <= t.rosterMax;

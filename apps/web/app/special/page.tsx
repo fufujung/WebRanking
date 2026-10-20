@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { api, qs } from "@/lib/api";
-import type { SpecialBoard } from "@/lib/types";
+import type { SeasonView, SpecialBoard, SpecialSeason } from "@/lib/types";
 import { fmtDate, fmtRating, signed } from "@/lib/format";
 import { POSITIONS, positionLabel } from "@/lib/solo";
 import { currentGame } from "@/lib/games";
@@ -16,23 +16,42 @@ export const metadata = { title: "เล่นเก่งปากเก่ง 
 const winRate = (p: { wins: number; series: number }) => (p.series ? Math.round((p.wins / p.series) * 100) : 0);
 
 /** The special "เล่นเก่งปากเก่ง" events: their own MMR ladder and stats, and the always-open substitutes list. */
-export default async function SpecialPage({ searchParams }: { searchParams: Promise<{ game?: string }> }) {
+export default async function SpecialPage({ searchParams }: { searchParams: Promise<{ game?: string; season?: string }> }) {
   const sp = await searchParams;
   const { games, game } = await currentGame(sp.game);
-  const [board, me] = await Promise.all([api<SpecialBoard>(`/special${qs({ gameId: game?.id })}`), getMember()]);
+  // ?season=all shows every event; no season picked shows the season running now (if there is one).
+  const seasons = (await api<{ data: SpecialSeason[] }>(`/special/seasons${qs({ gameId: game?.id })}`)).data;
+  const current = seasons.find((x) => new Date(x.startDate) <= new Date()) ?? null;
+  const seasonId = sp.season === "all" ? null : (seasons.find((x) => x.id === sp.season) ?? current)?.id ?? null;
+  const [board, me, season] = await Promise.all([
+    api<SpecialBoard>(`/special${qs({ gameId: game?.id, seasonId })}`),
+    getMember(),
+    seasonId ? api<SeasonView>(`/special/seasons/${encodeURIComponent(seasonId)}`) : null,
+  ]);
   const byPosition = POSITIONS.map((p) => ({ p, players: board.reserve.filter((r) => r.position === p) }));
   const noPosition = board.reserve.filter((r) => !r.position);
 
   return (
     <>
       <GameTabs games={games} active={game?.id ?? null} />
+      {seasons.length > 0 && (
+        <nav className="tabs filter-tabs season-tabs" aria-label="เลือกซีซั่น">
+          {seasons.map((x) => (
+            <Link key={x.id} href={`/special?season=${x.id}`} className={`tab ${x.id === seasonId ? "tab-active" : ""}`} aria-current={x.id === seasonId ? "page" : undefined}>
+              {x.name}{x.id === current?.id ? " · ล่าสุด" : ""}
+            </Link>
+          ))}
+          <Link href="/special?season=all" className={`tab ${seasonId ? "" : "tab-active"}`} aria-current={seasonId ? undefined : "page"}>ทุกซีซั่น</Link>
+        </nav>
+      )}
       <section className="ladder-hero special-hero">
         <div>
           <span className="eyebrow">⭐ รายการพิเศษ</span>
-          <h1>เล่นเก่งปากเก่ง</h1>
+          <h1>เล่นเก่งปากเก่ง{board.season ? ` · ${board.season.name}` : ""}</h1>
           <p className="muted">
             สถิติและ MMR ของรายการนี้แยกจาก <Link href="/rankings/players">Ranking หลัก</Link> ทุกคนเริ่มที่ {board.rules.start} MMR
             {" "}ผลการแข่งรายการนี้ไม่ไปเพิ่มหรือลด MMR ของรายการหลัก
+            {board.season && <> · ซีซั่นนี้ {fmtDate(board.season.startDate)} – {board.season.endDate ? fmtDate(board.season.endDate) : "ไม่กำหนด"} ลงแข่งได้เฉพาะคนที่มีชื่อในซีซั่น MMR สะสมต่อจากซีซั่นก่อน</>}
           </p>
           <div className="row special-cta">
             {me ? (
@@ -44,7 +63,7 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
           </div>
         </div>
         <div className="ladder-hero-stats">
-          <div><strong>{board.reserve.length}</strong><span>ตัวสำรอง</span></div>
+          {board.season ? <div><strong>{board.season.players}</strong><span>ผู้เล่นในซีซั่น</span></div> : <div><strong>{board.reserve.length}</strong><span>ตัวสำรอง</span></div>}
           <div><strong>{board.ranked.length}</strong><span>ผู้เล่นติดอันดับ</span></div>
           <div><strong>{board.events.length}</strong><span>งานที่จัด</span></div>
         </div>
@@ -53,12 +72,13 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
       <nav className="row small special-jump" aria-label="ไปที่หัวข้อ">
         <a href="#ladder" className="badge">อันดับ MMR</a>
         <a href="#stats" className="badge">สถิติผู้เล่น</a>
+        {season && <a href="#season" className="badge">รายชื่อซีซั่น</a>}
         <a href="#reserve" className="badge">ตัวสำรอง</a>
         <a href="#events" className="badge">งานที่จัด</a>
       </nav>
 
       <section id="ladder" className="mt">
-        <h2>อันดับ MMR เล่นเก่งปากเก่ง</h2>
+        <h2>อันดับ MMR เล่นเก่งปากเก่ง{board.season ? ` · ${board.season.name}` : ""}</h2>
         {board.ranked.length === 0 ? (
           <Empty>ยังไม่มีผู้เล่นติดอันดับ ต้องลงแข่งรายการพิเศษอย่างน้อย {board.rules.placementSeries} แมตช์ถึงจะขึ้นตาราง</Empty>
         ) : (
@@ -107,7 +127,7 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
       </section>
 
       <section id="stats" className="mt">
-        <h2>สถิติผู้เล่น เล่นเก่งปากเก่ง</h2>
+        <h2>สถิติผู้เล่น เล่นเก่งปากเก่ง{board.season ? ` · ${board.season.name}` : ""}</h2>
         {board.stats.length === 0 ? (
           <Empty>ยังไม่มีผลการแข่งรายการพิเศษ</Empty>
         ) : (
@@ -148,6 +168,29 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
         )}
       </section>
 
+      {season && (
+        <section id="season" className="mt">
+          <h2>รายชื่อผู้เล่น {season.name} ({season.players.length} คน)</h2>
+          {season.players.length === 0 ? (
+            <Empty>ผู้จัดยังไม่ได้ใส่รายชื่อ</Empty>
+          ) : (
+            <ul className="season-roster">
+              {season.players.map((p) => (
+                <li key={p.id}>
+                  <Link href={`/players/${p.id}`} className="entity">
+                    <Avatar src={p.avatarUrl} name={p.name} />
+                    <span>
+                      <strong>{p.nickname || p.name}</strong>
+                      <span className="muted small"> · UID {p.uid ?? "-"}</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
       <section id="reserve" className="mt">
         <h2>ตัวสำรอง ({board.reserve.length} คน)</h2>
         {board.reserve.length === 0 ? (
@@ -185,7 +228,7 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
       </section>
 
       <section id="events" className="mt">
-        <h2>งานที่จัดแล้ว</h2>
+        <h2>งานที่จัดแล้ว{board.season ? ` · ${board.season.name}` : ""}</h2>
         {board.events.length === 0 ? (
           <Empty>ยังไม่มีรายการพิเศษ ผู้จัดติ๊ก &quot;รายการพิเศษ เล่นเก่งปากเก่ง&quot; ตอนสร้างทัวร์ (หรือ /tour create special:True)</Empty>
         ) : (

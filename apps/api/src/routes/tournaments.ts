@@ -11,6 +11,7 @@ import { requireAdmin } from "../lib/apiKeys.js";
 import { matchInclude, matchOrder } from "../lib/selects.js";
 import { syncBlacklist } from "../lib/blacklist.js";
 import { confirmTeams, drawTeams, removeSignup, soloView } from "../lib/solo.js";
+import { tournamentSeason } from "../lib/seasons.js";
 
 export const tournaments = Router();
 
@@ -43,7 +44,9 @@ tournaments.post("/", requireAdmin, async (req, res) => {
   const input = tournamentInput.parse(req.body);
   if (!datesInOrder(input)) throw badDates();
   if (!rosterSizeOk(input)) throw badRoster();
-  res.status(201).json(await prisma.tournament.create({ data: { ...input, ...(await tournamentGame(prisma, input)) } }));
+  const game = await tournamentGame(prisma, input);
+  const data = { ...input, ...game };
+  res.status(201).json(await prisma.tournament.create({ data: { ...data, ...(await tournamentSeason(prisma, data)) }, include: { season: { select: { id: true, name: true } } } }));
 });
 
 tournaments.get("/:id", async (req, res) => {
@@ -51,6 +54,7 @@ tournaments.get("/:id", async (req, res) => {
     where: { id: String(req.params.id) },
     include: {
       matches: { orderBy: matchOrder, include: matchInclude },
+      season: { select: { id: true, name: true } },
     },
   });
   if (!t) throw notFound("Tournament");
@@ -84,6 +88,7 @@ tournaments.patch("/:id", requireAdmin, async (req, res) => {
     throw fail(409, "The bracket has started; its format can no longer change", "เริ่มแข่งแล้ว เปลี่ยนรูปแบบการแข่งไม่ได้ (ต้องรีเซ็ตสายก่อน)");
   }
   if (input.game !== undefined || input.gameId !== undefined) Object.assign(input, await tournamentGame(prisma, input));
+  Object.assign(input, await tournamentSeason(prisma, input, existing));
   const updated = await prisma.$transaction(async (tx) => {
     // A seeded draft no longer fits a new format: drop it so it is seeded again.
     if (shapeChanged && existing.bracketStatus === "DRAFT") {

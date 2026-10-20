@@ -3,6 +3,7 @@
  * a private room per match with check-in, walkover and dispute buttons, and announcements
  * as the bracket moves on. The bracket itself lives in the API; this keeps Discord in step.
  */
+import { seasonChoices } from "./season.js";
 import path from "node:path";
 import {
   ActionRowBuilder,
@@ -560,7 +561,7 @@ export class TourManager {
     const rosterMin = solo ? teamSize : (i.options.getInteger("roster_min") ?? 3);
     const rosterMax = solo ? teamSize : (i.options.getInteger("roster_max") ?? Math.max(5, rosterMin));
     if (rosterMax > 6) return void (await i.editReply("สมัครผ่าน Discord ได้สูงสุด 6 คนต่อทีม"));
-    const t = await this.api.post<{ id: string; name: string }>("/tournaments", {
+    const t = await this.api.post<{ id: string; name: string; special: boolean; season?: { name: string } | null }>("/tournaments", {
       name: i.options.getString("name", true),
       game: i.options.getString("game"),
       location: "Discord",
@@ -579,6 +580,7 @@ export class TourManager {
       entryMode: solo ? "SOLO" : "TEAM",
       teamSize,
       special: i.options.getBoolean("special") ?? false,
+      seasonId: i.options.getString("season"),
     });
     const category = i.options.getChannel("category");
     const tour: TourConfig = {
@@ -597,7 +599,8 @@ export class TourManager {
     };
     this.tours.set(t.id, tour);
     await this.refreshPanel(i.client, tour);
-    const special = i.options.getBoolean("special") ? "\n⭐ รายการพิเศษ เล่นเก่งปากเก่ง: ผลการแข่งไปที่ MMR และสถิติแยก (`/pool rank`) ไม่รวมกับรายการหลัก" : "";
+    const season = t.season ? ` · ${t.season.name}: ลงแข่งได้เฉพาะคนที่มีชื่อในซีซั่น (\`/season players\`)` : "";
+    const special = t.special ? `\n⭐ รายการพิเศษ เล่นเก่งปากเก่ง${season}: ผลการแข่งไปที่ MMR และสถิติแยก (\`/pool rank\`) ไม่รวมกับรายการหลัก` : "";
     if (solo) {
       return void (await i.editReply(
         [
@@ -753,6 +756,7 @@ export class TourManager {
           free.slice(0, 25).map((t) => ({ name: `${t.name}${this.tours.get(t.id) ? " (ใช้ในเซิร์ฟเวอร์นี้แล้ว)" : ""}`.slice(0, 100), value: t.id })),
         ));
       }
+      if (focused.name === "season") return void (await i.respond(await seasonChoices(this.api, q)));
       if (focused.name === "tournament") {
         const list = this.toursIn(i.guildId!);
         const names = await Promise.all(list.map((t) => this.bracket(t.tournamentId).then((b) => ({ id: t.tournamentId, name: b.name, status: b.status })).catch(() => null)));

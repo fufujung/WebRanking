@@ -15,10 +15,11 @@ model Game {
   ranks     String   @default("[]")
   createdAt DateTime @default(now())
 
-  players     Player[]
-  teams       Team[]
-  tournaments Tournament[]
-  guilds      Guild[]
+  players        Player[]
+  teams          Team[]
+  tournaments    Tournament[]
+  guilds         Guild[]
+  specialSeasons SpecialSeason[]
 }
 
 /// A competing team. Teams play matches and carry an Elo rating.
@@ -59,25 +60,25 @@ model TeamInvite {
 
 /// A player. The in-game UID (+ server) identifies the same person across name changes.
 model Player {
-  id        String   @id @default(cuid())
-  name      String
-  nickname  String?
-  country   String?
-  role      String?
-  avatarUrl String?
-  teamId    String?
-  uid       String? // in-game UID; one player per UID + server
-  server    String? // in-game server
-  discordId String? // Discord account that logged in on the website as this player (one account may play several characters)
-  mmr       Int      @default(1000) // personal rating, replayed from every series the player appeared in
-  peakMmr   Int      @default(1000)
+  id             String   @id @default(cuid())
+  name           String
+  nickname       String?
+  country        String?
+  role           String?
+  avatarUrl      String?
+  teamId         String?
+  uid            String? // in-game UID; one player per UID + server
+  server         String? // in-game server
+  discordId      String? // Discord account that logged in on the website as this player (one account may play several characters)
+  mmr            Int      @default(1000) // personal rating, replayed from every series the player appeared in
+  peakMmr        Int      @default(1000)
   /// The separate rating of the special "เล่นเก่งปากเก่ง" events (tournaments with special = true).
-  specialMmr     Int @default(1000)
-  specialPeakMmr Int @default(1000)
-  gameId    String? // the game this character plays; MMR and ranks are per game
-  guildId   String? // the guild (club) this character belongs to, separate from the team it plays for
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  specialMmr     Int      @default(1000)
+  specialPeakMmr Int      @default(1000)
+  gameId         String? // the game this character plays; MMR and ranks are per game
+  guildId        String? // the guild (club) this character belongs to, separate from the team it plays for
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   team         Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
   game         Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
@@ -90,6 +91,7 @@ model Player {
   mmrLog       PlayerMmrChange[]
   blacklist    BlacklistEntry[]
   reserve      ReservePlayer?
+  seasons      SeasonPlayer[]
 
   @@index([teamId])
   @@index([uid])
@@ -154,11 +156,13 @@ model Tournament {
   bracketStatus    String  @default("NONE") // NONE | DRAFT (seeded, not started) | LIVE | DONE
 
   /// TEAM = teams sign up; SOLO = players sign up alone and the organizer draws them into teams.
-  entryMode String @default("TEAM")
+  entryMode String  @default("TEAM")
   /// A special "เล่นเก่งปากเก่ง" event: its results move the separate special MMR and stats, never the main ranking.
   special   Boolean @default(false)
   /// Players per drawn team (SOLO).
-  teamSize  Int    @default(3)
+  teamSize  Int     @default(3)
+  /// The season of a special event: only players on that season's list may play in it.
+  seasonId  String?
 
   entries        TournamentEntry[]
   matches        Match[]
@@ -166,8 +170,42 @@ model Tournament {
   soloSignups    SoloSignup[]
   blacklist      BlacklistEntry[]
   gameRef        Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  season         SpecialSeason?    @relation(fields: [seasonId], references: [id], onDelete: SetNull)
 
   @@index([gameId])
+  @@index([seasonId])
+}
+
+/// A season of the special "เล่นเก่งปากเก่ง" events in one game, with the list of players allowed to play in it.
+/// The special MMR carries on from season to season; a season only groups events, stats and players.
+model SpecialSeason {
+  id        String    @id @default(cuid())
+  name      String
+  gameId    String?
+  startDate DateTime
+  endDate   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  game        Game?          @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  players     SeasonPlayer[]
+  tournaments Tournament[]
+
+  @@index([gameId])
+}
+
+/// A player on a season's list.
+model SeasonPlayer {
+  id        String   @id @default(cuid())
+  seasonId  String
+  playerId  String
+  createdAt DateTime @default(now())
+
+  season SpecialSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  player Player        @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, playerId])
+  @@index([playerId])
 }
 
 model TournamentEntry {

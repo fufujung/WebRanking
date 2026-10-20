@@ -3,14 +3,15 @@
 import { useState } from "react";
 import { useFormAction } from "./useFormAction";
 import { saveTournament } from "@/app/admin/actions";
-import type { Format, Game, Tournament } from "@/lib/types";
+import type { Format, Game, SpecialSeason, Tournament } from "@/lib/types";
 import { TournamentGameField } from "./GameForms";
 import { formatLabel, statusLabel, toBangkokInput, toDateInput } from "@/lib/format";
 
-export function TournamentForm({ tournament, games }: { tournament?: Tournament; games: Game[] }) {
+export function TournamentForm({ tournament, games, seasons = [] }: { tournament?: Tournament; games: Game[]; seasons?: SpecialSeason[] }) {
   const [state, onSubmit, pending] = useFormAction(saveTournament.bind(null, tournament?.id ?? null), undefined);
   const [format, setFormat] = useState<Format | "">(tournament?.format ?? "");
   const [mode, setMode] = useState<"TEAM" | "SOLO">(tournament?.entryMode ?? "TEAM");
+  const [special, setSpecial] = useState(tournament?.special ?? false);
   // The shape of a started bracket can't change; reset the bracket first.
   const started = tournament?.bracketStatus === "LIVE" || tournament?.bracketStatus === "DONE";
   return (
@@ -33,9 +34,19 @@ export function TournamentForm({ tournament, games }: { tournament?: Tournament;
       <label>รายละเอียด<textarea name="description" rows={3} maxLength={2000} defaultValue={tournament?.description ?? ""} /></label>
       <input type="hidden" name="specialPresent" value="1" />
       <label className="row" style={{ gap: 6 }}>
-        <input type="checkbox" name="special" defaultChecked={tournament?.special ?? false} />
+        <input type="checkbox" name="special" checked={special} onChange={(e) => setSpecial(e.target.checked)} />
         <span>⭐ รายการพิเศษ เล่นเก่งปากเก่ง <span className="muted small">(สถิติและ MMR แยก ไม่รวมกับ Ranking หลัก ดูที่หน้า <a href="/special">เล่นเก่งปากเก่ง</a>)</span></span>
       </label>
+      {special && (
+        <label>
+          ซีซั่น
+          <select name="seasonId" defaultValue={tournament ? (tournament.seasonId ?? "") : (seasons[0]?.id ?? "")}>
+            <option value="">ไม่ผูกซีซั่น (ใครก็ลงได้)</option>
+            {seasons.map((s) => <option key={s.id} value={s.id}>{s.name}{s.players !== undefined ? ` (${s.players} คน)` : ""}</option>)}
+          </select>
+          <span className="muted small">ผูกซีซั่นแล้วลงแข่งได้เฉพาะคนที่มีชื่อในซีซั่น · <a href="/admin/seasons">จัดการซีซั่น</a></span>
+        </label>
+      )}
 
       <h3 style={{ margin: "8px 0 0" }}>การจัดสายแข่ง</h3>
       <div className="form-row">
