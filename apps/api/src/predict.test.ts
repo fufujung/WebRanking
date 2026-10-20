@@ -115,6 +115,8 @@ describe("predictions", () => {
     let view = await markets(t.id);
     const champ = view.markets.find((m: any) => m.kind === "CHAMPION");
     assert.ok(champ?.open, "the champion pick is open during sign-ups");
+    const listed = (await ok("GET", "/predict/tournaments")).data.find((x: any) => x.id === t.id);
+    assert.equal(listed.open, 1);
     await ok("POST", `/tournaments/${t.id}/bracket/seed`, { method: "manual", order: [a.id, b.id] });
     view = await markets(t.id);
     const m1 = view.markets.find((m: any) => m.kind === "MATCH");

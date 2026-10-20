@@ -423,7 +423,7 @@ export async function wallet(discordId: string, now = new Date()) {
     joined: Boolean(p),
     streak: streakNow,
     dailyClaimed: p?.lastDaily === today,
-    nextDaily: dailyAmount(p?.lastDaily === today ? streakNow + 1 : streakNow + 1),
+    nextDaily: dailyAmount(streakNow + 1),
     welcome: p ? 0 : COINS.welcome,
     watchedToday: p?.watchDay === today ? p.watchToday : 0,
     rules: COINS,
@@ -440,4 +440,30 @@ export function refundTournament(tournamentId: string) {
       for (const m of markets) await applyOutcome(tx, m.id, { kind: "refund" });
     }),
   );
+}
+
+/**
+ * Tournaments to predict: the ones being signed up for or played (with at least two teams), and the ones
+ * that ended in the last two weeks with picks to look back on. Open markets are counted for each.
+ */
+export async function predictionTournaments(now = new Date()) {
+  const recent = new Date(now.getTime() - 14 * 86400_000);
+  const list = await prisma.tournament.findMany({
+    where: {
+      format: { not: null },
+      OR: [{ bracketStatus: { in: ["NONE", "DRAFT", "LIVE"] }, status: { not: "COMPLETED" } }, { bracketStatus: "DONE", updatedAt: { gte: recent }, markets: { some: {} } }],
+    },
+    orderBy: { startDate: "asc" },
+    take: 30,
+    select: { id: true, name: true, bracketStatus: true, special: true, startDate: true, season: { select: { id: true, name: true } }, _count: { select: { entries: true } } },
+  });
+  const shown = list.filter((t) => t._count.entries >= 2);
+  for (const t of shown) if (t.bracketStatus !== "DONE") await syncPredictions(t.id);
+  const markets = await prisma.market.findMany({ where: { tournamentId: { in: shown.map((t) => t.id) } }, include: { _count: { select: { bets: true } } } });
+  return shown
+    .map(({ _count, ...t }) => {
+      const mine = markets.filter((m) => m.tournamentId === t.id);
+      return { ...t, teams: _count.entries, open: mine.filter((m) => marketOpen(m, t, now)).length, markets: mine.length, picks: mine.reduce((n, m) => n + m._count.bets, 0) };
+    })
+    .sort((a, b) => Number(b.bracketStatus === "LIVE") - Number(a.bracketStatus === "LIVE") || b.open - a.open || Number(a.bracketStatus === "DONE") - Number(b.bracketStatus === "DONE"));
 }

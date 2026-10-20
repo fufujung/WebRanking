@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, qs } from "@/lib/api";
 import { endSession, passwordMatches, requireAdmin, startSession } from "@/lib/auth";
 import { clearFailures, lockedFor, loginAddress, recordFailure } from "@/lib/loginGuard";
 import { explain } from "@/lib/explain";
@@ -593,4 +593,71 @@ export async function removeSeasonPlayer(id: string, playerId: string): Promise<
   revalidatePath(`/admin/seasons/${id}`);
   revalidatePath("/special");
   return { ok: "เอาออกจากซีซั่นแล้ว" };
+}
+
+// Prizes of the prediction game: the shop code pool and who won what
+export async function addRewardCodes(_: FormState, form: FormData): Promise<FormState> {
+  let res: { added: number; duplicates: number; invalid: string[] } | undefined;
+  const result = await run(async () => {
+    res = await api("/predict/codes", { method: "POST", json: { label: text(form, "label"), text: text(form, "text") } });
+  });
+  if (result) return result;
+  revalidatePath("/admin/predict");
+  const r = res!;
+  return {
+    ok: [`เพิ่ม ${r.added} โค้ด`, r.duplicates ? `· ซ้ำ ${r.duplicates} โค้ด (ข้ามไป)` : ""].filter(Boolean).join(" "),
+    ...(r.invalid.length ? { error: `อ่านไม่ได้: ${r.invalid.join(", ")} (โค้ดต้องเป็นตัวอักษร ตัวเลข - หรือ _ ยาว 4-64 ตัว)` } : {}),
+  };
+}
+
+export async function deleteFreeCodes(label: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/predict/codes${qs({ label })}`, { method: "DELETE" });
+  });
+  if (result) return result;
+  revalidatePath("/admin/predict");
+  return { ok: "ลบโค้ดที่ยังไม่ได้แจกแล้ว" };
+}
+
+export async function giveRewards(_: FormState, form: FormData): Promise<FormState> {
+  let given = 0;
+  const scope = text(form, "scope");
+  const [kindOf, scopeId] = scope.split(":");
+  const result = await run(async () => {
+    const r = await api<{ given: number }>("/predict/rewards", {
+      method: "POST",
+      json: {
+        title: text(form, "title"),
+        kind: text(form, "kind") || "CODE",
+        codeLabel: text(form, "kind") === "ITEM" ? undefined : text(form, "codeLabel") || undefined,
+        note: text(form, "note") || undefined,
+        ...(kindOf === "t" ? { tournamentId: scopeId } : kindOf === "s" ? { seasonId: scopeId } : {}),
+        ...(text(form, "discordId") ? { discordId: text(form, "discordId") } : {}),
+        from: text(form, "from") || 1,
+        to: text(form, "to") || undefined,
+      },
+    });
+    given = r.given;
+  });
+  if (result) return result;
+  revalidatePath("/admin/predict");
+  return { ok: `แจกรางวัลแล้ว ${given} คน บอทจะส่ง DM แจ้งผู้ได้รางวัล` };
+}
+
+export async function setRewardStatus(id: string, status: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/predict/rewards/${encodeURIComponent(id)}`, { method: "PATCH", json: { status } });
+  });
+  if (result) return result;
+  revalidatePath("/admin/predict");
+  return { ok: "บันทึกแล้ว" };
+}
+
+export async function deleteReward(id: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/predict/rewards/${encodeURIComponent(id)}`, { method: "DELETE" });
+  });
+  if (result) return result;
+  revalidatePath("/admin/predict");
+  return { ok: "ยกเลิกรางวัลแล้ว" };
 }

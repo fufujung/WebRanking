@@ -33,6 +33,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
               <span className="badge">เลทได้ {t.lateMinutes} นาที</span>
               {t.entryMode === "SOLO" && <span className="badge">ลงเดี่ยว · สุ่มทีมละ {t.teamSize} คน</span>}
               {t.registrationOpen && t.entryMode !== "SOLO" && <span className="badge badge-accent">เปิดรับสมัครทาง Discord</span>}
+              {t.teams.length >= 2 && <Link href={`/predict?t=${t.id}`} className="badge badge-accent">🔮 ทายผลรายการนี้</Link>}
             </div>
           )}
         </div>

@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { discordId } from "../lib/members.js";
-import { cancelBet, claimDaily, COINS, leaderboard, placeBet, setMarketStatus, tournamentMarkets, wallet, watchCoins } from "../lib/predict.js";
+import { cancelBet, claimDaily, COINS, leaderboard, predictionTournaments, placeBet, setMarketStatus, tournamentMarkets, wallet, watchCoins } from "../lib/predict.js";
 import { addCodes, award, codePool, confirmReceived, deleteFreeCodes, deleteReward, listRewards, markNotified, unnotifiedRewards, updateReward } from "../lib/rewards.js";
 
 /**
@@ -17,6 +17,10 @@ const adminIf = (needed: (q: Record<string, unknown>) => boolean): RequestHandle
 
 predict.get("/rules", (_req, res) => {
   res.json(COINS);
+});
+
+predict.get("/tournaments", async (_req, res) => {
+  res.json({ data: await predictionTournaments() });
 });
 
 predict.get(

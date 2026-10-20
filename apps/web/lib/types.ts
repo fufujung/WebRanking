@@ -635,3 +635,98 @@ export interface SpecialBoard {
   reserve: ReservePlayer[];
   rules: MmrLadder["rules"];
 }
+
+// ---------- Predictions (free coins) ----------
+
+export interface PredictRules {
+  welcome: number;
+  daily: number;
+  streakStep: number;
+  streakMax: number;
+  watch: number;
+  watchEveryMinutes: number;
+  watchPerDay: number;
+}
+
+export interface PredictTournament {
+  id: string;
+  name: string;
+  bracketStatus: "NONE" | "DRAFT" | "LIVE" | "DONE";
+  special: boolean;
+  startDate: string;
+  season: { id: string; name: string } | null;
+  teams: number;
+  open: number;
+  markets: number;
+  picks: number;
+}
+
+export interface MarketOption {
+  team: { id: string; name: string; tag: string | null; logoUrl: string | null };
+  coins: number;
+  people: number;
+  percent: number;
+}
+
+export interface Market {
+  id: string;
+  kind: "MATCH" | "CHAMPION";
+  key: string;
+  number: number | null;
+  stage: string | null;
+  round: number | null;
+  status: "OPEN" | "CLOSED" | "SETTLED" | "REFUNDED";
+  open: boolean;
+  locksAt: string | null;
+  winnerTeamId: string | null;
+  score: { a: number | null; b: number | null } | null;
+  pool: number;
+  people: number;
+  options: MarketOption[];
+  mine: { teamId: string; amount: number; payout: number | null } | null;
+  topWinners: { discordId: string; name: string; avatarUrl: string | null; won: number }[];
+}
+
+export interface PredictLeader {
+  rank: number;
+  discordId: string;
+  name: string;
+  avatarUrl: string | null;
+  coins: number;
+  net: number | null;
+  correct: number | null;
+  picks: number | null;
+}
+
+export interface Reward {
+  id: string;
+  discordId: string;
+  title: string;
+  kind: "CODE" | "ITEM";
+  status: "PENDING" | "SENT" | "RECEIVED";
+  place: number | null;
+  tournamentId: string | null;
+  seasonId: string | null;
+  note: string | null;
+  notifiedAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+  code?: string | null;
+  codeLabel: string | null;
+  predictor?: { name: string; avatarUrl: string | null };
+}
+
+export interface Wallet {
+  discordId: string;
+  name: string | null;
+  coins: number;
+  joined: boolean;
+  streak: number;
+  dailyClaimed: boolean;
+  nextDaily: number;
+  welcome: number;
+  watchedToday: number;
+  rules: PredictRules;
+  bets: { id: string; teamId: string; teamName: string; amount: number; payout: number | null; createdAt: string; market: { id: string; kind: "MATCH" | "CHAMPION"; key: string; status: Market["status"]; winnerTeamId: string | null; tournament: { id: string; name: string } } }[];
+  rewards: Reward[];
+}

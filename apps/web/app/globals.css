@@ -836,3 +836,32 @@ h4 { font-size: 15px; font-weight: 700; }
 .season-roster { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
 .season-roster li { min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
 .season-roster .entity { min-width: 0; }
+/* Predictions (ทายผล) */
+.predict-daily { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+.market-grid { align-items: start; }
+.market-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.market-card h3 { margin: 0; font-size: 16px; }
+.market-open { border-color: var(--accent); }
+.market-options { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.market-options li { min-width: 0; }
+.market-options .entity { min-width: 0; overflow: hidden; }
+.market-options .entity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.market-options .muted { white-space: nowrap; flex-shrink: 0; }
+.market-bar { height: 6px; border-radius: 999px; background: var(--bg-soft); overflow: hidden; margin-top: 4px; }
+.market-bar span { display: block; height: 100%; background: var(--muted); border-radius: inherit; }
+.market-won .market-bar span { background: var(--accent); }
+.market-mine { margin: 0; padding: 8px 10px; border-radius: 9px; background: var(--bg-soft); }
+.pick-form { gap: 10px; }
+.pick-teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pick-team { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-team input { accent-color: var(--accent); margin: 0; }
+.pick-team-on { border-color: var(--accent); background: var(--accent-soft); }
+.pick-amount { align-items: flex-end; flex-wrap: wrap; }
+.pick-amount .grow { flex: 1 1 120px; }
+.predict-rules ul { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 6px; }
+.predict-rules h2 { margin-top: 0; }
+.reward-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.reward-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.reward-code { font-size: 15px; font-weight: 700; letter-spacing: 1px; padding: 4px 10px; border-radius: 8px; background: var(--bg-soft); border: 1px dashed var(--accent); user-select: all; word-break: break-all; }
+.watch-toast { position: fixed; right: 16px; bottom: 16px; z-index: 50; padding: 10px 14px; border-radius: 12px; background: var(--card); border: 1px solid var(--accent); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); font-weight: 600; max-width: calc(100vw - 32px); }
+@media (max-width: 480px) { .pick-teams { grid-template-columns: minmax(0, 1fr); } }
