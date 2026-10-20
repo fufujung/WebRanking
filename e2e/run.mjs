@@ -258,6 +258,9 @@ for (const [ti, team] of teamNames.entries()) {
     await combo.fill(team.split(" ")[0].toLowerCase());
     await page.locator(".combo-list [role=option]", { hasText: team }).click();
     await page.click("button:has-text('บันทึกแล้วเพิ่มคนต่อไป')");
+    // The second save lands on the same URL with the first save's message still showing, so wait for the
+    // fresh, empty form instead: leaving early would cancel the save of the last player.
+    await page.waitForFunction(() => document.querySelector('input[name="name"]')?.value === "");
     await page.waitForSelector(".success");
     // the team stays selected for the next player
     const kept = await page.locator("input[role=combobox]").inputValue();
