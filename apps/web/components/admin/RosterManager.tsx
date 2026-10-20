@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { saveRoster, type FormState } from "@/app/admin/actions";
 import type { Entry } from "@/lib/types";
 import { fmtThaiTime } from "@/lib/format";
+import { CandidateSelect, type Candidate } from "./PickPlayers";
 
 interface Row {
   key: number;
@@ -17,7 +18,7 @@ const character = (p: Entry["roster"][number]) => [p.uid && `UID ${p.uid}`, p.se
 let nextKey = 1;
 
 /** The registered players of every team. Organizers can change a roster even after it locks. */
-export function RosterManager({ tournamentId, entries, rosterMin, rosterMax, locked, lockAt }: { tournamentId: string; entries: Entry[]; rosterMin: number; rosterMax: number; locked: boolean; lockAt: string | null }) {
+export function RosterManager({ tournamentId, entries, rosterMin, rosterMax, locked, lockAt, candidates = [] }: { tournamentId: string; entries: Entry[]; rosterMin: number; rosterMax: number; locked: boolean; lockAt: string | null; candidates?: Candidate[] }) {
   const [open, setOpen] = useState<string | null>(null);
   return (
     <div className="stack">
@@ -54,13 +55,13 @@ export function RosterManager({ tournamentId, entries, rosterMin, rosterMax, loc
         </table>
       </div>
       {entries.filter((e) => e.id === open).map((e) => (
-        <RosterEditor key={e.id + e.roster.map((p) => p.playerId).join()} tournamentId={tournamentId} entry={e} rosterMax={rosterMax} onDone={() => setOpen(null)} />
+        <RosterEditor key={e.id + e.roster.map((p) => p.playerId).join()} tournamentId={tournamentId} entry={e} rosterMax={rosterMax} candidates={candidates} onDone={() => setOpen(null)} />
       ))}
     </div>
   );
 }
 
-function RosterEditor({ tournamentId, entry, rosterMax, onDone }: { tournamentId: string; entry: Entry; rosterMax: number; onDone: () => void }) {
+function RosterEditor({ tournamentId, entry, rosterMax, candidates, onDone }: { tournamentId: string; entry: Entry; rosterMax: number; candidates: Candidate[]; onDone: () => void }) {
   const [rows, setRows] = useState<Row[]>(() => {
     const r = entry.roster.map((p) => ({ key: nextKey++, name: p.name, uid: p.uid ?? "", server: p.server ?? "", discordId: p.discordId ?? "" }));
     return r.length ? r : [emptyRow()];
@@ -96,6 +97,18 @@ function RosterEditor({ tournamentId, entry, rosterMax, onDone }: { tournamentId
       ))}
       <div className="row">
         <button type="button" className="btn btn-sm" disabled={rows.length >= rosterMax} onClick={() => setRows((prev) => [...prev, emptyRow()])}>+ เพิ่มผู้เล่น</button>
+        {rows.length < rosterMax && (
+          <CandidateSelect
+            // Players of this team may be picked again; players of other teams are taken.
+            candidates={candidates.map((c) => (entry.roster.some((p) => p.playerId === c.playerId) ? { ...c, takenBy: null } : c))}
+            exclude={rows.map((r) => r.uid.trim() || "")}
+            onPick={(c) => {
+              const row = { key: nextKey++, name: c.name, uid: c.uid ?? "", server: c.server ?? "", discordId: c.discordId ?? "" };
+              // Fill the first empty line, else add one.
+              setRows((prev) => (prev.some((r) => !r.name.trim()) ? prev.map((r) => (!r.name.trim() && r.key === prev.find((x) => !x.name.trim())!.key ? row : r)) : [...prev, row]));
+            }}
+          />
+        )}
       </div>
       <label>
         Discord ID หัวหน้าทีม (คนที่ใช้ /roster ได้)

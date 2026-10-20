@@ -292,3 +292,25 @@ describe("special events (เล่นเก่งปากเก่ง)", () =>
     assert.deepEqual(await names(kuroko), ["Fon Kuroko"]);
   });
 });
+
+describe("organizers pick players from the list", () => {
+  test("a team is registered by picking players: name, UID and Discord come from their profile and sign-up", async () => {
+    const gameId = (await ok("GET", "/games")).data[0].id;
+    const kite = (await ok("POST", "/players/discord/333333333333333333/claim", { uid: "930300", name: "Kite", gameId })).id;
+    const moss = (await ok("POST", "/players", { name: "Moss", uid: "940400", gameId })).id;
+    const t = await ok("POST", "/tournaments", { name: "Picked Cup", startDate: "2026-11-01T12:00:00Z", format: "SINGLE_ELIMINATION", rosterMin: 1, rosterMax: 3, special: true });
+    const entry = await ok("POST", `/tournaments/${t.id}/registrations`, { teamName: "Picked", players: [{ playerId: kite }, { playerId: moss }], override: true });
+    assert.deepEqual(
+      entry.roster.map((r: any) => [r.playerId, r.name, r.uid, r.discordId]),
+      [[kite, "Kite", "930300", "333333333333333333"], [moss, "Moss", "940400", null]],
+    );
+    const twice = await call("POST", `/tournaments/${t.id}/registrations`, { teamName: "Again", players: [{ playerId: kite }], override: true });
+    assert.equal(twice.status, 409, "a player can be on one team only");
+    const gone = await call("POST", `/tournaments/${t.id}/registrations`, { teamName: "Ghosts", players: [{ playerId: "nope" }], override: true });
+    assert.equal(gone.status, 404);
+    assert.match(gone.body.details.th, /ไม่พบผู้เล่นที่เลือก/);
+    // The roster editor can pick too.
+    const fixed = await ok("PUT", `/tournaments/${t.id}/entries/${entry.id}/roster`, { players: [{ playerId: moss }], override: true });
+    assert.deepEqual(fixed.roster.map((r: any) => r.name), ["Moss"]);
+  });
+});

@@ -865,3 +865,13 @@ h4 { font-size: 15px; font-weight: 700; }
 .reward-code { font-size: 15px; font-weight: 700; letter-spacing: 1px; padding: 4px 10px; border-radius: 8px; background: var(--bg-soft); border: 1px dashed var(--accent); user-select: all; word-break: break-all; }
 .watch-toast { position: fixed; right: 16px; bottom: 16px; z-index: 50; padding: 10px 14px; border-radius: 12px; background: var(--card); border: 1px solid var(--accent); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); font-weight: 600; max-width: calc(100vw - 32px); }
 @media (max-width: 480px) { .pick-teams { grid-template-columns: minmax(0, 1fr); } }
+/* Organizers pick players from the substitutes or season list */
+.pick-filter { align-items: end; }
+.pick-list { display: grid; gap: 6px; max-height: 420px; overflow-y: auto; padding: 2px; }
+.pick-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; min-width: 0; }
+.pick-row input { accent-color: var(--accent); margin: 0; flex-shrink: 0; }
+.pick-row .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-row-on { border-color: var(--accent); background: var(--accent-soft); }
+.pick-row-taken { opacity: 0.5; cursor: not-allowed; }
+.pick-meta { flex-shrink: 0; text-align: right; }
+@media (max-width: 640px) { .pick-row { flex-wrap: wrap; } .pick-meta { flex-basis: 100%; text-align: left; padding-left: 26px; } }

@@ -1769,10 +1769,13 @@ components:
           type: array
           items:
             type: object
-            required: [name]
+            description: Either name (with uid, server, discordId) or playerId to pick a known player (their name, UID, server and Discord are filled in)
             properties:
               name: { type: string, description: In-game name, used to match scoreboard rows }
+              uid: { type: string, nullable: true }
+              server: { type: string, nullable: true }
               discordId: { type: string, nullable: true }
+              playerId: { type: string, description: Pick a known player instead of typing name and UID }
         captainDiscordId: { type: string, nullable: true }
         override: { type: boolean, default: false, description: "Organizer: ignore closed registration / the roster lock" }
     BracketResultInput:
