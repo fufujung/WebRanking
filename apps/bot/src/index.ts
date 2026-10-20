@@ -42,6 +42,10 @@ client.once(Events.ClientReady, async (c) => {
   const sync = () => bot.tour.sync(c).catch((e) => console.error("[bot] ซิงก์ทัวร์นาเมนต์ไม่สำเร็จ:", e.message));
   await sync();
   setInterval(sync, 30_000);
+  // Prediction cards open, update and close with the bracket; prize winners get a DM.
+  const predict = () => bot.predict.sync(c).catch((e) => console.error("[bot] ซิงก์ทายผลไม่สำเร็จ:", e.message));
+  await predict();
+  setInterval(predict, 60_000);
 });
 
 client.on(Events.GuildCreate, (guild) => {
