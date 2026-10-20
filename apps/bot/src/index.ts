@@ -5,6 +5,7 @@ import { Client, Events, GatewayIntentBits, Partials } from "discord.js";
 import { createApi } from "./api.js";
 import { TournamentBot } from "./bot.js";
 import { commandData, READ_POST_COMMAND } from "./commands.js";
+import { createGuildInvite, ensureSiteInvite } from "./invite.js";
 
 const token = process.env.DISCORD_TOKEN?.trim();
 if (!token) {
@@ -17,8 +18,9 @@ if (!process.env.API_KEY) {
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const api = createApi(process.env.API_URL ?? "http://localhost:4000", process.env.API_KEY);
 const bot = new TournamentBot({
-  api: createApi(process.env.API_URL ?? "http://localhost:4000", process.env.API_KEY),
+  api,
   dataDir: path.resolve(here, "..", "data"),
   siteUrl: process.env.SITE_URL ?? "http://localhost:3000",
 });
@@ -33,6 +35,13 @@ client.once(Events.ClientReady, async (c) => {
   console.log(`[bot] ออนไลน์แล้วในชื่อ ${c.user.tag} (${c.guilds.cache.size} เซิร์ฟเวอร์)`);
   for (const guild of c.guilds.cache.values()) {
     await guild.commands.set(commandData).catch((e) => console.error(`[bot] ลงทะเบียนคำสั่งใน ${guild.name} ไม่สำเร็จ:`, e.message));
+  }
+  // The site's "เข้าร่วม Discord" button: fill in an invite when the organizer hasn't set one.
+  const home = c.guilds.cache.first();
+  if (home) {
+    await ensureSiteInvite(api, () => createGuildInvite(home))
+      .then((url) => url && console.log(`[bot] ปุ่มเข้าร่วม Discord บนเว็บใช้ลิงก์ ${url}`))
+      .catch((e) => console.error("[bot] สร้างลิงก์เชิญสำหรับเว็บไม่สำเร็จ:", e.message));
   }
   const tick = () => bot.announceNew(c).catch((e) => console.error("[bot] ประกาศผลไม่สำเร็จ:", e.message));
   await tick();

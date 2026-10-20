@@ -283,12 +283,13 @@ export async function saveRoster(tournamentId: string, teamId: string, players: 
 }
 
 /** An organizer puts a team together by picking players from the substitutes or season list. */
-export async function registerPickedTeam(tournamentId: string, teamName: string, playerIds: string[], captainDiscordId: string | null) {
+/** A new team from players ticked on a list ({ playerId }) and/or typed in ({ name, uid }). */
+export async function registerPickedTeam(tournamentId: string, teamName: string, players: ({ playerId: string } | { name: string; uid: string | null })[], captainDiscordId: string | null) {
   if (!teamName.trim()) return { error: "ใส่ชื่อทีม" } as FormState;
-  if (!playerIds.length) return { error: "เลือกผู้เล่นอย่างน้อย 1 คน" } as FormState;
+  if (!players.length) return { error: "เลือกหรือพิมพ์ผู้เล่นอย่างน้อย 1 คน" } as FormState;
   return bracketRun(
     tournamentId,
-    () => api(`/tournaments/${encodeURIComponent(tournamentId)}/registrations`, { method: "POST", json: { teamName: teamName.trim(), players: playerIds.map((playerId) => ({ playerId })), captainDiscordId, override: true } }),
+    () => api(`/tournaments/${encodeURIComponent(tournamentId)}/registrations`, { method: "POST", json: { teamName: teamName.trim(), players, captainDiscordId, override: true } }),
     `เพิ่มทีม ${teamName.trim()} แล้ว`,
   );
 }
@@ -674,12 +675,25 @@ export async function deleteReward(id: string): Promise<FormState> {
 }
 
 /** ต้นเรื่อง: saves the event's Facebook posts in the given order (add, remove and reorder at once). */
-export async function saveStories(tournamentId: string, stories: { title: string; url: string }[]): Promise<FormState> {
+export async function saveStories(owner: { tournamentId: string } | { seasonId: string }, stories: { title: string; url: string }[]): Promise<FormState> {
+  const path = "tournamentId" in owner ? `/tournaments/${encodeURIComponent(owner.tournamentId)}` : `/special/seasons/${encodeURIComponent(owner.seasonId)}`;
   const result = await run(async () => {
-    await api(`/tournaments/${encodeURIComponent(tournamentId)}/stories`, { method: "PUT", json: { stories: stories.filter((s) => s.url.trim() || s.title.trim()) } });
+    await api(`${path}/stories`, { method: "PUT", json: { stories: stories.filter((s) => s.url.trim() || s.title.trim()) } });
   });
-  revalidatePath(`/tournaments/${tournamentId}`);
+  if ("tournamentId" in owner) {
+    revalidatePath(`/tournaments/${owner.tournamentId}`);
+    revalidatePath(`/admin/tournaments/${owner.tournamentId}`);
+  } else revalidatePath(`/admin/seasons/${owner.seasonId}`);
   revalidatePath("/special/story");
-  revalidatePath(`/admin/tournaments/${tournamentId}`);
   return result ?? { ok: "บันทึกต้นเรื่องแล้ว" };
+}
+
+/** Site settings; "" clears the invite (the bot then makes one when it next starts). */
+export async function saveSettings(_: FormState, form: FormData): Promise<FormState> {
+  const res = await run(async () => {
+    await api("/settings", { method: "PATCH", json: { discordInvite: text(form, "discordInvite") } });
+  });
+  if (res) return res;
+  revalidatePath("/", "layout");
+  return { ok: "บันทึกแล้ว" };
 }

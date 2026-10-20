@@ -214,7 +214,7 @@ tournaments.get("/:id/stories", async (req, res) => {
 
 /** Saves the whole list (add, remove and reorder in one go). */
 tournaments.put("/:id/stories", requireAdmin, async (req, res) => {
-  res.json({ data: await setStories(String(req.params.id), req.body) });
+  res.json({ data: await setStories({ tournamentId: String(req.params.id) }, req.body) });
 });
 
 tournaments.get("/:id/bracket", async (req, res) => {

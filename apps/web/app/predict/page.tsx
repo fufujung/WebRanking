@@ -4,6 +4,8 @@ import type { Market, PredictLeader, PredictRules, PredictTournament, Wallet } f
 import { fmtThaiTime } from "@/lib/format";
 import { getMember } from "@/lib/member";
 import { discordEnabled } from "@/lib/discord";
+import { siteSettings } from "@/lib/settings";
+import { DiscordJoin } from "@/components/DiscordJoin";
 import { Avatar, Empty } from "@/components/ui";
 import { DailyButton, PickForm } from "./PredictForms";
 
@@ -161,6 +163,7 @@ function Board({ rows, overall }: { rows: PredictLeader[]; overall?: boolean }) 
 /** The prediction game: free coins every day, picks on matches and champions, leaderboards and prizes. */
 export default async function PredictPage({ searchParams }: { searchParams: Promise<{ t?: string }> }) {
   const sp = await searchParams;
+  const { discordInvite } = await siteSettings();
   const member = await getMember();
   const [tournaments, rules, overall, wallet] = await Promise.all([
     api<{ data: PredictTournament[] }>("/predict/tournaments").then((r) => r.data),
@@ -196,6 +199,7 @@ export default async function PredictPage({ searchParams }: { searchParams: Prom
           ) : discordEnabled() ? (
             <a href="/api/auth/discord?next=/predict" className="btn btn-primary">เข้าสู่ระบบด้วย Discord เพื่อรับเหรียญ</a>
           ) : null}
+          <DiscordJoin href={discordInvite} className="mt" />
         </div>
         <div className="ladder-hero-stats">
           <div><strong>{wallet ? wallet.coins : "-"}</strong><span>เหรียญของคุณ</span></div>

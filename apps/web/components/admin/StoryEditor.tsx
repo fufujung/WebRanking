@@ -7,7 +7,7 @@ import type { Story } from "@/lib/types";
 type Row = { key: number; title: string; url: string };
 
 /** ต้นเรื่อง: the organizer pastes Facebook post links, gives each a title, and orders them. */
-export function StoryEditor({ tournamentId, stories }: { tournamentId: string; stories: Story[] }) {
+export function StoryEditor({ owner, stories }: { owner: { tournamentId: string } | { seasonId: string }; stories: Story[] }) {
   let next = stories.length;
   const [rows, setRows] = useState<Row[]>(stories.length ? stories.map((s, i) => ({ key: i, title: s.title ?? "", url: s.url })) : [{ key: 0, title: "", url: "" }]);
   const [state, setState] = useState<FormState>();
@@ -21,7 +21,7 @@ export function StoryEditor({ tournamentId, stories }: { tournamentId: string; s
   });
   return (
     <div className="card stack">
-      <p className="muted small" style={{ margin: 0 }}>วางลิงก์โพสต์ Facebook (ตั้งโพสต์เป็นสาธารณะ คนอื่นถึงเปิดอ่านได้) ใส่หัวข้อได้ เรียงลำดับด้วยปุ่ม ↑ ↓ แล้วกดบันทึก ขึ้นในหน้ารายการและหน้า ต้นเรื่อง</p>
+      <p className="muted small" style={{ margin: 0 }}>วางลิงก์โพสต์ Facebook (ตั้งโพสต์เป็นสาธารณะ คนอื่นถึงเปิดอ่านได้) ใส่หัวข้อได้ เรียงลำดับด้วยปุ่ม ↑ ↓ แล้วกดบันทึก ขึ้นใน{"seasonId" in owner ? "" : "หน้ารายการและ"}หน้า ต้นเรื่อง</p>
       {rows.map((r, i) => (
         <div key={r.key} className="story-editor-row">
           <label>
@@ -41,7 +41,7 @@ export function StoryEditor({ tournamentId, stories }: { tournamentId: string; s
       ))}
       <div className="row">
         <button type="button" className="btn" onClick={() => setRows((x) => [...x, { key: ++next + Date.now(), title: "", url: "" }])} disabled={rows.length >= 30}>+ เพิ่มโพสต์</button>
-        <button type="button" className="btn btn-primary" disabled={pending} onClick={() => start(async () => setState(await saveStories(tournamentId, rows.map(({ title, url }) => ({ title, url })))))}>
+        <button type="button" className="btn btn-primary" disabled={pending} onClick={() => start(async () => setState(await saveStories(owner, rows.map(({ title, url }) => ({ title, url })))))}>
           {pending ? "กำลังบันทึก…" : "บันทึกต้นเรื่อง"}
         </button>
       </div>

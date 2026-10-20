@@ -21,6 +21,7 @@ const MAIN: { href: string; label: string; icon: IconName }[] = [
 ];
 
 const MORE: { href: string; label: string; icon: IconName }[] = [
+  { href: "/admin/settings", label: "ตั้งค่าเว็บ · Discord", icon: "site" },
   { href: "/admin/keys", label: "API keys", icon: "key" },
   { href: "/rankings/players", label: "ดู Ranking หน้าเว็บ", icon: "ranking" },
 ];

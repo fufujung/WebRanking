@@ -53,7 +53,7 @@ before(async () => {
 after(async () => {
   server.close();
   await prisma.$disconnect();
-  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 const line = (side: "A" | "B", playerId: string, pts = 5, award: string | null = null) => ({ side, playerId, pts, reb: 1, blk: 0, stl: 0, ast: 1, lbr: 0, award });
@@ -337,5 +337,39 @@ describe("story posts (ต้นเรื่อง)", () => {
     assert.equal((await call("GET", `/tournaments/${t.id}/stories`, undefined, reader)).status, 200);
     const listed = (await ok("GET", "/special/stories")).data.find((x: any) => x.id === t.id);
     assert.equal(listed.stories.length, 1);
+  });
+
+  test("a season keeps its own story posts, before it has any event", async () => {
+    const season = await ok("POST", "/special/seasons", { name: "Story Season", startDate: "2026-11-01T00:00:00Z" });
+    const saved = await ok("PUT", `/special/seasons/${season.id}/stories`, { stories: [{ title: "เปิดซีซั่น", url: "https://www.facebook.com/ot/posts/9" }] });
+    assert.deepEqual(saved.data.map((s: any) => s.title), ["เปิดซีซั่น"]);
+    assert.equal((await call("PUT", `/special/seasons/${season.id}/stories`, { stories: [{ url: "https://evil.example/" }] })).status, 400);
+    assert.equal((await call("PUT", `/special/seasons/${season.id}/stories`, { stories: [] }, reader)).status, 403);
+    assert.equal((await call("PUT", "/special/seasons/nope/stories", { stories: [] })).status, 404);
+    const all = await ok("GET", "/special/stories");
+    assert.equal(all.seasons.find((x: any) => x.id === season.id).stories[0].url, "https://www.facebook.com/ot/posts/9");
+    const one = await ok("GET", `/special/stories?seasonId=${season.id}`);
+    assert.deepEqual([one.data.length, one.seasons.length], [0, 1]);
+    // Deleting the season takes its posts with it.
+    await ok("DELETE", `/special/seasons/${season.id}`);
+    assert.equal(await prisma.tournamentStory.count({ where: { seasonId: season.id } }), 0);
+  });
+});
+
+describe("site settings (Discord invite button)", () => {
+  test("admins set the Discord invite; only discord.gg / discord.com/invite links are taken", async () => {
+    assert.deepEqual(await ok("GET", "/settings"), { discordInvite: null });
+    assert.equal((await ok("PATCH", "/settings", { discordInvite: "discord.gg/OverTime" })).discordInvite, "https://discord.gg/OverTime");
+    assert.equal((await ok("PATCH", "/settings", { discordInvite: "https://discord.com/invite/abc-123" })).discordInvite, "https://discord.com/invite/abc-123");
+    for (const bad of ["https://evil.example/discord.gg/x", "http://discord.gg/abc", "https://discord.gg.evil.example/abc", "javascript:alert(1)", "https://discord.gg/abc?x=<script>"]) {
+      const res = await call("PATCH", "/settings", { discordInvite: bad });
+      assert.equal(res.status, 400, bad);
+      assert.match(res.body.details.th, /ลิงก์เชิญ Discord/);
+    }
+    assert.equal((await call("PATCH", "/settings", { discordInvite: "https://discord.gg/abc" }, reader)).status, 403);
+    assert.equal((await call("GET", "/settings", undefined, reader)).body.discordInvite, "https://discord.com/invite/abc-123");
+    // Sending nothing changes nothing; "" clears it.
+    assert.equal((await ok("PATCH", "/settings", {})).discordInvite, "https://discord.com/invite/abc-123");
+    assert.equal((await ok("PATCH", "/settings", { discordInvite: "" })).discordInvite, null);
   });
 });

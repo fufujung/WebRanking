@@ -14,6 +14,8 @@ import { MobileHeader } from "@/components/MobileHeader";
 import { WatchCoins } from "@/components/WatchCoins";
 import { AdBanner, AdPopupSlot } from "@/components/ads/Ads";
 import { HideOnAdmin } from "@/components/ads/HideOnAdmin";
+import { DiscordJoin } from "@/components/DiscordJoin";
+import { siteSettings } from "@/lib/settings";
 
 export const metadata: Metadata = {
   title: { default: "Tournament Ranking", template: "%s · Tournament Ranking" },
@@ -23,6 +25,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const admin = await isAdmin();
   const member = await getMember();
+  const { discordInvite } = await siteSettings();
   const theme = (await cookies()).get("theme")?.value === "light" ? "light" : "dark";
   return (
     <html lang="th" data-theme={theme === "light" ? "light" : undefined}>
@@ -45,6 +48,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/predict">ทายผล</Link>
               <Link href="/blacklist">Blacklist</Link>
               {admin && <Link href="/admin">จัดการข้อมูล</Link>}
+              <DiscordJoin href={discordInvite} className="nav-discord" label="Discord" />
               {member ? (
                 <Link href="/me" className="nav-me" title="โปรไฟล์ของฉัน">
                   {member.avatar ? <img src={member.avatar} alt="" /> : null}
@@ -60,6 +64,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <button className="btn btn-primary" type="submit">ค้นหา</button>
             </form>
             <ThemeToggle initial={theme} />
+            <DiscordJoin href={discordInvite} className="header-discord" label="" />
             <MobileHeader />
             </div>
           </div>
@@ -79,6 +84,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <span className="row" style={{ gap: 16 }}>
               <span>Tournament Ranking</span>
               <Link href="/blacklist">⛔ Blacklist</Link>
+              <DiscordJoin href={discordInvite} className="btn-sm" />
             </span>
             {/* Only organizers need the API docs; visitors don't see the link. */}
             {admin && (

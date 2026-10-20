@@ -20,9 +20,9 @@ interface StoryEvent {
 /** ต้นเรื่อง: the Facebook posts behind each "เล่นเก่งปากเก่ง" event, for anyone who wants to follow the story. */
 export default async function StoryPage({ searchParams }: { searchParams: Promise<{ season?: string }> }) {
   const sp = await searchParams;
-  const [{ data: seasons }, { data: events }] = await Promise.all([
+  const [{ data: seasons }, { data: events, seasons: seasonStories = [] }] = await Promise.all([
     api<{ data: SpecialSeason[] }>("/special/seasons"),
-    api<{ data: StoryEvent[] }>(`/special/stories${qs({ seasonId: sp.season })}`),
+    api<{ data: StoryEvent[]; seasons?: { id: string; name: string; stories: Story[] }[] }>(`/special/stories${qs({ seasonId: sp.season })}`),
   ]);
   return (
     <>
@@ -41,7 +41,16 @@ export default async function StoryPage({ searchParams }: { searchParams: Promis
           ))}
         </nav>
       )}
-      {events.length === 0 ? (
+      {seasonStories.map((x) => (
+        <section key={x.id} className="mt card stack">
+          <div className="row between">
+            <h2 style={{ margin: 0 }}><Link href={`/special?season=${x.id}`}>📅 {x.name}</Link></h2>
+            <span className="muted small">ต้นเรื่องของทั้งซีซั่น</span>
+          </div>
+          <StoryList stories={x.stories} />
+        </section>
+      ))}
+      {events.length === 0 && seasonStories.length === 0 ? (
         <Empty>ยังไม่มีต้นเรื่อง</Empty>
       ) : (
         events.map((e) => (

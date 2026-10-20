@@ -54,7 +54,7 @@ before(async () => {
 after(async () => {
   server.close();
   await prisma.$disconnect();
-  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 const line = (side: "A" | "B", playerId: string, pts = 5) => ({ side, playerId, pts, reb: 1, blk: 0, stl: 0, ast: 1, lbr: 0 });

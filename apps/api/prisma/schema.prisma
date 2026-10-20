@@ -192,6 +192,7 @@ model SpecialSeason {
   game        Game?          @relation(fields: [gameId], references: [id], onDelete: SetNull)
   players     SeasonPlayer[]
   tournaments Tournament[]
+  stories     TournamentStory[]
 
   @@index([gameId])
 }
@@ -602,16 +603,27 @@ model RewardCode {
   @@index([label])
 }
 
-/// "ต้นเรื่อง": the Facebook posts behind an event, in the order the organizer put them.
+/// "ต้นเรื่อง": the Facebook posts behind an event or a whole season, in the order the organizer put them.
+/// Exactly one of tournamentId / seasonId is set.
 model TournamentStory {
   id           String   @id @default(cuid())
-  tournamentId String
+  tournamentId String?
+  seasonId     String?
   title        String?
   url          String
   position     Int
   createdAt    DateTime @default(now())
 
-  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  tournament Tournament?    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  season     SpecialSeason? @relation(fields: [seasonId], references: [id], onDelete: Cascade)
 
   @@index([tournamentId, position])
+  @@index([seasonId, position])
+}
+
+/// Site-wide settings the organizer changes from the admin pages (one row per key), such as the Discord invite link.
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }
