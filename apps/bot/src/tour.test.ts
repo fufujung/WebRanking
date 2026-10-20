@@ -411,7 +411,7 @@ before(async () => {
 after(async () => {
   server.close();
   await prisma.$disconnect();
-  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 describe("time and names", () => {

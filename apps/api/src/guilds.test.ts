@@ -53,7 +53,7 @@ before(async () => {
 after(async () => {
   server.close();
   await prisma.$disconnect();
-  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 const D = { lead: "100000000001", amy: "100000000002", bob: "100000000003", cat: "100000000004", eve: "100000000005" };
