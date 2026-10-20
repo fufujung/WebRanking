@@ -365,10 +365,10 @@ paths:
       - { name: discordId, in: query, schema: { type: string }, description: "Also return this account's own pick (admin key only)" }
     get:
       tags: [Predictions]
-      summary: A tournament's markets (each match and the champion) with how the coins are split
-      description: Counts and percentages only; who picked what is never listed. Markets open, settle, refund and reopen with the bracket.
+      summary: A tournament's markets (each match, each game of a BO3+ series, and the champion) with how the coins are split
+      description: "Counts and percentages only; who picked what is never listed. Markets open, settle, refund and reopen with the bracket. kind MATCH = the series, GAME = one game of it (key `<match>#<n>`, settled from the recorded game scores; unplayed games and series without game scores are refunded), CHAMPION = the winner of the tournament."
       responses:
-        "200": { description: "{ tournament, markets: [{ id, kind, key, number, status, open, locksAt, winnerTeamId, score, pool, people, options: [{ team, coins, people, percent }], mine, topWinners }] }" }
+        "200": { description: "{ tournament, markets: [{ id, kind, key, game, match, number, status, open, locksAt, winnerTeamId, score, pool, people, options: [{ team, coins, people, percent }], mine, topWinners }] }" }
         "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/predict/leaderboard:
     get:
@@ -1769,10 +1769,13 @@ components:
           type: array
           items:
             type: object
-            required: [name]
+            description: Either name (with uid, server, discordId) or playerId to pick a known player (their name, UID, server and Discord are filled in)
             properties:
               name: { type: string, description: In-game name, used to match scoreboard rows }
+              uid: { type: string, nullable: true }
+              server: { type: string, nullable: true }
               discordId: { type: string, nullable: true }
+              playerId: { type: string, description: Pick a known player instead of typing name and UID }
         captainDiscordId: { type: string, nullable: true }
         override: { type: boolean, default: false, description: "Organizer: ignore closed registration / the roster lock" }
     BracketResultInput:

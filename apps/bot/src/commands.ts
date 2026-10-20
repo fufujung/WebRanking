@@ -131,6 +131,17 @@ const tourCommand: ApplicationCommandData = {
       options: [{ type: O.Integer, name: "match", description: "เลขแมตช์", required: true, minValue: 1 }, tournamentOption],
     },
     { type: O.Subcommand, name: "bracket", description: "ดูสายการแข่งและผล", options: [tournamentOption] },
+    {
+      type: O.Subcommand,
+      name: "addteam",
+      description: "ผู้จัดจัดทีมเอง: เลือกผู้เล่นจากรายชื่อสำรองหรือรายชื่อซีซั่น (ไม่ต้องพิมพ์ชื่อ/UID)",
+      options: [
+        { type: O.String, name: "team", description: "ชื่อทีม", required: true, maxLength: 100 },
+        ...[1, 2, 3, 4, 5].map((n) => ({ type: O.String, name: `pick${n}`, description: `ผู้เล่นคนที่ ${n} (พิมพ์ชื่อ UID ตำแหน่ง หรือแรงค์เพื่อค้นหา)`, autocomplete: true, required: n === 1 }) as const),
+        { type: O.User, name: "captain", description: "หัวหน้าทีม (ไม่ใส่ = ไม่มี ผู้จัดดูแลทีมเอง)" },
+        tournamentOption,
+      ],
+    },
     { type: O.Subcommand, name: "kick", description: "เอาทีมออก (ก่อนเริ่มแข่ง)", options: [teamOption("team", "ทีม", true), tournamentOption] },
     { type: O.Subcommand, name: "end", description: "จบทัวร์นาเมนต์ตอนนี้ (แมตช์ที่เหลือไม่ต้องแข่ง) และลบห้องแข่งได้", options: [tournamentOption] },
     { type: O.Subcommand, name: "cleanup", description: "ลบห้องแข่งทั้งหมดของทัวร์นี้ (หลังจบ)", options: [tournamentOption] },

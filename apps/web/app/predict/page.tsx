@@ -16,11 +16,67 @@ function marketState(m: Market) {
   if (m.status === "SETTLED") return { text: "มีผลแล้ว", cls: "badge" };
   if (m.status === "REFUNDED") return { text: "คืนเหรียญแล้ว", cls: "badge" };
   if (m.open) return { text: m.locksAt ? `เปิดทายถึง ${fmtThaiTime(m.locksAt)}` : "เปิดทาย", cls: "badge badge-accent" };
-  if (m.kind === "MATCH" && !m.locksAt && m.status === "OPEN") return { text: "รอตั้งเวลาแข่ง", cls: "badge" };
+  if (m.kind !== "CHAMPION" && !m.locksAt && m.status === "OPEN") return { text: "รอตั้งเวลาแข่ง", cls: "badge" };
   return { text: "ปิดทายแล้ว รอผล", cls: "badge" };
 }
 
-function MarketCard({ m, coins, member }: { m: Market; coins: number | null; member: boolean }) {
+function Options({ m }: { m: Market }) {
+  return (
+    <ul className="market-options">
+      {m.options.map((o) => {
+        const won = m.winnerTeamId === o.team.id;
+        return (
+          <li key={o.team.id} className={won ? "market-won" : ""}>
+            <div className="row between">
+              <span className="entity">
+                <strong>{won ? "✓ " : ""}{o.team.name}</strong>
+              </span>
+              <span className="muted small">{o.percent}% · {o.coins} เหรียญ · {o.people} คน</span>
+            </div>
+            <div className="market-bar" aria-hidden><span style={{ width: `${o.percent}%` }} /></div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function Mine({ m }: { m: Market }) {
+  if (!m.mine) return null;
+  return (
+    <p className="small market-mine">
+      คุณทาย <strong>{m.options.find((o) => o.team.id === m.mine!.teamId)?.team.name ?? "ทีม"}</strong> {m.mine.amount} เหรียญ
+      {m.mine.payout !== null && (m.status === "REFUNDED" ? " · ได้คืนแล้ว" : m.mine.payout > 0 ? ` · ได้ ${m.mine.payout} เหรียญ 🎉` : " · ทายพลาด")}
+    </p>
+  );
+}
+
+/** Each game of a series (BO3, BO5) with its own pool, folded under the match. */
+function Games({ games, coins, member }: { games: Market[]; coins: number | null; member: boolean }) {
+  const open = games.filter((g) => g.open).length;
+  return (
+    <details className="market-games" open={games.some((g) => g.mine) || undefined}>
+      <summary>🎯 ทายรายเกม · {games.length} เกม{open ? ` (เปิด ${open})` : ""}</summary>
+      <p className="muted small">แต่ละเกมแบ่งเหรียญแยกกัน เกมที่ไม่ได้แข่ง (เช่นจบ 3-0 ใน BO5) หรือบันทึกผลไม่มีคะแนนรายเกม คืนเหรียญ</p>
+      {games.map((g) => {
+        const state = marketState(g);
+        return (
+          <div key={g.id} className="market-game">
+            <div className="row between">
+              <strong>เกม {g.game}</strong>
+              <span className={state.cls}>{state.text}</span>
+            </div>
+            <Options m={g} />
+            <Mine m={g} />
+            {g.open && member && coins !== null && <PickForm market={g} coins={coins} />}
+          </div>
+        );
+      })}
+    </details>
+  );
+}
+
+function MarketCard({ m, games, coins, member }: { m: Market; games: Market[]; coins: number | null; member: boolean }) {
   const state = marketState(m);
   return (
     <article className={`card market-card ${m.open ? "market-open" : ""}`}>
@@ -56,6 +112,7 @@ function MarketCard({ m, coins, member }: { m: Market; coins: number | null; mem
       {m.topWinners.length > 0 && (
         <p className="muted small">ได้มากสุด: {m.topWinners.map((w) => `${w.name} +${w.won}`).join(", ")}</p>
       )}
+      {games.length > 0 && <Games games={games} coins={coins} member={member} />}
     </article>
   );
 }
@@ -114,9 +171,12 @@ export default async function PredictPage({ searchParams }: { searchParams: Prom
     active ? api<{ data: PredictLeader[] }>(`/predict/leaderboard${qs({ tournamentId: active.id, limit: 20 })}`).then((r) => r.data) : [],
     active?.season ? api<{ data: PredictLeader[] }>(`/predict/leaderboard${qs({ seasonId: active.season.id, limit: 20 })}`).then((r) => r.data) : null,
   ]);
-  const markets = view?.markets ?? [];
-  const open = markets.filter((m) => m.open);
-  const rest = markets.filter((m) => !m.open);
+  const all = view?.markets ?? [];
+  // Per-game markets show inside their match's card.
+  const markets = all.filter((m) => m.kind !== "GAME");
+  const gamesOf = (m: Market) => (m.kind === "MATCH" ? all.filter((g) => g.kind === "GAME" && g.match === m.key) : []);
+  const open = markets.filter((m) => m.open || gamesOf(m).some((g) => g.open));
+  const rest = markets.filter((m) => !open.includes(m));
 
   return (
     <>
@@ -165,7 +225,7 @@ export default async function PredictPage({ searchParams }: { searchParams: Prom
               <Empty>ยังไม่มีแมตช์ให้ทาย</Empty>
             ) : (
               <div className="grid grid-2 market-grid">
-                {[...open, ...rest].map((m) => <MarketCard key={m.id} m={m} coins={wallet?.coins ?? null} member={Boolean(member)} />)}
+                {[...open, ...rest].map((m) => <MarketCard key={m.id} m={m} games={gamesOf(m)} coins={wallet?.coins ?? null} member={Boolean(member)} />)}
               </div>
             )}
           </section>
@@ -194,7 +254,7 @@ export default async function PredictPage({ searchParams }: { searchParams: Prom
           <ul>
             <li>เข้าครั้งแรกรับ {rules.welcome} เหรียญ จากนั้นกดรับวันละ {rules.daily} เหรียญ เข้าต่อเนื่องได้เพิ่มวันละ {rules.streakStep} (สูงสุด +{rules.streakMax * rules.streakStep})</li>
             <li>เปิดเว็บดูระหว่างมีการแข่งสด ได้ {rules.watch} เหรียญทุก {rules.watchEveryMinutes} นาที (วันละไม่เกิน {rules.watchPerDay} ครั้ง)</li>
-            <li>ทายแต่ละคู่ได้จนถึงเวลาเริ่มแข่ง ทายแชมป์ได้จนกว่าจะเริ่มแข่งรอบแรก เปลี่ยนหรือยกเลิกได้ก่อนปิด</li>
+            <li>ทายแต่ละคู่ได้จนถึงเวลาเริ่มแข่ง คู่ที่แข่ง BO3/BO5 ทายผลรายเกมแยกได้ด้วย ทายแชมป์ได้จนกว่าจะเริ่มแข่งรอบแรก เปลี่ยนหรือยกเลิกได้ก่อนปิด</li>
             <li>ผู้เล่นทายแมตช์ของทีมตัวเองไม่ได้ และทายแชมป์รายการที่ตัวเองลงแข่งไม่ได้</li>
             <li>ชนะบาย ชนะเพราะอีกทีมไม่มา หรือไม่มีใครทายถูก ทุกคนได้เหรียญคืน</li>
             <li>เหรียญซื้อขายไม่ได้และไม่มีมูลค่าเป็นเงิน ผู้จัดแจกรางวัล (โค้ดส่วนลด อุปกรณ์เกมมิ่ง) ตามอันดับบนตาราง</li>

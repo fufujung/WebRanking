@@ -670,8 +670,11 @@ export interface MarketOption {
 
 export interface Market {
   id: string;
-  kind: "MATCH" | "CHAMPION";
+  kind: "MATCH" | "GAME" | "CHAMPION";
   key: string;
+  /** Per-game markets: the game in the series (1..BO) and the match key they belong to. */
+  game: number | null;
+  match: string | null;
   number: number | null;
   stage: string | null;
   round: number | null;
@@ -727,6 +730,6 @@ export interface Wallet {
   welcome: number;
   watchedToday: number;
   rules: PredictRules;
-  bets: { id: string; teamId: string; teamName: string; amount: number; payout: number | null; createdAt: string; market: { id: string; kind: "MATCH" | "CHAMPION"; key: string; status: Market["status"]; winnerTeamId: string | null; tournament: { id: string; name: string } } }[];
+  bets: { id: string; teamId: string; teamName: string; amount: number; payout: number | null; createdAt: string; market: { id: string; kind: "MATCH" | "GAME" | "CHAMPION"; key: string; label: string; status: Market["status"]; winnerTeamId: string | null; tournament: { id: string; name: string } } }[];
   rewards: Reward[];
 }

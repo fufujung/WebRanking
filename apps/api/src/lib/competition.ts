@@ -254,9 +254,30 @@ const teamDiscordIds = (captain: string | null | undefined, input: RosterIn, mem
 const extraMembers = (captain: string | null | undefined, input: RosterIn, members: string[]) =>
   [...new Set(members)].filter((id) => id !== captain && !input.players.some((p) => p.discordId === id));
 
+/**
+ * Organizers can put players on a roster by picking them ({ playerId }) instead of typing name and UID:
+ * each pick becomes the player's in-game name, UID, server and Discord account (from their profile or
+ * their substitute sign-up).
+ */
+async function withPicked(body: unknown) {
+  const b = body as { players?: unknown } | null;
+  if (!b || typeof b !== "object" || !Array.isArray(b.players)) return body;
+  const ids = b.players.map((p) => (p && typeof p === "object" && "playerId" in p ? String((p as { playerId: unknown }).playerId) : null)).filter((x): x is string => Boolean(x));
+  if (!ids.length) return body;
+  const found = await prisma.player.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, uid: true, server: true, discordId: true, reserve: { select: { discordId: true } } } });
+  const byId = new Map(found.map((p) => [p.id, p]));
+  const players = b.players.map((p) => {
+    if (!p || typeof p !== "object" || !("playerId" in p)) return p;
+    const pl = byId.get(String((p as { playerId: unknown }).playerId));
+    if (!pl) throw fail(404, "Player not found", "ไม่พบผู้เล่นที่เลือก (อาจถูกลบไปแล้ว)");
+    return { name: pl.name, uid: pl.uid, server: pl.server, discordId: pl.discordId ?? pl.reserve?.discordId ?? null };
+  });
+  return { ...b, players };
+}
+
 /** A team signs up (from Discord, or added by an organizer with override). */
-export function register(tournamentId: string, body: unknown) {
-  const input = registrationInput.parse(body);
+export async function register(tournamentId: string, body: unknown) {
+  const input = registrationInput.parse(await withPicked(body));
   return serial(async () => {
     const t = await tournamentOr404(tournamentId);
     if (!input.override && !t.registrationOpen) throw fail(409, "Registration is closed", "ปิดรับสมัครแล้ว");
@@ -294,8 +315,8 @@ export function register(tournamentId: string, body: unknown) {
 }
 
 /** Replaces a team's roster (and optionally its captain). Locked once the first match starts, unless override. */
-export function setRoster(tournamentId: string, teamId: string, body: unknown) {
-  const input = rosterInput.parse(body);
+export async function setRoster(tournamentId: string, teamId: string, body: unknown) {
+  const input = rosterInput.parse(await withPicked(body));
   return serial(async () => {
     const t = await tournamentOr404(tournamentId);
     const entry = await prisma.tournamentEntry.findUnique({ where: { tournamentId_teamId: { tournamentId, teamId } } });
@@ -493,7 +514,7 @@ async function liveContext(tournamentId: string, ref: string, allowDone = false)
 
 const wins = (bestOf: number) => Math.ceil(bestOf / 2);
 /** A match's best of: the final can be set longer (or shorter) than the other rounds. */
-const bestOfFor = (t: { format: string | null; bestOf: number; finalBestOf: number | null }, s: Pick<Slot, "stage" | "round">, slots: Pick<Slot, "stage" | "round">[]) =>
+export const bestOfFor = (t: { format: string | null; bestOf: number; finalBestOf: number | null }, s: Pick<Slot, "stage" | "round">, slots: Pick<Slot, "stage" | "round">[]) =>
   t.format && isFinal(t.format as Format, s, slots) ? (t.finalBestOf ?? t.bestOf) : t.bestOf;
 
 /** Undoes results and deletes the series behind them (other than `keep`). */
