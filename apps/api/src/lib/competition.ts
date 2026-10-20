@@ -3,6 +3,7 @@
  * walkovers, disputes and results. Bracket rules live in bracket.ts; this file loads
  * and saves them.
  */
+import { assertOnSeason } from "./seasons.js";
 import { randomInt } from "node:crypto";
 import type { BracketMatch, Prisma, Tournament } from "@prisma/client";
 import { z } from "zod";
@@ -281,7 +282,9 @@ export function register(tournamentId: string, body: unknown) {
         if (captainElsewhere) throw fail(409, "This captain already leads another team", `คุณเป็นหัวหน้าทีม ${captainElsewhere.team.name} อยู่แล้ว`);
       }
       const entry = await tx.tournamentEntry.create({ data: { tournamentId, teamId: team.id, captainDiscordId: input.captainDiscordId ?? null, memberDiscordIds: JSON.stringify(members) } });
-      await replaceRoster(tx, entry.id, await resolveRoster(tx, team.id, input.players));
+      const roster = await resolveRoster(tx, team.id, input.players);
+      await assertOnSeason(tx, t, roster.map((r) => r.playerId));
+      await replaceRoster(tx, entry.id, roster);
       // A new team invalidates a seeded-but-not-started bracket.
       if (t.bracketStatus === "DRAFT") await dropDraft(tx, tournamentId);
       return team.id;
@@ -312,7 +315,9 @@ export function setRoster(tournamentId: string, teamId: string, body: unknown) {
         }
         await tx.tournamentEntry.update({ where: { id: entry.id }, data: { captainDiscordId: input.captainDiscordId } });
       }
-      await replaceRoster(tx, entry.id, await resolveRoster(tx, teamId, input.players));
+      const roster = await resolveRoster(tx, teamId, input.players);
+      await assertOnSeason(tx, t, roster.map((r) => r.playerId));
+      await replaceRoster(tx, entry.id, roster);
     });
     return entryView(tournamentId, teamId);
   });

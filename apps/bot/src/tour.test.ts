@@ -1540,3 +1540,58 @@ describe("/blacklist in Discord", () => {
     assert.match(reply(mine), /ยังไม่มีใครติด Blacklist/);
   });
 });
+
+describe("/season in Discord", () => {
+  test("organizers create a season and add players; anyone sees the list; a season's event takes only those players", async () => {
+    const empty = command("season", "list", {}, captain(0));
+    await bot.onCommand(empty);
+    assert.match(JSON.stringify(last(empty.replies)), /ยังไม่มีซีซั่น/);
+
+    const no = command("season", "create", { name: "Season 1", start: "1/10/2026" }, captain(0));
+    await bot.onCommand(no);
+    assert.match(text(last(no.replies)), /ผู้จัดเท่านั้น/);
+    const badDay = command("season", "create", { name: "Season 1", start: "soon" });
+    await bot.onCommand(badDay);
+    assert.match(text(last(badDay.replies)), /อ่านวันที่ไม่ออก/);
+    const create = command("season", "create", { name: "Season 1", start: "1/10/2026", end: "31/12/2026" });
+    await bot.onCommand(create);
+    assert.match(text(last(create.replies)), /สร้าง \*\*Season 1\*\* แล้ว/);
+
+    const pick = command("season", "add", { focused: "season", value: "sea" });
+    await bot.onAutocomplete(pick);
+    const seasonId = last<any>(pick.replies)[0].value;
+    const season = await api.get<any>(`/special/seasons/${seasonId}`);
+    assert.equal(season.startDate, "2026-09-30T17:00:00.000Z", "the day starts at midnight Thai time");
+
+    const add = command("season", "add", { season: seasonId, players: "Kite 81000108; UID 7730586 Lynx; Ghost" });
+    await bot.onCommand(add);
+    const added = text(last(add.replies));
+    assert.match(added, /เพิ่ม 2 คน: Kite \(81000108\) 🆕, Lynx \(7730586\) 🆕/);
+    assert.match(added, /⚠️ Ghost: ไม่พบ UID/);
+
+    const list = command("season", "players", { season: seasonId }, captain(0));
+    await bot.onCommand(list);
+    const embed = JSON.stringify(last(list.replies));
+    assert.match(embed, /Season 1 · ผู้เล่น 2 คน/);
+    assert.match(embed, /Kite · 81000108/);
+
+    // A tournament made for the season: special, and only those players may sign up.
+    const tour = command("tour", "create", { name: "S1 Showdown", format: "SINGLE_ELIMINATION", start: bkk(48 * 60), roster_min: 1, roster_max: 3, season: seasonId });
+    await bot.onCommand(tour);
+    assert.match(text(last(tour.replies)), /⭐ รายการพิเศษ เล่นเก่งปากเก่ง · Season 1: ลงแข่งได้เฉพาะคนที่มีชื่อในซีซั่น/);
+    const made = (await api.get<any>(`/special/seasons/${seasonId}`)).tournaments[0];
+    const t = await api.get<any>(`/tournaments/${made.id}`);
+    assert.deepEqual([t.special, t.season.name], [true, "Season 1"]);
+    const refused = await api.post<any>(`/tournaments/${made.id}/registrations`, { teamName: "Strangers", players: [{ name: "Nobody", uid: "1234999" }] }).catch((e) => e);
+    assert.equal(refused.status, 403);
+    assert.match(refused.details.th, /ยังไม่มีชื่อในรายชื่อ Season 1/);
+
+    const who = command("season", "remove", { focused: "player", value: "lyn", season: seasonId });
+    await bot.onAutocomplete(who);
+    const lynx = last<any>(who.replies)[0].value;
+    const remove = command("season", "remove", { season: seasonId, player: lynx });
+    await bot.onCommand(remove);
+    assert.match(text(last(remove.replies)), /เอา Lynx · 7730586 ออกจาก Season 1 แล้ว/);
+    assert.equal((await api.get<any>(`/special/seasons/${seasonId}`)).players.length, 1);
+  });
+});

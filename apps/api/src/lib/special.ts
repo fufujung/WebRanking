@@ -16,6 +16,7 @@ import { emptyPlayerStats, statLineSelect, statsByPlayer } from "./stats.js";
 import { positionField } from "./validate.js";
 import { teamSummary } from "./selects.js";
 import { ranksOf } from "./solo.js";
+import { currentSeason, listSeasons, seasonPlayerIds } from "./seasons.js";
 
 const noControl = /^[^\u0000-\u001f\u007f]*$/;
 const FACEBOOK_HOSTS = /^(?:[a-z0-9-]+\.)*(?:facebook\.com|fb\.com|fb\.me|m\.me)$/i;
@@ -255,22 +256,35 @@ export async function importReserve(body: unknown) {
   return { added, skipped };
 }
 
-const specialLines = (where: object = {}, gameId?: string | null) =>
-  prisma.matchPlayerStat.findMany({ where: { ...where, match: { tournament: { special: true, ...(gameId ? { gameId } : {}) } } }, select: statLineSelect });
+const specialLines = (where: object = {}, gameId?: string | null, seasonId?: string | null) =>
+  prisma.matchPlayerStat.findMany({ where: { ...where, match: { tournament: { special: true, ...(gameId ? { gameId } : {}), ...(seasonId ? { seasonId } : {}) } } }, select: statLineSelect });
 
-/** The special board: MMR ladder, players still placing, per-player stats, the events and the substitutes list. */
-export async function specialBoard(gameId?: string | null) {
-  const [board, lines, events, reserve, ranks] = await Promise.all([
-    playerBoard(gameId, new Date(), true),
-    specialLines({}, gameId),
+/**
+ * The special board: MMR ladder, players still placing, per-player stats, the events and the substitutes list.
+ * With seasonId it shows one season: the ladder of the players on its list (the MMR carries on across
+ * seasons), the stats and events of that season only. seasons lists them all for a picker.
+ */
+export async function specialBoard(gameId?: string | null, seasonId?: string | null) {
+  const season = seasonId ? await prisma.specialSeason.findUnique({ where: { id: seasonId }, select: { id: true, name: true, gameId: true, startDate: true, endDate: true } }) : null;
+  if (seasonId && !season) throw notFound("Season");
+  const game = gameId ?? season?.gameId ?? null;
+  const [board, lines, events, reserve, ranks, seasons, current, roster] = await Promise.all([
+    playerBoard(game, new Date(), true),
+    specialLines({}, game, seasonId),
     prisma.tournament.findMany({
-      where: { special: true, ...(gameId ? { gameId } : {}) },
+      where: { special: true, ...(game ? { gameId: game } : {}), ...(seasonId ? { seasonId } : {}) },
       orderBy: { startDate: "desc" },
-      select: { id: true, name: true, status: true, startDate: true, _count: { select: { matches: true } } },
+      select: { id: true, name: true, status: true, startDate: true, seasonId: true, _count: { select: { matches: true } } },
     }),
-    reserveList(false, gameId),
-    reserveRanks(gameId),
+    reserveList(false, game),
+    reserveRanks(game),
+    listSeasons(game),
+    currentSeason(game),
+    seasonPlayerIds(seasonId),
   ]);
+  const inSeason = <T extends { id: string }>(rows: T[]) => (roster ? rows.filter((r) => roster.has(r.id)) : rows);
+  // A season's ladder ranks its own players; movement is measured on the whole ladder, so it is left out.
+  const ranked = roster ? withRanks(inSeason(board.ranked).map(({ rank, ...r }) => ({ ...r, rankChange: null as number | null })), (r) => r.mmr) : board.ranked;
   const stats = statsByPlayer(lines);
   const players = await prisma.player.findMany({ where: { id: { in: [...stats.keys()] } }, select: playerSelect });
   const statRows = withRanks(
@@ -280,9 +294,12 @@ export async function specialBoard(gameId?: string | null) {
     (p) => p.stats.pts,
   );
   return {
-    ranked: board.ranked,
-    placing: board.placing,
-    tiers: tierCounts(board.ranked),
+    season: season ? { ...season, players: roster!.size } : null,
+    seasons,
+    currentSeasonId: current?.id ?? null,
+    ranked,
+    placing: inSeason(board.placing),
+    tiers: tierCounts(ranked),
     stats: statRows,
     events: events.map(({ _count, ...t }) => ({ ...t, matches: _count.matches })),
     reserve,

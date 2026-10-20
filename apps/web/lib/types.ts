@@ -134,6 +134,9 @@ export interface Tournament {
   teamSize?: number;
   /** A special "เล่นเก่งปากเก่ง" event: results move only the separate special MMR and stats. */
   special?: boolean;
+  /** The season of a special event: only players on its list may play. */
+  seasonId?: string | null;
+  season?: { id: string; name: string } | null;
   location: string | null;
   description: string | null;
   status: Status;
@@ -592,7 +595,36 @@ export interface ReservePlayer {
   discordId?: string | null;
 }
 
+/** A season of the special events: the players allowed to play in its events. The special MMR carries on across seasons. */
+export interface SpecialSeason {
+  id: string;
+  name: string;
+  gameId: string | null;
+  startDate: string;
+  endDate: string | null;
+  /** How many players and events (in a list). */
+  players?: number;
+  events?: number;
+}
+
+export interface SeasonView extends Omit<SpecialSeason, "players" | "events"> {
+  game: { id: string; name: string } | null;
+  players: (Player & { specialMmr: number; addedAt: string })[];
+  tournaments: { id: string; name: string; status: Status; startDate: string; matches: number }[];
+}
+
+export interface SeasonAddResult {
+  added: { id: string; name: string; uid: string | null; created: boolean }[];
+  already: number;
+  problems: { line: number; text: string; reason: string }[];
+}
+
 export interface SpecialBoard {
+  /** The season shown (null = every special event). */
+  season: (SpecialSeason & { players: number }) | null;
+  seasons: SpecialSeason[];
+  /** The latest season that has started. */
+  currentSeasonId: string | null;
   /** The ranks substitutes pick from: the game's in-game ranks, lowest first. */
   ranks: GameRank[];
   ranked: LadderPlayer[];

@@ -1099,8 +1099,33 @@ if (!(await page.locator(".btn-discord").count())) {
   await rAdmin.screenshot({ path: OUT + "/reserve-admin.png", fullPage: true });
   await rAdmin.goto(base + "/admin/tournaments/new");
   await rAdmin.locator('input[name="special"]').waitFor();
-  await rAdminCtx.close();
   step("organizer sees Facebook and phone on /admin/reserve and fixed the position and rank; the tournament form has the special tick box");
+
+  // Seasons: create one, paste its players (name + UID), pick it for a special tournament, see it on /special.
+  await rAdmin.click('.side-nav a[href="/admin/seasons"]');
+  const seasonName = `Season ${uniq}`;
+  await rAdmin.fill('form:has-text("สร้างซีซั่นใหม่") input[name="name"]', seasonName);
+  await rAdmin.fill('form:has-text("สร้างซีซั่นใหม่") input[name="startDate"]', "2026-01-01");
+  await rAdmin.click("button:has-text('+ สร้างซีซั่น')");
+  await rAdmin.waitForURL(/\/admin\/seasons\/[^/]+$/);
+  const seasonId = rAdmin.url().split("/").pop();
+  await rAdmin.fill('textarea[name="text"]', `Rookie${uniq} 99${uniq}\nGhost`);
+  await rAdmin.click("button:has-text('+ เพิ่มเข้าซีซั่น')");
+  await rAdmin.locator(".success:has-text('เพิ่ม 1 คน')").waitFor();
+  await rAdmin.locator(".error:has-text('บรรทัด 2: Ghost')").waitFor();
+  await rAdmin.locator(`tr:has-text('Rookie${uniq}'):has-text('99${uniq}')`).waitFor();
+  await rAdmin.screenshot({ path: OUT + "/season-admin.png", fullPage: true });
+  await rAdmin.goto(base + "/admin/tournaments/new");
+  await rAdmin.check('input[name="special"]');
+  if (!(await rAdmin.locator(`select[name="seasonId"] option[value="${seasonId}"]`).count())) throw new Error("the season is not offered on the tournament form");
+  await rAdminCtx.close();
+  await page.goto(base + `/special?season=${seasonId}`);
+  await page.locator(`h1:has-text('${seasonName}')`).waitFor();
+  await page.locator(`#season li:has-text('Rookie${uniq}')`).waitFor();
+  await page.locator(`.season-tabs .tab-active:has-text('${seasonName}')`).waitFor();
+  await page.goto(base + "/special?season=all");
+  await page.locator(".season-tabs .tab-active:has-text('ทุกซีซั่น')").waitFor();
+  step("organizer made a season and pasted its players (a line without a UID is reported); the tournament form offers it; /special shows the season and its list");
 
   await page.goto(base + "/me");
   page.once("dialog", (d) => d.accept());

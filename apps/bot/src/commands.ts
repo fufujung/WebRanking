@@ -1,5 +1,6 @@
 import { ApplicationCommandOptionType, ApplicationCommandType, ChannelType, PermissionFlagsBits, type ApplicationCommandData, type ApplicationCommandOptionData, type ApplicationCommandSubCommandData } from "discord.js";
 import { blacklistCommand } from "./blacklist.js";
+import { seasonCommand } from "./season.js";
 import { PLAYER_SORTS } from "./format.js";
 import { POSITIONS } from "./positions.js";
 
@@ -69,6 +70,7 @@ const tourCommand: ApplicationCommandData = {
         { type: O.Boolean, name: "grand_final_reset", description: "Double Elimination: ถ้าสายล่างชนะนัดชิง ให้แข่งนัดตัดสินอีกนัด (ค่าเริ่มต้น เปิด)" },
         { type: O.String, name: "game", description: "ชื่อเกม", maxLength: 100 },
         { type: O.Boolean, name: "special", description: "รายการพิเศษ เล่นเก่งปากเก่ง: สถิติและ MMR แยกจากรายการหลัก" },
+        { type: O.String, name: "season", description: "ซีซั่นเล่นเก่งปากเก่ง: ลงแข่งได้เฉพาะคนที่มีชื่อในซีซั่น (เลือกแล้วเป็นรายการพิเศษ)", autocomplete: true },
       ]),
     },
     {
@@ -281,4 +283,5 @@ export const commandData: ApplicationCommandData[] = [
   rosterCommand,
   poolCommand,
   blacklistCommand,
+  seasonCommand,
 ];

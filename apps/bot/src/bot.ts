@@ -54,6 +54,7 @@ import { JsonStore } from "./store.js";
 import { PoolManager } from "./pool.js";
 import { parseSeriesScore, TourManager } from "./tour.js";
 import { BlacklistCommands } from "./blacklist.js";
+import { SeasonCommands } from "./season.js";
 import { positionLabel } from "./positions.js";
 import type { BracketMatch, Draft, Match, MatchDetail, Page, PlayerDetail, RankedPlayer, RankedTeam, TeamDetail, Tournament } from "./types.js";
 
@@ -109,6 +110,7 @@ export class TournamentBot {
   readonly tour: TourManager;
   readonly pool: PoolManager;
   readonly blacklist: BlacklistCommands;
+  readonly season: SeasonCommands;
   private trackers = new Map<string, AnnounceTracker>();
   /** Result posts being saved right now, so two admins can't record one twice. */
   private busy = new Set<string>();
@@ -128,6 +130,7 @@ export class TournamentBot {
     this.tour = new TourManager({ api: this.api, dataDir: opts.dataDir, siteUrl: opts.siteUrl, log: this.log, now: opts.now });
     this.pool = new PoolManager({ api: this.api, dataDir: opts.dataDir, siteUrl: opts.siteUrl, log: this.log, random: opts.random });
     this.blacklist = new BlacklistCommands(this.api, opts.siteUrl);
+    this.season = new SeasonCommands(this.api, opts.siteUrl);
   }
 
   settingsFor(guildId: string): Settings {
@@ -438,9 +441,10 @@ export class TournamentBot {
     if (["tour", "register", "roster"].includes(i.commandName)) return this.tour.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     if (i.commandName === "pool") return this.pool.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     try {
-      if (i.commandName === "blacklist") {
+      if (i.commandName === "blacklist" || i.commandName === "season") {
         const info = memberInfo(i.member as MemberLike, i.memberPermissions);
-        return await this.blacklist.onCommand(i, canSave(info, this.settingsFor(i.guildId!)));
+        const organizer = canSave(info, this.settingsFor(i.guildId!));
+        return await (i.commandName === "season" ? this.season.onCommand(i, organizer) : this.blacklist.onCommand(i, organizer));
       }
       switch (i.commandName) {
         case "setup":
@@ -509,6 +513,7 @@ export class TournamentBot {
     if (["tour", "register", "roster"].includes(i.commandName)) return this.tour.onAutocomplete(i);
     if (i.commandName === "pool") return this.pool.onAutocomplete(i);
     if (i.commandName === "blacklist") return this.blacklist.onAutocomplete(i);
+    if (i.commandName === "season") return this.season.onAutocomplete(i);
     const focused = i.options.getFocused(true);
     try {
       if (i.commandName === "setup" && focused.name === "tournament") {

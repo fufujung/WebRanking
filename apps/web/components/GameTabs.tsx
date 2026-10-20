@@ -14,6 +14,7 @@ export function GameTabs({ games, active }: { games: Game[]; active: string | nu
     const next = new URLSearchParams(params.toString());
     next.delete("game");
     next.delete("teamId");
+    next.delete("season");
     const q = next.toString();
     router.push(q ? `${path}?${q}` : path);
     router.refresh();

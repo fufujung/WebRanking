@@ -9,16 +9,18 @@ import { DeleteButton } from "@/components/admin/DeleteButton";
 import { BracketAdmin } from "@/components/admin/BracketAdmin";
 import { RosterManager } from "@/components/admin/RosterManager";
 import { allGames } from "@/lib/games";
+import { allSeasons } from "@/lib/seasons";
 import { SoloAdmin } from "@/components/admin/SoloAdmin";
 
 export const metadata = { title: "แก้ไขทัวร์นาเมนต์" };
 
 export default async function EditTournament({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string }> }) {
-  const [t, teams, sp, games] = await Promise.all([
+  const [t, teams, sp, games, seasons] = await Promise.all([
     apiOrNull<TournamentDetail>(`/tournaments/${encodeURIComponent((await params).id)}`),
     fetchAll<Team>("/teams"),
     searchParams,
     allGames(),
+    allSeasons(),
   ]);
   if (!t) notFound();
   const [bracket, solo] = await Promise.all([
@@ -36,7 +38,7 @@ export default async function EditTournament({ params, searchParams }: { params:
         </div>
       </div>
       {sp.saved && <div className="success" style={{ marginBottom: 16 }}>บันทึกแล้ว</div>}
-      <TournamentForm key={t.gameId ?? ""} tournament={t} games={games} />
+      <TournamentForm key={t.gameId ?? ""} tournament={t} games={games} seasons={seasons} />
       {solo && (
         <>
           <h2 className="mt" id="solo">ลงเดี่ยว / สุ่มทีม</h2>
