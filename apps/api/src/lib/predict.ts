@@ -229,9 +229,29 @@ async function syncTournament(tx: Tx, tournamentId: string) {
   } else if (champ && champ.status !== "REFUNDED") await applyOutcome(tx, champ.id, { kind: "refund" });
 }
 
+const lastSync = new Map<string, number>();
+/** How stale a tournament's markets may be when a page or the stream overlay reads them. */
+const READ_SYNC_MS = 30_000;
+
+async function runSync(tournamentId: string) {
+  await prisma.$transaction((tx) => syncTournament(tx, tournamentId), { timeout: 30_000 });
+  lastSync.set(tournamentId, Date.now());
+}
+
 /** Opens, settles, refunds or reopens a tournament's markets to match its bracket. Safe to call any time. */
 export function syncPredictions(tournamentId: string) {
-  return serial(() => prisma.$transaction((tx) => syncTournament(tx, tournamentId), { timeout: 30_000 }));
+  return serial(() => runSync(tournamentId));
+}
+
+/**
+ * For reads (pages, the stream overlay, the bot's cards): every change to a bracket already syncs on the spot,
+ * so a read only re-checks now and then. Syncing on every read queued all requests behind a write transaction,
+ * which a stream overlay polling every few seconds turned into constant load.
+ */
+function syncForRead(tournamentId: string) {
+  const fresh = (at = lastSync.get(tournamentId)) => at !== undefined && Date.now() - at < READ_SYNC_MS;
+  if (fresh()) return Promise.resolve();
+  return serial(() => (fresh() ? Promise.resolve() : runSync(tournamentId)));
 }
 
 /** Can people still pick in this market right now? */
@@ -340,7 +360,7 @@ export async function setMarketStatus(marketId: string, body: unknown) {
 export async function tournamentMarkets(tournamentId: string, discordId?: string | null, now = new Date()) {
   const t = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true, name: true, bracketStatus: true } });
   if (!t) throw notFound("Tournament");
-  await syncPredictions(tournamentId);
+  await syncForRead(tournamentId);
   const [markets, slots] = await Promise.all([
     prisma.market.findMany({ where: { tournamentId }, include: { bets: { include: { predictor: { select: { name: true, avatarUrl: true } } } } } }),
     prisma.bracketMatch.findMany({ where: { tournamentId }, select: { code: true, number: true, stage: true, round: true, scheduledAt: true, status: true, scoreA: true, scoreB: true } }),
@@ -487,7 +507,7 @@ export async function predictionTournaments(now = new Date()) {
     select: { id: true, name: true, bracketStatus: true, special: true, startDate: true, season: { select: { id: true, name: true } }, _count: { select: { entries: true } } },
   });
   const shown = list.filter((t) => t._count.entries >= 2);
-  for (const t of shown) if (t.bracketStatus !== "DONE") await syncPredictions(t.id);
+  for (const t of shown) if (t.bracketStatus !== "DONE") await syncForRead(t.id);
   const markets = await prisma.market.findMany({ where: { tournamentId: { in: shown.map((t) => t.id) } }, include: { _count: { select: { bets: true } } } });
   return shown
     .map(({ _count, ...t }) => {
