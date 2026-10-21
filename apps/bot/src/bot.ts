@@ -133,7 +133,12 @@ export class TournamentBot {
     this.pool = new PoolManager({ api: this.api, dataDir: opts.dataDir, siteUrl: opts.siteUrl, log: this.log, random: opts.random });
     this.blacklist = new BlacklistCommands(this.api, opts.siteUrl);
     this.season = new SeasonCommands(this.api, opts.siteUrl);
-    this.predict = new PredictManager({ api: this.api, dataDir: opts.dataDir, siteUrl: opts.siteUrl, log: this.log, channelsFor: (tid) => this.predictionChannels(tid) });
+    this.predict = new PredictManager({ api: this.api, dataDir: opts.dataDir, siteUrl: opts.siteUrl, log: this.log, channelsFor: (tid) => this.predictionChannels(tid),
+      canManage: (tid, userId, info) => {
+        const tour = this.tour.tours.get(tid);
+        return Boolean(tour && this.tour.isOrganizer(tour, userId, info));
+      },
+    });
   }
 
   /** Prediction cards go to the tournament's own announcement channel when the bot runs it, else to every server's. */
@@ -316,7 +321,7 @@ export class TournamentBot {
     const [prefix, action, sourceId] = i.customId.split(":");
     const info = memberInfo(i.member as MemberLike, i.memberPermissions);
     if (prefix === "tp") return this.pool.onButton(i, info);
-    if (prefix === "pk") return this.predict.onButton(i);
+    if (prefix === "pk") return this.predict.onButton(i, info);
     if (prefix !== "tr" || !sourceId) return;
     if (TOUR_ACTIONS.has(action)) return this.tour.onButton(i, info);
     const pending = this.pending.get(sourceId);
@@ -455,7 +460,7 @@ export class TournamentBot {
   async onCommand(i: ChatInputCommandInteraction) {
     if (["tour", "register", "roster"].includes(i.commandName)) return this.tour.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     if (i.commandName === "pool") return this.pool.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
-    if (i.commandName === "coins" || i.commandName === "predict") return this.predict.onCommand(i);
+    if (i.commandName === "coins" || i.commandName === "predict") return this.predict.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     try {
       if (i.commandName === "blacklist" || i.commandName === "season") {
         const info = memberInfo(i.member as MemberLike, i.memberPermissions);

@@ -19,6 +19,7 @@ import {
   StringSelectMenuBuilder,
   TextInputStyle,
   UserSelectMenuBuilder,
+  type APIEmbed,
   type AutocompleteInteraction,
   type ButtonInteraction,
   type ChatInputCommandInteraction,
@@ -68,6 +69,8 @@ export interface TourConfig {
   createdAt: number;
   /** The tournament's name when the panel was last drawn, for the message after it is deleted on the website. */
   name?: string;
+  /** What the bracket looked like at the last sync, to notice changes made on the website (not through the bot). */
+  seen?: { status?: string; panel?: string; draft?: string | null; roster?: string };
 }
 
 export interface Room {
@@ -86,6 +89,8 @@ export interface Room {
   reminded: boolean;
   /** The last "past the deadline" notice posted, so each situation is announced once. */
   lateNotice: string | null;
+  /** Whether the header shows a dispute, to redraw it when an organizer settles one on the website. */
+  disputed?: boolean;
 }
 
 export interface TeamVoice {
@@ -384,6 +389,8 @@ export class TourManager {
   /** Tournaments being synced right now, so overlapping ticks don't create a room twice. */
   private syncing = new Map<string, Promise<void>>();
   private syncRounds = 0;
+  /** Rooms where the bot's own reopen button already said the result was cancelled. */
+  private saidReopen = new Set<string>();
 
   constructor(opts: TourOptions) {
     this.api = opts.api;
@@ -882,6 +889,8 @@ export class TourManager {
 
   private async start(client: Client, tour: TourConfig) {
     const b = await this.api.post<Bracket>(`/tournaments/${tour.tournamentId}/bracket/start`, {});
+    // Announced here, so the next sync does not announce the start again as a website change.
+    this.save(tour.tournamentId, { seen: { ...this.tours.get(tour.tournamentId)?.seen, status: "LIVE" } });
     const draft = tour.draft ? await this.fetchMessage(client, tour.draft.channelId, tour.draft.messageId) : null;
     await draft?.edit({ embeds: [overviewEmbed(b, this.siteUrl)], components: [] }).catch(() => null);
     await this.refreshPanel(client, this.tours.get(tour.tournamentId)!);
@@ -1379,6 +1388,7 @@ export class TourManager {
     try {
       await this.api.post(`/tournaments/${tour.tournamentId}/bracket/matches/${m.id}/reopen`, { force });
       await this.roomSay(client, tour, m.id, `↩️ ผู้จัด <@${by}> ยกเลิกผล M${m.number} ให้แข่งใหม่ (เช็คอินใหม่ด้วย)`);
+      this.saidReopen.add(m.id);
       await this.sync(client, tour.tournamentId);
       return { content: `✅ ยกเลิกผล M${m.number} แล้ว` };
     } catch (e) {
@@ -1435,6 +1445,7 @@ export class TourManager {
       return;
     }
     if (tour.name !== b.name) this.save(tid, { name: b.name });
+    await this.followWebsite(client, tid, b);
     if (b.status !== "LIVE" && b.status !== "DONE") return;
     const now = this.now().getTime();
 
@@ -1469,11 +1480,18 @@ export class TourManager {
         await this.removeTeamVoices(client, tid, m.id);
       } else if (m.status === "READY" && room.closed) {
         await this.refreshHeader(client, tour, b, m);
-        this.saveRoom(tid, m.id, { closed: false, lateNotice: null, reminded: false });
+        // Reopened on the website: say so in the room (the bot's own button already did).
+        if (!this.saidReopen.delete(m.id)) await this.roomSay(client, tour, m.id, `↩️ ผู้จัดยกเลิกผล M${m.number} ให้แข่งใหม่ (เช็คอินใหม่ด้วย)`);
+        this.saveRoom(tid, m.id, { closed: false, lateNotice: null, reminded: false, disputed: m.disputed });
         await this.restoreTeamVoices(client, tour, m.id, m);
       } else if (m.status === "READY") {
         // Rooms made before teams had their own voice rooms get them now.
         if (room.teamVoice === undefined) await this.restoreTeamVoices(client, tour, m.id, m);
+        // A dispute raised or settled (on the website too): the header shows it.
+        if (Boolean(room.disputed) !== m.disputed) {
+          await this.refreshHeader(client, tour, b, m);
+          this.saveRoom(tid, m.id, { disputed: m.disputed });
+        }
         if ((m.scheduledAt ?? null) !== room.scheduledAt) {
           await this.refreshHeader(client, tour, b, m);
           await this.roomSay(client, tour, m.id, m.scheduledAt ? `⏰ เวลาแข่งใหม่: ${when(m.scheduledAt, "F")} (${when(m.scheduledAt, "R")})` : "⏰ ยกเลิกเวลาแข่งเดิม รอผู้จัดตั้งเวลาใหม่");
@@ -1536,6 +1554,48 @@ export class TourManager {
     } else if (b.status === "LIVE" && fresh.finished) {
       this.save(tid, { finished: false });
     }
+  }
+
+  /**
+   * Changes made on the website rather than through the bot: the sign-up post, the draft and the rooms
+   * follow them (teams added or removed, registration opened or closed, the draw, the start, a reset,
+   * roster changes). The first look after the bot starts only remembers what is there.
+   */
+  private async followWebsite(client: Client, tid: string, b: Bracket) {
+    const tour = this.tours.get(tid)!;
+    const seen = tour.seen;
+    const now = {
+      status: b.status,
+      panel: JSON.stringify([b.name, b.registrationOpen, b.status, b.maxTeams, b.teams.map((t) => [t.id, t.name, t.roster.length])]),
+      draft: b.status === "DRAFT" ? JSON.stringify([b.positions, b.teams.map((t) => [t.id, t.seed]), b.matches.map((m) => [m.code, m.teamA?.id ?? null, m.teamB?.id ?? null])]) : null,
+      roster: JSON.stringify(b.teams.map((t) => [t.id, teamMemberIds(t)])),
+    };
+    this.save(tid, { seen: now });
+    if (!seen) return;
+    const announce = async (content: string, embeds: APIEmbed[] = []) => {
+      const channel = await client.channels.fetch(tour.announceChannelId).catch(() => null);
+      if (channel?.isSendable()) await channel.send({ content, embeds, allowedMentions: { parse: [] } }).catch(() => null);
+    };
+    if (b.status === "LIVE" && seen.status !== undefined && seen.status !== "LIVE" && seen.status !== "DONE") {
+      // Started on the website: the same as the bot's start button.
+      const draft = tour.draft ? await this.fetchMessage(client, tour.draft.channelId, tour.draft.messageId) : null;
+      await draft?.edit({ embeds: [overviewEmbed(b, this.siteUrl)], components: [] }).catch(() => null);
+      await announce(`🏁 **${b.name}** เริ่มแข่งแล้ว! ห้องแข่งของแต่ละคู่จะขึ้นในหมวดของทัวร์นี้ (เห็นเฉพาะผู้เล่นสองทีมและผู้จัด)`, [overviewEmbed(b, this.siteUrl)]);
+    }
+    if ((b.status === "NONE" || b.status === "DRAFT") && (seen.status === "LIVE" || seen.status === "DONE")) {
+      // The bracket was reset on the website: its match rooms mean nothing any more.
+      const rooms = await this.cleanup(client, this.tours.get(tid)!);
+      this.save(tid, { announced: [], finished: false });
+      await announce(`↩️ ผู้จัดรีเซ็ตสายแข่ง **${b.name}**${rooms ? ` ลบห้องแข่งเดิม ${rooms} ห้อง` : ""} รอจัดสายใหม่`);
+    }
+    if (now.draft && now.draft !== seen.draft) await this.postDraft(client, this.tours.get(tid)!, b).catch((e) => this.log("draft post failed:", e?.message));
+    if (b.status === "NONE" && tour.draft) {
+      const draft = await this.fetchMessage(client, tour.draft.channelId, tour.draft.messageId);
+      await draft?.delete().catch(() => null);
+      this.save(tid, { draft: null });
+    }
+    if (now.panel !== seen.panel && tour.panel) await this.refreshPanel(client, this.tours.get(tid)!);
+    if (now.roster !== seen.roster && b.status === "LIVE") await this.refreshTeamRooms(client, this.tours.get(tid)!).catch((e) => this.log("room refresh failed:", e?.message));
   }
 
   /** The tournament was deleted on the website: its sign-up post, draft and match rooms go too. */

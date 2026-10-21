@@ -670,8 +670,12 @@ export interface MarketOption {
 
 export interface Market {
   id: string;
-  kind: "MATCH" | "GAME" | "CHAMPION";
+  /** CUSTOM: a pair the organizer set up by hand ("ทีม A vs ทีม B"). */
+  kind: "MATCH" | "GAME" | "CHAMPION" | "CUSTOM";
   key: string;
+  /** What to call it: "ใครจะเป็นแชมป์", "คู่ที่ 3", or a hand-made pair's name. */
+  title: string;
+  label: string | null;
   /** Per-game markets: the game in the series (1..BO) and the match key they belong to. */
   game: number | null;
   match: string | null;
@@ -730,7 +734,7 @@ export interface Wallet {
   welcome: number;
   watchedToday: number;
   rules: PredictRules;
-  bets: { id: string; teamId: string; teamName: string; amount: number; payout: number | null; createdAt: string; market: { id: string; kind: "MATCH" | "GAME" | "CHAMPION"; key: string; label: string; status: Market["status"]; winnerTeamId: string | null; tournament: { id: string; name: string } } }[];
+  bets: { id: string; teamId: string; teamName: string; amount: number; payout: number | null; createdAt: string; market: { id: string; kind: Market["kind"]; key: string; label: string; status: Market["status"]; winnerTeamId: string | null; tournament: { id: string; name: string } } }[];
   rewards: Reward[];
 }
 

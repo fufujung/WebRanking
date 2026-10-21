@@ -920,3 +920,8 @@ label.pick-row { display: flex; flex-direction: row; align-items: center; text-a
 @media (max-width: 760px) { .header[data-open="menu"] .nav a.nav-discord { margin-left: 0; justify-content: center; } }
 .header-discord { display: none; }
 @media (max-width: 760px) { .header-discord { display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: 10px; } }
+
+/* Admin: prediction controls on a tournament */
+.predict-admin-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--border); }
+.predict-admin-row .row { flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 640px) { .predict-admin-row .row { justify-content: flex-start; } }

@@ -55,6 +55,23 @@ client.once(Events.ClientReady, async (c) => {
   const predict = () => bot.predict.sync(c).catch((e) => console.error("[bot] ซิงก์ทายผลไม่สำเร็จ:", e.message));
   await predict();
   setInterval(predict, 60_000);
+  // Anything saved on the website shows up here within a few seconds: the API counts changes, and a new
+  // count runs both syncs right away instead of waiting for their rounds.
+  let seen: number | null = null;
+  let busy = false;
+  setInterval(async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      const { revision } = await api.get<{ revision: number }>("/revision");
+      if (seen !== null && revision !== seen) await Promise.all([sync(), predict()]);
+      seen = revision;
+    } catch {
+      // The API is restarting or unreachable: the regular rounds keep going.
+    } finally {
+      busy = false;
+    }
+  }, 5_000);
 });
 
 client.on(Events.GuildCreate, (guild) => {

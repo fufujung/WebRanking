@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { discordId } from "../lib/members.js";
-import { cancelBet, claimDaily, COINS, leaderboard, predictionTournaments, placeBet, setMarketStatus, tournamentMarkets, wallet, watchCoins } from "../lib/predict.js";
+import { cancelBet, claimDaily, COINS, createCustomMarket, deleteCustomMarket, leaderboard, predictionTournaments, placeBet, setMarketStatus, setTournamentMarketsStatus, settleCustomMarket, tournamentMarkets, wallet, watchCoins } from "../lib/predict.js";
 import { addCodes, award, codePool, confirmReceived, deleteFreeCodes, deleteReward, listRewards, markNotified, unnotifiedRewards, updateReward } from "../lib/rewards.js";
 
 /**
@@ -63,6 +63,21 @@ predict.post("/members/:discordId/rewards/:id/received", requireAdmin, async (re
 
 predict.patch("/markets/:id", requireAdmin, async (req, res) => {
   res.json(await setMarketStatus(String(req.params.id), req.body));
+});
+/** Close (or open again) every market of a tournament without a result. */
+predict.post("/tournaments/:id/status", requireAdmin, async (req, res) => {
+  res.json(await setTournamentMarketsStatus(String(req.params.id), req.body));
+});
+/** A pair set up by hand ("ทีม A vs ทีม B"), for events without a bracket. */
+predict.post("/tournaments/:id/markets", requireAdmin, async (req, res) => {
+  res.status(201).json(await createCustomMarket(String(req.params.id), req.body));
+});
+predict.post("/markets/:id/settle", requireAdmin, async (req, res) => {
+  res.json(await settleCustomMarket(String(req.params.id), req.body));
+});
+predict.delete("/markets/:id", requireAdmin, async (req, res) => {
+  await deleteCustomMarket(String(req.params.id));
+  res.status(204).end();
 });
 
 predict.get("/codes", requireAdmin, async (_req, res) => {
