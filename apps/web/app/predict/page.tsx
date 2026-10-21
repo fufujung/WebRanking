@@ -8,6 +8,8 @@ import { siteSettings } from "@/lib/settings";
 import { DiscordJoin } from "@/components/DiscordJoin";
 import { Avatar, Empty } from "@/components/ui";
 import { DailyButton, PickForm } from "./PredictForms";
+import { isAdmin } from "@/lib/auth";
+import { LockAll, MarketLock } from "@/components/predict/PredictAdminButtons";
 
 export const metadata = { title: "ทายผล · ใช้เหรียญฟรี ลุ้นรางวัล" };
 
@@ -57,7 +59,7 @@ function Mine({ m }: { m: Market }) {
 }
 
 /** Each game of a series (BO3, BO5) with its own pool, folded under the match. */
-function Games({ games, coins, member }: { games: Market[]; coins: number | null; member: boolean }) {
+function Games({ games, coins, member, lockFor }: { games: Market[]; coins: number | null; member: boolean; lockFor: string | null }) {
   const open = games.filter((g) => g.open).length;
   return (
     <details className="market-games" open={games.some((g) => g.mine) || undefined}>
@@ -74,6 +76,7 @@ function Games({ games, coins, member }: { games: Market[]; coins: number | null
             <Options m={g} />
             <Mine m={g} />
             {g.open && member && coins !== null && <PickForm market={g} coins={coins} />}
+            {lockFor && <MarketLock tournamentId={lockFor} market={g} />}
           </div>
         );
       })}
@@ -81,7 +84,8 @@ function Games({ games, coins, member }: { games: Market[]; coins: number | null
   );
 }
 
-function MarketCard({ m, games, coins, member }: { m: Market; games: Market[]; coins: number | null; member: boolean }) {
+/** lockFor: the tournament id when the viewer is a logged-in admin (shows the close/open buttons), else null. */
+function MarketCard({ m, games, coins, member, lockFor }: { m: Market; games: Market[]; coins: number | null; member: boolean; lockFor: string | null }) {
   const state = marketState(m);
   return (
     <article className={`card market-card ${m.open ? "market-open" : ""}`}>
@@ -114,10 +118,11 @@ function MarketCard({ m, games, coins, member }: { m: Market; games: Market[]; c
         </p>
       )}
       {m.open && member && coins !== null && <PickForm market={m} coins={coins} />}
+      {lockFor && <MarketLock tournamentId={lockFor} market={m} />}
       {m.topWinners.length > 0 && (
         <p className="muted small">ได้มากสุด: {m.topWinners.map((w) => `${w.name} +${w.won}`).join(", ")}</p>
       )}
-      {games.length > 0 && <Games games={games} coins={coins} member={member} />}
+      {games.length > 0 && <Games games={games} coins={coins} member={member} lockFor={lockFor} />}
     </article>
   );
 }
@@ -165,6 +170,7 @@ export default async function PredictPage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   const { discordInvite } = await siteSettings();
   const member = await getMember();
+  const admin = await isAdmin();
   const [tournaments, rules, overall, wallet] = await Promise.all([
     api<{ data: PredictTournament[] }>("/predict/tournaments").then((r) => r.data),
     api<PredictRules>("/predict/rules"),
@@ -228,11 +234,12 @@ export default async function PredictPage({ searchParams }: { searchParams: Prom
               {active.season && <span className="muted small"> · {active.season.name}</span>}
             </h2>
             {!member && <p className="muted small">เข้าสู่ระบบด้วย Discord แล้วทายได้เลย หรือกดปุ่มทายใต้การ์ดแมตช์ในห้อง Discord</p>}
+            {admin && <LockAll tournamentId={active.id} markets={all} />}
             {markets.length === 0 ? (
               <Empty>ยังไม่มีแมตช์ให้ทาย</Empty>
             ) : (
               <div className="grid grid-2 market-grid">
-                {[...open, ...rest].map((m) => <MarketCard key={m.id} m={m} games={gamesOf(m)} coins={wallet?.coins ?? null} member={Boolean(member)} />)}
+                {[...open, ...rest].map((m) => <MarketCard key={m.id} m={m} games={gamesOf(m)} coins={wallet?.coins ?? null} member={Boolean(member)} lockFor={admin ? active.id : null} />)}
               </div>
             )}
           </section>

@@ -1351,7 +1351,20 @@ if (!(await page.locator(".btn-discord").count())) {
   const showMarket = (await apiCall("GET", `/predict/tournaments/${show.id}`)).markets[0];
   const sunId = showMarket.options.find((o) => o.team.name === `Sun ${uniq}`).team.id;
   await apiCall("POST", `/predict/members/${rival}/bets`, { marketId: showMarket.id, teamId: sunId, amount: 5 });
-  await pAdmin.reload();
+  // The organizer can also close and reopen picks right on /predict; members never see those buttons.
+  if (await page.locator(".predict-lock, .predict-lock-all").count()) throw new Error("a member sees the organizer's close buttons on /predict");
+  await pAdmin.goto(base + `/predict?t=${show.id}`);
+  const lockCard = pAdmin.locator(".market-card:has-text('เกมโชว์')");
+  await lockCard.locator("button:has-text('🔒 ปิดรับทาย')").click();
+  await lockCard.locator("button:has-text('🔓 เปิดรับทาย')").waitFor();
+  await lockCard.locator(".badge:has-text('ปิดทายแล้ว')").waitFor();
+  if ((await apiCall("GET", `/predict/tournaments/${show.id}`)).markets[0].status !== "CLOSED") throw new Error("the /predict close button did not close the pair");
+  await pAdmin.locator(".predict-lock-all button:has-text('🔓 เปิดทั้งหมด')").click();
+  await pAdmin.locator(".predict-lock-all .success:has-text('เปิดรับทายทุกคู่แล้ว')").waitFor();
+  await lockCard.locator("button:has-text('🔒 ปิดรับทาย')").waitFor();
+  await pAdmin.screenshot({ path: OUT + "/predict-admin-lock.png", fullPage: true });
+  step("the organizer closed and reopened a pair right on /predict (one card and 'open all'); a member sees no such buttons");
+  await pAdmin.goto(base + `/admin/tournaments/${show.id}#predict`);
   await pairRow.locator("button:has-text('ปิดรับ')").click();
   await pAdmin.locator(".success:has-text('ปิดรับทายแล้ว')").waitFor();
   await pairRow.locator(".badge:has-text('ปิดรับแล้ว')").waitFor();
