@@ -925,3 +925,17 @@ label.pick-row { display: flex; flex-direction: row; align-items: center; text-a
 .predict-admin-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--border); }
 .predict-admin-row .row { flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 640px) { .predict-admin-row .row { justify-content: flex-start; } }
+
+/* Lucky draw admin */
+.draw-keyword { font-size: 20px; }
+.draw-keyword b { color: var(--accent); font-size: 26px; }
+.draw-count { text-align: right; color: var(--muted); }
+.draw-count b { display: block; font-size: 36px; color: var(--text); line-height: 1.1; }
+.draw-winner, .draw-entry { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-soft); flex-wrap: wrap; }
+.draw-winner { border-color: var(--accent); }
+.draw-voided { opacity: .55; border-color: var(--border); }
+.draw-voided strong { text-decoration: line-through; }
+.draw-winner .grow, .draw-entry .grow { flex: 1; min-width: 0; }
+.draw-place { font-weight: 700; color: var(--accent); min-width: 32px; }
+.draw-list { display: flex; flex-direction: column; gap: 6px; max-height: 480px; overflow-y: auto; }
+.draw-entry { padding: 6px 10px; }

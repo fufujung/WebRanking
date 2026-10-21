@@ -744,3 +744,88 @@ export async function settlePair(tournamentId: string, marketId: string, winnerT
 export async function deletePair(tournamentId: string, marketId: string) {
   return predictRun(tournamentId, () => api(`/predict/markets/${encodeURIComponent(marketId)}`, { method: "DELETE" }), "ลบคู่แล้ว คืนเหรียญแล้ว");
 }
+
+// ---------- Lucky draws (สุ่มแจกของบนไลฟ์) ----------
+
+function drawFields(form: FormData) {
+  const minutes = text(form, "minutes");
+  return {
+    title: text(form, "title"),
+    keyword: text(form, "keyword"),
+    prize: orNull(text(form, "prize")),
+    winners: Number(text(form, "winners") || 1),
+    minutes: minutes ? Number(minutes) : null,
+    youtubeUrl: orNull(text(form, "youtubeUrl")),
+    allowDiscord: form.get("allowDiscord") === "on",
+  };
+}
+
+export async function createDraw(_: FormState, form: FormData): Promise<FormState> {
+  let id = "";
+  const res = await run(async () => {
+    id = (await api<{ id: string }>("/draws", { method: "POST", json: drawFields(form) })).id;
+  });
+  if (res) return res;
+  revalidatePath("/admin/draws");
+  redirect(`/admin/draws/${id}`);
+}
+
+export async function updateDraw(id: string, _: FormState, form: FormData): Promise<FormState> {
+  const res = await run(async () => {
+    await api(`/draws/${encodeURIComponent(id)}`, { method: "PATCH", json: drawFields(form) });
+  });
+  revalidatePath(`/admin/draws/${id}`);
+  return res ?? { ok: "บันทึกแล้ว" };
+}
+
+async function drawRun(id: string, fn: () => Promise<unknown>, ok: string): Promise<FormState> {
+  const res = await run(async () => {
+    await fn();
+  });
+  revalidatePath(`/admin/draws/${id}`);
+  revalidatePath("/admin/draws");
+  return res ?? { ok };
+}
+
+const drawPath = (id: string, rest = "") => `/draws/${encodeURIComponent(id)}${rest}`;
+
+export async function openDraw(id: string) {
+  return drawRun(id, () => api(drawPath(id, "/open"), { method: "POST" }), "เปิดรับแล้ว");
+}
+
+export async function closeDraw(id: string) {
+  return drawRun(id, () => api(drawPath(id, "/close"), { method: "POST" }), "ปิดรับแล้ว");
+}
+
+/** Draws the set number of winners, or `count` more (after striking one out). */
+export async function drawNow(id: string, count?: number) {
+  return drawRun(id, () => api(drawPath(id, "/draw"), { method: "POST", json: count ? { count } : {} }), "สุ่มแล้ว");
+}
+
+export async function voidDrawWinner(id: string, entryId: string, voided: boolean) {
+  return drawRun(id, () => api(drawPath(id, `/entries/${encodeURIComponent(entryId)}/void`), { method: "POST", json: { voided } }), voided ? "ตัดสิทธิ์แล้ว" : "คืนสิทธิ์แล้ว");
+}
+
+export async function removeDrawEntry(id: string, entryId: string) {
+  return drawRun(id, () => api(drawPath(id, `/entries/${encodeURIComponent(entryId)}`), { method: "DELETE" }), "ลบชื่อแล้ว");
+}
+
+/** Names typed or pasted by the organizer, one per line. */
+export async function addDrawNames(id: string, _: FormState, form: FormData): Promise<FormState> {
+  let added = 0;
+  let skipped = 0;
+  const res = await run(async () => {
+    ({ added, skipped } = await api<{ added: number; skipped: number }>(drawPath(id, "/entries"), { method: "POST", json: { lines: text(form, "lines") } }));
+  });
+  revalidatePath(`/admin/draws/${id}`);
+  return res ?? { ok: `เพิ่ม ${added} ชื่อ${skipped ? ` (ซ้ำ ${skipped})` : ""}` };
+}
+
+export async function deleteDraw(id: string) {
+  const res = await run(async () => {
+    await api(drawPath(id), { method: "DELETE" });
+  });
+  if (res) return res;
+  revalidatePath("/admin/draws");
+  redirect("/admin/draws");
+}

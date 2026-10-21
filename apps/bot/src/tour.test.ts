@@ -1898,3 +1898,67 @@ describe("prediction controls in Discord", () => {
     assert.match(JSON.stringify(last(me.replies)), /Show Night เกมโชว์: Stars 20 เหรียญ · คืนเหรียญ|Show Night เกมโชว์: Stars 20 เหรียญ · ได้ 20/);
   });
 });
+
+describe("lucky draw in Discord", () => {
+  test("organizers open a draw, fans join from the card once, winners are drawn and announced, a no-show is replaced", async () => {
+    bot.settings.set(GUILD, { ...bot.settingsFor(GUILD), announceChannelId: ANNOUNCE });
+    const [fanA, fanB] = [person(801), person(802)];
+    members.set(fanA, { roles: [], manage: false, name: "LuckyA" });
+    members.set(fanB, { roles: [], manage: false, name: "LuckyB" });
+
+    const denied = command("luckydraw", "new", { title: "แจกเมาส์", keyword: "#OT500" }, fanA);
+    await bot.onCommand(denied);
+    assert.match(text(last(denied.replies)), /สำหรับผู้จัดเท่านั้น/);
+    const made = command("luckydraw", "new", { title: "แจกเมาส์", keyword: "#OT500", winners: 2, minutes: 10, prize: "เมาส์เกมมิ่ง" });
+    await bot.onCommand(made);
+    assert.match(text(last(made.replies)), /เปิดรับแล้ว/);
+
+    const card = announce().sent.find((m) => m.embed?.title === "🎁 Lucky Draw · แจกเมาส์")!;
+    assert.ok(card, "the open draw gets a card");
+    assert.match(card.embed.description, /รางวัล: \*\*เมาส์เกมมิ่ง\*\* \(2 คน\)/);
+    assert.match(card.embed.description, /ปิดรับ <t:\d+:R>/);
+    assert.deepEqual(card.buttons.map((b: any) => b.label), ["เข้าร่วม", "ปิดรับ (ผู้จัด)"]);
+
+    const join = card.buttons[0].custom_id;
+    const first = press(join, fanA, card);
+    await bot.onButton(first);
+    assert.match(text(last(first.replies)), /เข้าร่วมแล้ว/);
+    const twice = press(join, fanA, card);
+    await bot.onButton(twice);
+    assert.match(text(last(twice.replies)), /อยู่แล้ว/);
+    await bot.onButton(press(join, fanB, card));
+    assert.match(card.embed.description, /เข้าร่วมแล้ว \*\*2\*\* คน/);
+
+    // Only organizers close and draw.
+    const roll = card.buttons.find((b: any) => b.custom_id.startsWith("ld:draw:"));
+    assert.equal(roll.label, "สุ่มผู้โชคดี 2 คน (ผู้จัด)");
+    const nope = press(roll.custom_id, fanA, card);
+    await bot.onButton(nope);
+    assert.match(text(last(nope.replies)), /สำหรับผู้จัดเท่านั้น/);
+    const drawn = press(roll.custom_id, OWNER, card);
+    await bot.onButton(drawn);
+    assert.match(text(last(drawn.replies)), /ได้ผู้โชคดีแล้ว: #1 Lucky., #2 Lucky./);
+
+    const winners = announce().sent.find((m) => /ผู้โชคดี \*\*แจกเมาส์\*\* \(เมาส์เกมมิ่ง\)/.test(m.content ?? ""))!;
+    assert.ok(winners, "winners are announced");
+    assert.match(winners.content!, new RegExp(`<@${fanA}>`));
+    assert.match(winners.content!, new RegExp(`<@${fanB}>`));
+    assert.deepEqual([...winners.allowedMentions.users].sort(), [fanA, fanB].sort());
+    assert.match(card.embed.description, /🏆 ผู้โชคดี\n#1 \*\*Lucky.\*\*\n#2 \*\*Lucky.\*\*/);
+    assert.equal(card.buttons.length, 0, "nobody left to draw: no buttons");
+
+    // A late name added on the website; #1 did not claim, so the organizer strikes them out and draws again.
+    const pick = command("luckydraw", "void", { focused: "draw", value: "เมาส์" });
+    await bot.onAutocomplete(pick);
+    const drawId = last<any>(pick.replies)[0].value;
+    await api.post(`/draws/${drawId}/entries`, { source: "MANUAL", name: "หน้างาน" });
+    await bot.onCommand(command("luckydraw", "void", { draw: drawId, place: 1 }));
+    await bot.draws.sync(fakeClient);
+    assert.match(card.embed.description, /~~#1 \*\*Lucky.\*\*~~ \(ตัดสิทธิ์\)/);
+    const again = command("luckydraw", "draw", { draw: drawId });
+    await bot.onCommand(again);
+    assert.match(text(last(again.replies)), /#3 หน้างาน/);
+    assert.ok(announce().sent.some((m) => /ผู้โชคดี \*\*แจกเมาส์\*\*.*\n#3 \*\*หน้างาน\*\*$/m.test(m.content ?? "")), "the replacement is announced once");
+    assert.equal(announce().sent.filter((m) => /ผู้โชคดี \*\*แจกเมาส์\*\*/.test(m.content ?? "")).length, 2);
+  });
+});

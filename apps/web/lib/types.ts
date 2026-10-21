@@ -745,3 +745,40 @@ export interface Story {
   url: string;
   position: number;
 }
+
+/** A free giveaway on stream: people type the keyword in the YouTube live chat or join in Discord. */
+export interface DrawEntry {
+  id: string;
+  source: "YOUTUBE" | "DISCORD" | "MANUAL";
+  externalId: string;
+  name: string;
+  avatarUrl: string | null;
+  createdAt: string;
+  place: number | null;
+  wonAt: string | null;
+  voided: boolean;
+}
+
+export interface LuckyDraw {
+  id: string;
+  title: string;
+  keyword: string;
+  prize: string | null;
+  winners: number;
+  minutes: number | null;
+  youtubeUrl: string | null;
+  videoId: string | null;
+  allowDiscord: boolean;
+  status: "DRAFT" | "OPEN" | "CLOSED";
+  openedAt: string | null;
+  closesAt: string | null;
+  closedAt: string | null;
+  chatError: string | null;
+  nextPollAt: string | null;
+  createdAt: string;
+  winnerList: DrawEntry[];
+}
+
+export interface LuckyDrawDetail extends LuckyDraw {
+  entries: DrawEntry[];
+}
