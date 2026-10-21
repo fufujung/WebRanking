@@ -116,7 +116,9 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
 
 client.on(Events.InteractionCreate, async (i) => {
   // Commands only exist in allowed servers; this also stops buttons on posts copied elsewhere.
-  if (!trusted.has(i.guildId)) return;
+  // The one exception is the "received" button on a prize DM, which only marks the presser's own prize.
+  const prizeDm = !i.guildId && i.isButton() && i.customId.startsWith("pk:got:");
+  if (!prizeDm && !trusted.has(i.guildId)) return;
   try {
     if (i.isChatInputCommand()) await bot.onCommand(i);
     else if (i.isAutocomplete()) await bot.onAutocomplete(i);
