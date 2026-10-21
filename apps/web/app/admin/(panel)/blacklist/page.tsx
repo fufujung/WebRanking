@@ -6,10 +6,12 @@ import { fmtDateTime } from "@/lib/format";
 import { Avatar, Empty } from "@/components/ui";
 import { FilterTabs, ListHead, ListSearch, href } from "@/components/admin/ListParts";
 import { AddBlacklist, BlacklistActions } from "@/components/admin/BlacklistAdmin";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "จัดการ Blacklist" };
 
 export default async function AdminBlacklist({ searchParams }: { searchParams: Promise<{ q?: string; show?: string }> }) {
+  await requireAdmin();
   const sp = await searchParams;
   const show = sp.show === "lifted" || sp.show === "all" ? sp.show : "active";
   const [{ data }, players] = await Promise.all([api<{ data: BlacklistEntry[] }>("/blacklist?status=all&limit=500"), fetchAll<Player>("/players")]);

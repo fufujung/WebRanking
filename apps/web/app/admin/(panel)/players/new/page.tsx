@@ -2,10 +2,12 @@ import { fetchAll } from "@/lib/fetchAll";
 import type { Team } from "@/lib/types";
 import { PlayerForm } from "@/components/admin/PlayerForm";
 import { allGames } from "@/lib/games";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "เพิ่มผู้เล่น" };
 
 export default async function NewPlayer({ searchParams }: { searchParams: Promise<{ teamId?: string; added?: string }> }) {
+  await requireAdmin();
   const sp = await searchParams;
   const [teams, games] = await Promise.all([fetchAll<Team>("/teams"), allGames()]);
   return (

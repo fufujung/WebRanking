@@ -7,10 +7,12 @@ import { DeleteButton } from "@/components/admin/DeleteButton";
 import { TeamInviteAdmin } from "@/components/admin/TeamInviteAdmin";
 import { allGames } from "@/lib/games";
 import { siteOrigin } from "@/lib/site";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "แก้ไขทีม" };
 
 export default async function EditTeam({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdmin();
   const [team, games, origin] = await Promise.all([apiOrNull<TeamDetail>(`/teams/${encodeURIComponent((await params).id)}`), allGames(), siteOrigin()]);
   if (!team) notFound();
   return (

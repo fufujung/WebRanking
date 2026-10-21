@@ -6,12 +6,14 @@ import { fmtDateTime } from "@/lib/format";
 import { Avatar, Empty, Pager, pageOffset } from "@/components/ui";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { ListHead } from "@/components/admin/ListParts";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "จัดการผลการแข่ง" };
 
 const LIMIT = 30;
 
 export default async function AdminMatches({ searchParams }: { searchParams: Promise<{ tournamentId?: string; teamId?: string; sort?: string; page?: string; deleted?: string }> }) {
+  await requireAdmin();
   const sp = await searchParams;
   const offset = pageOffset(sp.page, LIMIT);
   const sort = sp.sort === "created" ? "created" : undefined;

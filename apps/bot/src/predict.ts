@@ -282,6 +282,7 @@ const profile = (u: Profile) => ({ name: (u.globalName || u.username || "ผู�
 
 export class PredictManager {
   readonly cards: JsonStore<Card>;
+  private syncing: Promise<void> = Promise.resolve();
   constructor(
     private opts: {
       api: Api;
@@ -302,8 +303,18 @@ export class PredictManager {
     return this.opts.api;
   }
 
-  /** Posts cards for newly open markets, updates the others, and DMs prize winners. */
-  async sync(client: Client) {
+  /**
+   * Posts cards for newly open markets, updates the others, and DMs prize winners. One round at a time:
+   * the timer, the website watcher and buttons all call this, and two rounds at once posted cards and
+   * sent prize codes twice.
+   */
+  sync(client: Client) {
+    const run = this.syncing.then(() => this.syncOnce(client));
+    this.syncing = run.catch(() => undefined);
+    return run;
+  }
+
+  private async syncOnce(client: Client) {
     const { data } = await this.api.get<{ data: PredictTournament[] }>("/predict/tournaments");
     for (const t of data) {
       const channels = this.opts.channelsFor(t.id);

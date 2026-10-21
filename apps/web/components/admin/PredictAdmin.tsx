@@ -128,7 +128,7 @@ export function RewardActions({ id, status, title }: { id: string; status: strin
         <option value="SENT">ส่งแล้ว</option>
         <option value="RECEIVED">ได้รับแล้ว</option>
       </select>
-      <button type="button" className="btn btn-sm btn-danger" disabled={pending} onClick={() => confirm(`ยกเลิกรางวัล "${title}"?`) && start(async () => setState(await deleteReward(id)))}>ยกเลิก</button>
+      <button type="button" className="btn btn-sm btn-danger" disabled={pending} onClick={() => confirm(`ยกเลิกรางวัล "${title}"? ถ้ามีโค้ด โค้ดนั้นจะถูกตัดทิ้ง (ผู้ชนะอาจเห็นไปแล้ว)`) && start(async () => setState(await deleteReward(id)))}>ยกเลิก</button>
       {state?.error && <span className="error small">{state.error}</span>}
     </span>
   );

@@ -39,13 +39,20 @@ export class Limiter {
   }
 }
 
+const loopback = (addr: string | undefined) => !addr || addr === "::1" || addr.startsWith("127.") || addr.startsWith("::ffff:127.");
+
 /**
- * The visitor's address. Behind the Cloudflare Tunnel, Cloudflare puts it in CF-Connecting-IP;
- * the API itself only listens on this computer, so the header can't be forged from outside.
+ * The visitor's address. Behind the Cloudflare Tunnel (which connects from this computer), Cloudflare puts it
+ * in CF-Connecting-IP. A caller reaching the port directly (another computer on the network, a forwarded
+ * port) could forge that header, so for them the connection's own address counts.
  */
 export function clientIp(req: Request) {
-  return req.header("cf-connecting-ip")?.trim() || req.socket.remoteAddress || "unknown";
+  const socket = req.socket.remoteAddress;
+  return (loopback(socket) && req.header("cf-connecting-ip")?.trim()) || socket || "unknown";
 }
 
-/** Requests that came in from the internet (through Cloudflare), as opposed to the website and bot on this computer. */
-export const fromInternet = (req: Request) => Boolean(req.header("cf-connecting-ip"));
+/**
+ * Requests from outside this computer: through Cloudflare, or straight to the port from the network.
+ * Only the website and the bot on this computer go unlimited.
+ */
+export const fromInternet = (req: Request) => Boolean(req.header("cf-connecting-ip")) || !loopback(req.socket.remoteAddress);

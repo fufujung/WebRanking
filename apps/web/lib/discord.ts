@@ -59,3 +59,9 @@ export async function discordUser(code: string, redirectUri: string): Promise<Di
 }
 
 export const avatarUrl = (u: DiscordUser) => (u.avatar ? `https://cdn.discordapp.com/avatars/${u.id}/${u.avatar}.png?size=128` : null);
+
+/**
+ * Where to send someone after logging in: only a path on this site (a page, its ?query and #section),
+ * never another site ("//evil.example", "/\\evil.example").
+ */
+export const safeNext = (next: string | null | undefined): next is string => Boolean(next && next.length <= 300 && /^\/(?![/\\])[\w\-/?=&#%.]*$/.test(next));

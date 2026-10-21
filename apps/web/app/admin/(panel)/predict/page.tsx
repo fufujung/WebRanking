@@ -6,11 +6,13 @@ import { fmtDate } from "@/lib/format";
 import { Avatar, Empty } from "@/components/ui";
 import { ListHead } from "@/components/admin/ListParts";
 import { CodePaste, DeleteFreeCodes, GiveRewards, OverlayLink, RewardActions } from "@/components/admin/PredictAdmin";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "ทายผล · รางวัล" };
 
 /** Prizes of the prediction game: the pool of shop codes and who has won what. */
 export default async function AdminPredict() {
+  await requireAdmin();
   const [{ data: pool }, { data: rewards }, tournaments, seasons] = await Promise.all([
     api<{ data: { label: string; total: number; left: number }[] }>("/predict/codes"),
     api<{ data: Reward[] }>("/predict/rewards"),

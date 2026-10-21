@@ -5,11 +5,13 @@ import type { LuckyDraw } from "@/lib/types";
 import { Empty } from "@/components/ui";
 import { ListHead } from "@/components/admin/ListParts";
 import { DrawForm } from "@/components/admin/DrawAdmin";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "Lucky Draw" };
 
 /** Free giveaways on stream: every round, and a form for a new one. */
 export default async function AdminDraws() {
+  await requireAdmin();
   const { data } = await api<{ data: (LuckyDraw & { entries: number })[] }>("/draws");
   return (
     <>

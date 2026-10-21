@@ -7,12 +7,14 @@ import { Empty } from "@/components/ui";
 import { AdToggle } from "@/components/admin/AdToggle";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { FilterTabs, ListHead, href } from "@/components/admin/ListParts";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "โฆษณาร้าน" };
 
 const pill = { live: "pill-ok", scheduled: "pill-warn", off: "", ended: "" } as const;
 
 export default async function AdminAds({ searchParams }: { searchParams: Promise<{ show?: string; saved?: string; deleted?: string }> }) {
+  await requireAdmin();
   const sp = await searchParams;
   const ads = (await api<{ data: Ad[] }>("/ads")).data;
   const now = Date.now();

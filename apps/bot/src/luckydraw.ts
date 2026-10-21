@@ -208,11 +208,28 @@ export class DrawManager {
       const e = entries.find((x) => x.place === w.place);
       return `#${w.place} **${w.name}**${e?.source === "DISCORD" ? ` <@${e.externalId}>` : e?.source === "YOUTUBE" ? " (YouTube)" : ""}`;
     });
-    const users = fresh.map((w) => entries.find((x) => x.place === w.place)).filter((e) => e?.source === "DISCORD").map((e) => e!.externalId);
-    await channel
-      .send({ content: [`🎉 ผู้โชคดี **${d.title}**${d.prize ? ` (${d.prize})` : ""}`, ...lines, "ติดต่อรับรางวัลกับผู้จัดได้เลย"].join("\n"), allowedMentions: { users } })
-      .catch((e) => this.opts.log("lucky draw winners failed:", e?.message));
-    this.cards.set(key, { ...this.cards.get(key)!, announced: [...card.announced, ...fresh.map((w) => w.place)] });
+    // Many winners go out in several messages: Discord takes 2000 characters per message.
+    const head = `🎉 ผู้โชคดี **${d.title}**${d.prize ? ` (${d.prize})` : ""}`;
+    const tail = "ติดต่อรับรางวัลกับผู้จัดได้เลย";
+    let announced = card.announced;
+    for (let at = 0; at < fresh.length; ) {
+      let text = at ? "" : head;
+      let end = at;
+      while (end < fresh.length && (text + "\n" + lines[end]).length < 1850) text += (text ? "\n" : "") + lines[end++];
+      if (end === at) text += (text ? "\n" : "") + lines[end++].slice(0, 1800);
+      if (end === fresh.length) text += "\n" + tail;
+      const batch = fresh.slice(at, end);
+      const users = batch.map((w) => entries.find((x) => x.place === w.place)).filter((e) => e?.source === "DISCORD").map((e) => e!.externalId);
+      const sent = await channel.send({ content: text, allowedMentions: { users } }).then(
+        () => true,
+        (e) => (this.opts.log("lucky draw winners failed:", e?.message), false),
+      );
+      // Only what really went out counts as announced; the rest is tried again on the next round.
+      if (!sent) break;
+      announced = [...announced, ...batch.map((w) => w.place)];
+      this.cards.set(key, { ...this.cards.get(key)!, announced });
+      at = end;
+    }
   }
 
   async onButton(i: ButtonInteraction, info: Info) {
@@ -253,7 +270,8 @@ export class DrawManager {
     const before = await this.api.get<DrawView>(`/draws/${encodeURIComponent(drawId)}/public`);
     const n = count ?? (before.winnerList.length ? 1 : undefined);
     const { data } = await this.api.post<{ data: { name: string; place: number }[] }>(`/draws/${encodeURIComponent(drawId)}/draw`, n ? { count: n } : {});
-    return `🎲 ได้ผู้โชคดีแล้ว: ${data.map((w) => `#${w.place} ${w.name}`).join(", ")}`;
+    const text = `🎲 ได้ผู้โชคดีแล้ว: ${data.map((w) => `#${w.place} ${w.name}`).join(", ")}`;
+    return text.length > 1900 ? `${text.slice(0, 1880)}… (ดูครบบนการ์ด)` : text;
   }
 
   async onCommand(i: ChatInputCommandInteraction, info: Info) {

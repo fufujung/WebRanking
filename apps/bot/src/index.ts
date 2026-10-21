@@ -6,6 +6,7 @@ import { createApi } from "./api.js";
 import { TournamentBot } from "./bot.js";
 import { commandData, READ_POST_COMMAND } from "./commands.js";
 import { createGuildInvite, ensureSiteInvite } from "./invite.js";
+import { TrustedGuilds } from "./guilds.js";
 
 const token = process.env.DISCORD_TOKEN?.trim();
 if (!token) {
@@ -25,6 +26,12 @@ const bot = new TournamentBot({
   siteUrl: process.env.SITE_URL ?? "http://localhost:3000",
 });
 
+const trusted = new TrustedGuilds(path.resolve(here, "..", "data", "guilds.json"));
+const leave = (g: { name: string; id: string; leave: () => Promise<unknown> }) => {
+  console.warn(`[bot] ออกจากเซิร์ฟเวอร์ ${g.name} (${g.id}) เพราะไม่ได้รับอนุญาต ถ้าเป็นเซิร์ฟเวอร์ของเรา ใส่ ID นี้ใน DISCORD_GUILD_IDS ใน apps/bot/.env แล้วเปิดบอทใหม่`);
+  return g.leave().catch((e) => console.error("[bot] ออกจากเซิร์ฟเวอร์ไม่สำเร็จ:", (e as Error).message));
+};
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMessageReactions],
   // Reactions on posts from before the bot started arrive as partials.
@@ -33,11 +40,16 @@ const client = new Client({
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`[bot] ออนไลน์แล้วในชื่อ ${c.user.tag} (${c.guilds.cache.size} เซิร์ฟเวอร์)`);
+  trusted.load([...c.guilds.cache.keys()]);
   for (const guild of c.guilds.cache.values()) {
+    if (!trusted.has(guild.id)) {
+      await leave(guild);
+      continue;
+    }
     await guild.commands.set(commandData).catch((e) => console.error(`[bot] ลงทะเบียนคำสั่งใน ${guild.name} ไม่สำเร็จ:`, e.message));
   }
   // The site's "เข้าร่วม Discord" button: fill in an invite when the organizer hasn't set one.
-  const home = c.guilds.cache.first();
+  const home = c.guilds.cache.find((g) => trusted.has(g.id));
   if (home) {
     await ensureSiteInvite(api, () => createGuildInvite(home))
       .then((url) => url && console.log(`[bot] ปุ่มเข้าร่วม Discord บนเว็บใช้ลิงก์ ${url}`))
@@ -83,15 +95,18 @@ client.once(Events.ClientReady, async (c) => {
 });
 
 client.on(Events.GuildCreate, (guild) => {
+  if (!trusted.has(guild.id)) return void leave(guild);
   guild.commands.set(commandData).catch((e) => console.error(`[bot] ลงทะเบียนคำสั่งใน ${guild.name} ไม่สำเร็จ:`, e.message));
 });
 
 client.on(Events.MessageCreate, (m) => {
+  if (!trusted.has(m.guildId)) return;
   bot.onMessage(m).catch((e) => console.error("[bot] message:", e));
 });
 
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
   try {
+    if (!trusted.has(reaction.message.guildId)) return;
     if (reaction.partial) await reaction.fetch();
     await bot.onReaction(reaction, user);
   } catch (e) {
@@ -100,6 +115,8 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
 });
 
 client.on(Events.InteractionCreate, async (i) => {
+  // Commands only exist in allowed servers; this also stops buttons on posts copied elsewhere.
+  if (!trusted.has(i.guildId)) return;
   try {
     if (i.isChatInputCommand()) await bot.onCommand(i);
     else if (i.isAutocomplete()) await bot.onAutocomplete(i);

@@ -19,7 +19,9 @@ const VIDEO = "abcdefghijk";
 let chatPages: Record<string, unknown>[] = [];
 let youtubeError: { status: number; reason: string } | null = null;
 const seen: string[] = [];
-const youtube = http.createServer((req, res) => {
+/** Runs while YouTube is "answering" a chat page, e.g. the organizer closing the draw meanwhile. */
+let duringChat: (() => Promise<void>) | null = null;
+const youtube = http.createServer(async (req, res) => {
   const url = new URL(req.url!, "http://x");
   seen.push(`${url.pathname}?${url.searchParams.get("pageToken") ?? ""}|${url.searchParams.get("key")}`);
   res.setHeader("Content-Type", "application/json");
@@ -32,6 +34,7 @@ const youtube = http.createServer((req, res) => {
     return void res.end(JSON.stringify({ items: live ? [{ liveStreamingDetails: { activeLiveChatId: "chat-1" } }] : [] }));
   }
   const at = Number(url.searchParams.get("pageToken") ?? 0);
+  if (duringChat) await duringChat();
   res.end(JSON.stringify({ ...(chatPages[at] ?? { items: [] }), nextPageToken: String(Math.min(at + 1, chatPages.length)), pollingIntervalMillis: 1000 }));
 });
 await new Promise<void>((r) => youtube.listen(0, r));
@@ -144,6 +147,25 @@ describe("entries from the YouTube live chat", () => {
     chatPages = [{ items: [old, msg("UC10", "#LATE")] }];
     await poll(d.id);
     assert.deepEqual((await ok("GET", `/draws/${d.id}`)).entries.map((e: { externalId: string }) => e.externalId), ["UC10"]);
+  });
+
+  test("messages typed after the draw closed do not count, even mid-read", async () => {
+    const d = await ok("POST", "/draws", { title: "รอบ ปิด", keyword: "#shut", youtubeUrl: VIDEO });
+    await ok("POST", `/draws/${d.id}/open`);
+    const early = msg("UC20", "#shut");
+    early.snippet.publishedAt = new Date().toISOString();
+    await new Promise((r) => setTimeout(r, 20));
+    chatPages = [{ items: [early, msg("UC21", "#shut")] }];
+    // The organizer closes the draw while YouTube is still answering.
+    duringChat = async () => {
+      await prisma.luckyDraw.update({ where: { id: d.id }, data: { status: "CLOSED", closedAt: new Date() } });
+    };
+    try {
+      await poll(d.id);
+    } finally {
+      duringChat = null;
+    }
+    assert.deepEqual((await ok("GET", `/draws/${d.id}`)).entries.map((e: { externalId: string }) => e.externalId), ["UC20"]);
   });
 
   test("YouTube problems are shown to the organizer in Thai and retried later", async () => {

@@ -4,10 +4,12 @@ import { apiOrNull } from "@/lib/api";
 import type { GuildDetail } from "@/lib/types";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { GuildForm, GuildMembersAdmin } from "@/components/admin/GuildAdmin";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "แก้ไขกิลด์" };
 
 export default async function EditGuild({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdmin();
   const guild = await apiOrNull<GuildDetail>(`/guilds/${encodeURIComponent((await params).id)}`);
   if (!guild) notFound();
   return (

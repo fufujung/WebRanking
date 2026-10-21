@@ -302,13 +302,18 @@ async function pollOne(d: { id: string; keyword: string; videoId: string; liveCh
     });
     const keyword = d.keyword.toLowerCase();
     const since = d.openedAt?.getTime() ?? 0;
+    // The organizer may have closed (or drawn) while YouTube answered: messages typed after closing don't count.
+    const current = await prisma.luckyDraw.findUnique({ where: { id: d.id }, select: { status: true, closedAt: true } });
+    if (!current || current.status === "DRAFT") return;
+    const until = current.status === "OPEN" ? Infinity : (current.closedAt?.getTime() ?? 0);
     for (const item of page.items ?? []) {
       const a = item.authorDetails;
       const text = item.snippet?.displayMessage ?? item.snippet?.textMessageDetails?.messageText ?? "";
       if (!a?.channelId || a.isChatOwner || a.isChatModerator) continue;
       if (!text.toLowerCase().includes(keyword)) continue;
-      // Messages from before the draw opened do not count.
-      if (item.snippet?.publishedAt && new Date(item.snippet.publishedAt).getTime() < since) continue;
+      // Messages from before the draw opened, or after it closed, do not count.
+      const at = item.snippet?.publishedAt ? new Date(item.snippet.publishedAt).getTime() : now.getTime();
+      if (at < since || at > until) continue;
       await prisma.drawEntry.upsert({
         where: { drawId_source_externalId: { drawId: d.id, source: "YOUTUBE", externalId: a.channelId } },
         create: { drawId: d.id, source: "YOUTUBE", externalId: a.channelId, name: (a.displayName || "ผู้ชม").slice(0, 100), avatarUrl: a.profileImageUrl ?? null, member: Boolean(a.isChatSponsor) },

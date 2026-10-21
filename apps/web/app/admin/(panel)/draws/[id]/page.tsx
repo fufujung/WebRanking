@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import { apiOrNull } from "@/lib/api";
 import type { LuckyDrawDetail } from "@/lib/types";
 import { DrawControls, DrawEntries, DrawForm, DrawOverlay } from "@/components/admin/DrawAdmin";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "Lucky Draw" };
 
 /** One giveaway: open it, watch names come in, draw winners on stream. */
 export default async function AdminDraw({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdmin();
   const { id } = await params;
   const draw = await apiOrNull<LuckyDrawDetail>(`/draws/${encodeURIComponent(id)}`);
   if (!draw) notFound();

@@ -139,12 +139,15 @@ export async function updateReward(id: string, body: unknown) {
   });
 }
 
-/** Takes a prize back. A code nobody was told about returns to the pool; one already sent is used up. */
+/**
+ * Takes a prize back. Its code is used up either way: the winner sees it on their page the moment it is
+ * given, so putting it back in the pool could hand someone else a code that was already seen.
+ */
 export async function deleteReward(id: string) {
   const r = await prisma.reward.findUnique({ where: { id }, include: { code: true } });
   if (!r) throw notFound("Reward");
   await prisma.$transaction(async (tx) => {
-    if (r.code && r.notifiedAt) await tx.rewardCode.delete({ where: { id: r.code.id } });
+    if (r.code) await tx.rewardCode.delete({ where: { id: r.code.id } });
     await tx.reward.delete({ where: { id } });
   });
 }

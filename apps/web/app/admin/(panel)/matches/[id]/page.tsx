@@ -5,10 +5,12 @@ import { fetchAll } from "@/lib/fetchAll";
 import type { MatchDetail, Player, Team, Tournament } from "@/lib/types";
 import { MatchForm } from "@/components/admin/MatchForm";
 import { DeleteButton } from "@/components/admin/DeleteButton";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "แก้ไขผลการแข่ง" };
 
 export default async function EditMatch({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdmin();
   const [match, tournaments, teams, players, extract] = await Promise.all([
     apiOrNull<MatchDetail>(`/matches/${encodeURIComponent((await params).id)}`),
     fetchAll<Tournament>("/tournaments"),

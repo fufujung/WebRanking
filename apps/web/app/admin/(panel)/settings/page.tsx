@@ -1,10 +1,12 @@
 import { siteSettings } from "@/lib/settings";
 import { SettingsForm } from "@/components/admin/SettingsForm";
 import { DiscordJoin } from "@/components/DiscordJoin";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "ตั้งค่าเว็บ" };
 
 export default async function SettingsPage() {
+  await requireAdmin();
   const settings = await siteSettings();
   return (
     <>
