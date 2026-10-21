@@ -7,6 +7,8 @@ import { linkCommands } from "./links.js";
 import { trashCommand } from "./trash.js";
 import { PLAYER_SORTS } from "./format.js";
 import { POSITIONS } from "./positions.js";
+import { gameOption, mmrCommand, searchCommand } from "./ladder.js";
+import { guildCommand, meCommand, myTeamCommand } from "./me.js";
 
 export const READ_POST_COMMAND = "อ่านผลจากโพสต์นี้";
 
@@ -265,7 +267,12 @@ export const commandData: ApplicationCommandData[] = [
       },
     ],
   },
-  { name: "rank", description: "Ranking ทีม", dmPermission: false, options: [{ type: ApplicationCommandOptionType.Integer, name: "top", description: "แสดงกี่อันดับ (ค่าเริ่มต้น 10)", minValue: 1, maxValue: 25 }] },
+  {
+    name: "rank",
+    description: "Ranking ทีม (ดู Ranking ผู้เล่นตาม MMR ได้ที่ /mmr)",
+    dmPermission: false,
+    options: [{ type: ApplicationCommandOptionType.Integer, name: "top", description: "แสดงกี่อันดับ (ค่าเริ่มต้น 10)", minValue: 1, maxValue: 25 }, gameOption],
+  },
   {
     name: "players",
     description: "Ranking ผู้เล่น",
@@ -304,4 +311,9 @@ export const commandData: ApplicationCommandData[] = [
   luckyDrawCommand,
   ...linkCommands,
   trashCommand,
+  mmrCommand,
+  searchCommand,
+  meCommand,
+  myTeamCommand,
+  guildCommand,
 ];

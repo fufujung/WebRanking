@@ -60,6 +60,8 @@ import { TrashCommands } from "./trash.js";
 import { PredictManager } from "./predict.js";
 import { DrawManager } from "./luckydraw.js";
 import { positionLabel } from "./positions.js";
+import { LadderCommands } from "./ladder.js";
+import { MemberManager } from "./me.js";
 import type { BracketMatch, Draft, Match, MatchDetail, Page, PlayerDetail, RankedPlayer, RankedTeam, TeamDetail, Tournament } from "./types.js";
 
 const SAVE = "✅";
@@ -119,6 +121,8 @@ export class TournamentBot {
   readonly trash: TrashCommands;
   readonly predict: PredictManager;
   readonly draws: DrawManager;
+  readonly ladder: LadderCommands;
+  readonly members: MemberManager;
   private trackers = new Map<string, AnnounceTracker>();
   /** Result posts being saved right now, so two admins can't record one twice. */
   private busy = new Set<string>();
@@ -147,6 +151,8 @@ export class TournamentBot {
         return Boolean(tour && this.tour.isOrganizer(tour, userId, info));
       },
     });
+    this.ladder = new LadderCommands(this.api, opts.siteUrl);
+    this.members = new MemberManager(this.api, this.ladder, opts.siteUrl);
     this.draws = new DrawManager({
       api: this.api,
       dataDir: opts.dataDir,
@@ -344,6 +350,8 @@ export class TournamentBot {
     if (prefix === "ld") return this.draws.onButton(i, info);
     if (prefix === "lk") return this.links.onButton(i, canSave(info, this.settingsFor(i.guildId ?? "")));
     if (prefix === "tb") return this.trash.onButton(i, canSave(info, this.settingsFor(i.guildId ?? "")));
+    if (prefix === "lb") return this.ladder.onButton(i);
+    if (prefix === "me") return this.members.onButton(i);
     if (prefix !== "tr" || !sourceId) return;
     if (TOUR_ACTIONS.has(action)) return this.tour.onButton(i, info);
     const pending = this.pending.get(sourceId);
@@ -389,6 +397,7 @@ export class TournamentBot {
   async onSelect(i: AnySelectMenuInteraction) {
     const [prefix, action, tid, key] = i.customId.split(":");
     if (prefix === "tp") return this.pool.onSelect(i, memberInfo(i.member as MemberLike, i.memberPermissions));
+    if (prefix === "me") return this.members.onSelect(i);
     if (prefix === "tr" && (action === "tbe" || action === "tbr" || action === "tbu") && tid && key) await this.tour.onBuilder(i, action, tid, key);
   }
 
@@ -396,6 +405,7 @@ export class TournamentBot {
     if (i.customId.startsWith("tr:tsm:")) return this.submitRoomResult(i);
     if (i.customId.startsWith("tp:")) return this.pool.onModal(i);
     if (i.customId.startsWith("pk:")) return this.predict.onModal(i);
+    if (i.customId.startsWith("me:")) return this.members.onModal(i);
     await this.tour.onModal(i);
   }
 
@@ -486,6 +496,8 @@ export class TournamentBot {
     if (i.commandName === "luckydraw") return this.draws.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     if (i.commandName === "trash") return this.trash.onCommand(i, canSave(memberInfo(i.member as MemberLike, i.memberPermissions), this.settingsFor(i.guildId ?? "")));
     if (i.commandName === "link" || i.commandName === "linkreq") return this.links.onCommand(i, canSave(memberInfo(i.member as MemberLike, i.memberPermissions), this.settingsFor(i.guildId ?? "")));
+    if (i.commandName === "mmr" || i.commandName === "search") return this.ladder.onCommand(i);
+    if (["me", "myteam", "guild"].includes(i.commandName)) return this.members.onCommand(i);
     try {
       if (i.commandName === "blacklist" || i.commandName === "season") {
         const info = memberInfo(i.member as MemberLike, i.memberPermissions);
@@ -498,10 +510,12 @@ export class TournamentBot {
         case "setup-off":
           return await this.setupOff(i);
         case "rank": {
+          const { game, error } = await this.ladder.pickGame(i.options.getString("game"));
+          if (error) return void (await i.reply({ ephemeral: true, content: error }));
           await i.deferReply();
           const top = i.options.getInteger("top") ?? 10;
-          const page = await this.api.get<Page<RankedTeam>>(`/rankings/teams?limit=${top}`);
-          return void (await i.editReply({ embeds: [teamRankingEmbed(page.data, this.siteUrl)] }));
+          const page = await this.api.get<Page<RankedTeam>>(`/rankings/teams?limit=${top}${game ? `&gameId=${encodeURIComponent(game.id)}` : ""}`);
+          return void (await i.editReply({ embeds: [teamRankingEmbed(page.data, this.siteUrl, game)] }));
         }
         case "players": {
           await i.deferReply();
@@ -562,6 +576,8 @@ export class TournamentBot {
     if (i.commandName === "season") return this.season.onAutocomplete(i);
     if (i.commandName === "predict") return this.predict.onAutocomplete(i);
     if (i.commandName === "luckydraw") return this.draws.onAutocomplete(i);
+    if (["me", "myteam", "guild"].includes(i.commandName)) return this.members.onAutocomplete(i);
+    if (i.commandName === "mmr" || i.commandName === "rank") return this.ladder.gameChoices(i);
     const focused = i.options.getFocused(true);
     try {
       if (i.commandName === "setup" && focused.name === "tournament") {
