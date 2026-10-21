@@ -70,7 +70,7 @@ export interface TourConfig {
   /** The tournament's name when the panel was last drawn, for the message after it is deleted on the website. */
   name?: string;
   /** What the bracket looked like at the last sync, to notice changes made on the website (not through the bot). */
-  seen?: { status?: string; panel?: string; draft?: string | null; roster?: string };
+  seen?: { status?: string; panel?: string; draft?: string | null; roster?: string; names?: string };
 }
 
 export interface Room {
@@ -1569,6 +1569,7 @@ export class TourManager {
       panel: JSON.stringify([b.name, b.registrationOpen, b.status, b.maxTeams, b.teams.map((t) => [t.id, t.name, t.roster.length])]),
       draft: b.status === "DRAFT" ? JSON.stringify([b.positions, b.teams.map((t) => [t.id, t.seed]), b.matches.map((m) => [m.code, m.teamA?.id ?? null, m.teamB?.id ?? null])]) : null,
       roster: JSON.stringify(b.teams.map((t) => [t.id, teamMemberIds(t)])),
+      names: JSON.stringify(b.teams.map((t) => [t.id, t.name])),
     };
     this.save(tid, { seen: now });
     if (!seen) return;
@@ -1596,6 +1597,24 @@ export class TourManager {
     }
     if (now.panel !== seen.panel && tour.panel) await this.refreshPanel(client, this.tours.get(tid)!);
     if (now.roster !== seen.roster && b.status === "LIVE") await this.refreshTeamRooms(client, this.tours.get(tid)!).catch((e) => this.log("room refresh failed:", e?.message));
+    if (seen.names !== undefined && now.names !== seen.names && b.status === "LIVE") await this.renameRooms(client, this.tours.get(tid)!, b).catch((e) => this.log("room rename failed:", e?.message));
+  }
+
+  /** A team renamed on the website: its open match rooms take the new name (channel, topic and header). */
+  private async renameRooms(client: Client, tour: TourConfig, b: Bracket) {
+    for (const [slotId, room] of Object.entries(tour.rooms)) {
+      if (room.closed) continue;
+      const m = b.matches.find((x) => x.id === slotId);
+      if (!m?.teamA || !m.teamB) continue;
+      const name = `m${m.number}-${channelSlug(m.teamA.name)}-vs-${channelSlug(m.teamB.name)}`;
+      const channel = await client.channels.fetch(room.channelId).catch(() => null);
+      if (channel && "edit" in channel && "name" in channel && channel.name !== name) {
+        await (channel as { edit(o: { name: string; topic: string }): Promise<unknown> })
+          .edit({ name, topic: `${b.name} · M${m.number} ${m.label} · ${m.teamA.name} vs ${m.teamB.name}`.slice(0, 1024) })
+          .catch((e) => this.log("room rename failed:", e?.message));
+      }
+      await this.refreshHeader(client, tour, b, m);
+    }
   }
 
   /** The tournament was deleted on the website: its sign-up post, draft and match rooms go too. */

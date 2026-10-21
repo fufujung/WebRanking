@@ -174,7 +174,8 @@ const HTML = `<!doctype html>
     if (first) fresh.forEach(function (w) { shown[w.place] = true; });
     else queue = queue.concat(fresh.sort(function (a, b) { return a.place - b.place; }));
     if (!spinning) { winnersList(); spinNext(); }
-    $("foot").textContent = d.status === "OPEN" ? (d.allowDiscord ? "หรือกดปุ่ม 🎁 เข้าร่วม ใน Discord · " : "") + "คนละ 1 สิทธิ์ ร่วมฟรี" : "";
+    var bonus = [d.memberWeight > 1 ? "⭐ Member x" + d.memberWeight : "", d.linkedWeight > 1 ? "🔗 ผูก Discord กับเว็บ x" + d.linkedWeight : ""].filter(Boolean).join(" · ");
+    $("foot").textContent = d.status === "OPEN" ? (d.allowDiscord ? "หรือกดปุ่ม 🎁 เข้าร่วม ใน Discord · " : "") + (bonus ? "โอกาสพิเศษ " + bonus : "คนละ 1 สิทธิ์") + " · ร่วมฟรี" : "";
     first = false;
   }
 

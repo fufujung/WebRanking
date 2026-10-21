@@ -1830,6 +1830,8 @@ components:
         minutes: { type: integer, minimum: 1, maximum: 240, nullable: true, description: Closes by itself this long after opening }
         youtubeUrl: { type: string, nullable: true, description: The live stream link whose chat is read }
         allowDiscord: { type: boolean, default: true }
+        memberWeight: { type: integer, minimum: 1, maximum: 10, default: 1, description: "Chances for YouTube channel members (x1 = same as everyone)" }
+        linkedWeight: { type: integer, minimum: 1, maximum: 10, default: 1, description: "Chances for Discord entrants whose account is linked to a player on the website" }
     GameRank:
       type: object
       required: [name]

@@ -683,6 +683,14 @@ describe("misc", () => {
     }
     assert.equal((await call("PATCH", "/api/v1/teams/missing", { name: "x" })).status, 404);
   });
+  test("renaming a team to a name another team has is refused in Thai", async () => {
+    const a = (await call("POST", "/api/v1/teams", { name: "Rename A" })).body;
+    await call("POST", "/api/v1/teams", { name: "Rename B" });
+    const r = await call("PATCH", `/api/v1/teams/${a.id}`, { name: "Rename B" });
+    assert.equal(r.status, 409);
+    assert.match(r.body.details.th, /มีทีมชื่อ "Rename B" อยู่แล้ว/);
+    assert.equal((await call("PATCH", `/api/v1/teams/${a.id}`, { name: "Rename C" })).body.name, "Rename C");
+  });
   test("pagination bounds are validated", async () => {
     assert.equal((await call("GET", "/api/v1/teams?limit=0")).status, 400);
     assert.equal((await call("GET", "/api/v1/teams?limit=1")).body.data.length, 1);

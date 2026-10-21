@@ -153,6 +153,11 @@ class FakeChannel {
     this.deleted = true;
     channels.delete(this.id);
   }
+  async edit(o: { name?: string; topic?: string }) {
+    if (o.name !== undefined) this.name = o.name;
+    if (o.topic !== undefined) this.topic = o.topic;
+    return this;
+  }
   /** Messages the bot posted, as plain text. */
   get texts() {
     return this.sent.map((m) => m.content ?? "");
@@ -1824,6 +1829,12 @@ describe("changes made on the website show up in Discord", () => {
     await bot.tour.sync(fakeClient, tid);
     assert.equal(announce().texts.filter((x) => /\*\*Web Sync Cup\*\* เริ่มแข่งแล้ว/.test(x)).length, 1, "announced once");
 
+    // A team renamed on the website: its match room takes the new name.
+    await api.patch(`/teams/${red.id}`, { name: "Web Crimson" });
+    await bot.tour.sync(fakeClient, tid);
+    assert.match(channels.get(room.channelId)!.name, /web-crimson-vs-web-blue/);
+    assert.match(channels.get(room.channelId)!.topic!, /Web Crimson vs Web Blue/);
+
     // A result recorded and then reopened on the website: the room says so.
     await api.post(`/tournaments/${tid}/bracket/matches/M1/result`, { scoreA: 2, scoreB: 0 });
     await bot.tour.sync(fakeClient, tid);
@@ -1909,7 +1920,7 @@ describe("lucky draw in Discord", () => {
     const denied = command("luckydraw", "new", { title: "แจกเมาส์", keyword: "#OT500" }, fanA);
     await bot.onCommand(denied);
     assert.match(text(last(denied.replies)), /สำหรับผู้จัดเท่านั้น/);
-    const made = command("luckydraw", "new", { title: "แจกเมาส์", keyword: "#OT500", winners: 2, minutes: 10, prize: "เมาส์เกมมิ่ง" });
+    const made = command("luckydraw", "new", { title: "แจกเมาส์", keyword: "#OT500", winners: 2, minutes: 10, prize: "เมาส์เกมมิ่ง", member_x: 10, linked_x: 2 });
     await bot.onCommand(made);
     assert.match(text(last(made.replies)), /เปิดรับแล้ว/);
 
@@ -1917,6 +1928,7 @@ describe("lucky draw in Discord", () => {
     assert.ok(card, "the open draw gets a card");
     assert.match(card.embed.description, /รางวัล: \*\*เมาส์เกมมิ่ง\*\* \(2 คน\)/);
     assert.match(card.embed.description, /ปิดรับ <t:\d+:R>/);
+    assert.match(card.embed.description, /โอกาสพิเศษ: ⭐ Member ช่อง x10 · 🔗 ผูก Discord กับเว็บ x2/);
     assert.deepEqual(card.buttons.map((b: any) => b.label), ["เข้าร่วม", "ปิดรับ (ผู้จัด)"]);
 
     const join = card.buttons[0].custom_id;

@@ -757,6 +757,9 @@ export interface DrawEntry {
   place: number | null;
   wonAt: string | null;
   voided: boolean;
+  /** A YouTube channel member / a Discord account linked to a player: the draw's extra chances apply. */
+  member: boolean;
+  linked: boolean;
 }
 
 export interface LuckyDraw {
@@ -769,6 +772,8 @@ export interface LuckyDraw {
   youtubeUrl: string | null;
   videoId: string | null;
   allowDiscord: boolean;
+  memberWeight: number;
+  linkedWeight: number;
   status: "DRAFT" | "OPEN" | "CLOSED";
   openedAt: string | null;
   closesAt: string | null;

@@ -38,6 +38,8 @@ export const luckyDrawCommand: ApplicationCommandData = {
         { type: O.String, name: "youtube", description: "ลิงก์ไลฟ์ YouTube ที่จะอ่านแชท", maxLength: 300 },
         { type: O.String, name: "prize", description: "ของรางวัล", maxLength: 200 },
         { type: O.Boolean, name: "discord", description: "ให้กดเข้าร่วมใน Discord ได้ด้วย (ไม่ใส่ = ได้)" },
+        { type: O.Integer, name: "member_x", description: "โอกาส Member ช่อง YouTube (ไม่ใส่ = x1 เท่าทุกคน)", minValue: 1, maxValue: 10 },
+        { type: O.Integer, name: "linked_x", description: "โอกาสคนผูก Discord กับเว็บ (ไม่ใส่ = x1)", minValue: 1, maxValue: 10 },
       ],
     },
     { type: O.Subcommand, name: "close", description: "ปิดรับ", options: [{ type: O.String, name: "draw", description: "รอบ", required: true, autocomplete: true }] },
@@ -71,6 +73,8 @@ export interface DrawView {
   status: "DRAFT" | "OPEN" | "CLOSED";
   allowDiscord: boolean;
   youtube: boolean;
+  memberWeight?: number;
+  linkedWeight?: number;
   closesAt: string | null;
   count: number;
   winnerList: { name: string; source: string; place: number; voided: boolean }[];
@@ -97,6 +101,12 @@ interface DrawCard {
 
 const unix = (d: string) => Math.floor(new Date(d).getTime() / 1000);
 
+/** The extra chances, when the organizer set any. */
+function bonusLine(d: DrawView) {
+  const parts = [(d.memberWeight ?? 1) > 1 ? `⭐ Member ช่อง x${d.memberWeight}` : "", (d.linkedWeight ?? 1) > 1 ? `🔗 ผูก Discord กับเว็บ x${d.linkedWeight}` : ""].filter(Boolean);
+  return parts.length ? `โอกาสพิเศษ: ${parts.join(" · ")}` : "";
+}
+
 export function drawEmbed(d: DrawView): APIEmbed {
   const open = d.status === "OPEN";
   const how = [
@@ -111,6 +121,7 @@ export function drawEmbed(d: DrawView): APIEmbed {
       d.prize ? `รางวัล: **${d.prize}** (${d.winners} คน)` : `ผู้โชคดี ${d.winners} คน`,
       "",
       ...(open ? (how.length ? how : [`พิมพ์ **${d.keyword}**`]) : []),
+      bonusLine(d),
       `👥 เข้าร่วมแล้ว **${d.count}** คน`,
       open ? (d.closesAt ? `⏳ ปิดรับ <t:${unix(d.closesAt)}:R>` : "⏳ เปิดรับจนกว่าผู้จัดจะปิด") : winners.length ? "" : "🔒 ปิดรับแล้ว รอสุ่ม",
       winners.length ? `🏆 ผู้โชคดี\n${winners.join("\n")}` : "",
@@ -118,7 +129,7 @@ export function drawEmbed(d: DrawView): APIEmbed {
       .join("\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim(),
-    footer: { text: "ร่วมฟรี ไม่ต้องซื้ออะไร · คนละ 1 สิทธิ์" },
+    footer: { text: (d.memberWeight ?? 1) > 1 || (d.linkedWeight ?? 1) > 1 ? "ร่วมฟรี ไม่ต้องซื้ออะไร · พิมพ์/กดซ้ำไม่เพิ่มสิทธิ์" : "ร่วมฟรี ไม่ต้องซื้ออะไร · คนละ 1 สิทธิ์" },
   });
 }
 
@@ -261,6 +272,8 @@ export class DrawManager {
           youtubeUrl: i.options.getString("youtube"),
           prize: i.options.getString("prize"),
           allowDiscord: i.options.getBoolean("discord") ?? true,
+          memberWeight: i.options.getInteger("member_x") ?? 1,
+          linkedWeight: i.options.getInteger("linked_x") ?? 1,
         });
         await this.api.post(`/draws/${encodeURIComponent(d.id)}/open`, {});
         text = "🎁 เปิดรับแล้ว การ์ดขึ้นในห้องประกาศ จัดการต่อได้ที่ปุ่มบนการ์ด หรือหน้า Lucky Draw ในหลังบ้าน";

@@ -98,6 +98,10 @@ teams.patch("/:id", requireAdmin, async (req, res) => {
     const member = await prisma.player.findUnique({ where: { id: captainId }, select: { teamId: true } });
     if (member?.teamId !== id) throw fail(400, "The captain must be on the team", "หัวหน้าทีมต้องเป็นผู้เล่นในทีมนี้");
   }
+  if (input.name) {
+    const taken = await prisma.team.findFirst({ where: { name: input.name, id: { not: id } }, select: { id: true } });
+    if (taken) throw fail(409, "A team with this name exists", `มีทีมชื่อ "${input.name}" อยู่แล้ว ใช้ชื่ออื่น`);
+  }
   const team = await prisma.team.update({ where: { id }, data: { ...input, ...(captainId !== undefined ? { captainId } : {}) } });
   res.json(team);
 });

@@ -279,10 +279,14 @@ export async function resolveDispute(tournamentId: string, slotId: string) {
 }
 
 /** Replaces a team's registered players. Organizers may change a locked roster. */
-export async function saveRoster(tournamentId: string, teamId: string, players: { name: string; discordId: string | null; uid: string | null; server: string | null }[], captainDiscordId: string | null) {
+export async function saveRoster(tournamentId: string, teamId: string, players: { name: string; discordId: string | null; uid: string | null; server: string | null }[], captainDiscordId: string | null, teamName?: string) {
   return bracketRun(
     tournamentId,
-    () => api(`/tournaments/${encodeURIComponent(tournamentId)}/entries/${encodeURIComponent(teamId)}/roster`, { method: "PUT", json: { players, captainDiscordId, override: true } }),
+    async () => {
+      // A new team name first: if it is taken, nothing else changes.
+      if (teamName) await api(`/teams/${encodeURIComponent(teamId)}`, { method: "PATCH", json: { name: teamName } });
+      await api(`/tournaments/${encodeURIComponent(tournamentId)}/entries/${encodeURIComponent(teamId)}/roster`, { method: "PUT", json: { players, captainDiscordId, override: true } });
+    },
     "บันทึกรายชื่อแล้ว",
   );
 }
@@ -757,6 +761,8 @@ function drawFields(form: FormData) {
     minutes: minutes ? Number(minutes) : null,
     youtubeUrl: orNull(text(form, "youtubeUrl")),
     allowDiscord: form.get("allowDiscord") === "on",
+    memberWeight: Number(text(form, "memberWeight") || 1),
+    linkedWeight: Number(text(form, "linkedWeight") || 1),
   };
 }
 
