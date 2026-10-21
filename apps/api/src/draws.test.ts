@@ -282,3 +282,41 @@ describe("drawing winners", () => {
     assert.equal((await call("GET", `/draws/${d.id}/public`)).status, 404);
   });
 });
+
+describe("extra chances", () => {
+  test("channel members and Discord accounts linked to the website get the set number of chances", async () => {
+    const d = await ok("POST", "/draws", { title: "ตัวคูณ", keyword: "#x", youtubeUrl: VIDEO, memberWeight: 10, linkedWeight: 3 });
+    assert.equal(d.memberWeight, 10);
+    await ok("POST", `/draws/${d.id}/open`);
+    chatPages = [{ items: [msg("UCmember", "#x", { isChatSponsor: true }), msg("UCplain", "#x")] }];
+    await poll(d.id);
+    const linkedId = discord(900);
+    await prisma.player.create({ data: { name: "Linked One", discordId: linkedId } });
+    await ok("POST", `/draws/${d.id}/entries`, { source: "DISCORD", externalId: linkedId, name: "Linked One" });
+    await ok("POST", `/draws/${d.id}/entries`, { source: "DISCORD", externalId: discord(901), name: "Not Linked" });
+    const detail = await ok("GET", `/draws/${d.id}`);
+    const by = (n: string) => detail.entries.find((e: { name: string }) => e.name === n);
+    assert.equal(by("ช่อง UCmember").member, true);
+    assert.equal(by("ช่อง UCplain").member, false);
+    assert.equal(by("Linked One").linked, true);
+    assert.equal(by("Not Linked").linked, false);
+    const pub = await ok("GET", `/draws/${d.id}/public`);
+    assert.deepEqual([pub.memberWeight, pub.linkedWeight], [10, 3]);
+
+    // 10 : 1 : 3 : 1 chances, so out of 450 draws the member wins about 300 times.
+    const wins: Record<string, number> = {};
+    for (let i = 0; i < 450; i++) {
+      const [w] = (await ok("POST", `/draws/${d.id}/draw`, { count: 1 })).data;
+      wins[w.name] = (wins[w.name] ?? 0) + 1;
+      await prisma.drawEntry.updateMany({ where: { drawId: d.id }, data: { place: null, wonAt: null } });
+    }
+    const share = (n: string) => (wins[n] ?? 0) / 450;
+    assert.ok(share("ช่อง UCmember") > 0.55 && share("ช่อง UCmember") < 0.78, JSON.stringify(wins));
+    assert.ok(share("Linked One") > 0.1 && share("Linked One") < 0.3, JSON.stringify(wins));
+    assert.ok(share("ช่อง UCplain") < 0.15 && share("Not Linked") < 0.15, JSON.stringify(wins));
+
+    // Back to x1: everyone equal again.
+    await ok("PATCH", `/draws/${d.id}`, { memberWeight: 1, linkedWeight: 1 });
+    assert.equal((await call("PATCH", `/draws/${d.id}`, { memberWeight: 11 })).status, 400);
+  });
+});

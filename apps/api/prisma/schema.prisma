@@ -652,6 +652,9 @@ model LuckyDraw {
   /// The last problem reading the chat, shown to the organizer.
   chatError    String?
   allowDiscord Boolean     @default(true)
+  /// Extra chances (x1 = everyone equal): YouTube channel members, and Discord entrants linked to a player on the website.
+  memberWeight Int         @default(1)
+  linkedWeight Int         @default(1)
   status       String      @default("DRAFT") // DRAFT | OPEN | CLOSED
   openedAt     DateTime?
   closesAt     DateTime?
@@ -670,6 +673,9 @@ model DrawEntry {
   externalId String
   name       String
   avatarUrl  String?
+  /// A YouTube channel member when they entered / a Discord account linked to a player: the draw's weights apply.
+  member     Boolean   @default(false)
+  linked     Boolean   @default(false)
   createdAt  DateTime  @default(now())
   /// Set when drawn: 1 for the first winner, and so on.
   place      Int?

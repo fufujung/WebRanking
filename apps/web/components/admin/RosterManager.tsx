@@ -67,6 +67,7 @@ function RosterEditor({ tournamentId, entry, rosterMax, candidates, onDone }: { 
     return r.length ? r : [emptyRow()];
   });
   const [captain, setCaptain] = useState(entry.captainDiscordId ?? "");
+  const [teamName, setTeamName] = useState(entry.name);
   const [state, setState] = useState<FormState>(undefined);
   const [pending, start] = useTransition();
   const update = (key: number, patch: Partial<Row>) => setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -74,10 +75,12 @@ function RosterEditor({ tournamentId, entry, rosterMax, candidates, onDone }: { 
   function save() {
     const players = rows.filter((r) => r.name.trim()).map((r) => ({ name: r.name.trim(), uid: r.uid.trim() || null, server: r.server.trim() || null, discordId: r.discordId.trim() || null }));
     if (!players.length) return setState({ error: "ใส่ชื่อผู้เล่นอย่างน้อย 1 คน" });
+    if (!teamName.trim()) return setState({ error: "ใส่ชื่อทีม" });
     const bad = players.find((p) => p.discordId && !/^\d{5,25}$/.test(p.discordId));
     if (bad) return setState({ error: `Discord ID ของ ${bad.name} ต้องเป็นตัวเลข (คลิกขวาที่ชื่อใน Discord แล้วเลือก Copy User ID)` });
     start(async () => {
-      const res = await saveRoster(tournamentId, entry.id, players, captain.trim() || null);
+      const renamed = teamName.trim() !== entry.name ? teamName.trim() : undefined;
+      const res = await saveRoster(tournamentId, entry.id, players, captain.trim() || null, renamed);
       setState(res);
       if (!res?.error) onDone();
     });
@@ -86,6 +89,10 @@ function RosterEditor({ tournamentId, entry, rosterMax, candidates, onDone }: { 
   return (
     <div className="card stack">
       <strong>รายชื่อ {entry.name}</strong>
+      <label>
+        ชื่อทีม
+        <input name="teamName" value={teamName} onChange={(e) => setTeamName(e.target.value)} maxLength={100} />
+      </label>
       {rows.map((r, i) => (
         <div key={r.key} className="form-row" style={{ alignItems: "end" }}>
           <label>ผู้เล่น {i + 1} (ชื่อตัวละคร)<input value={r.name} onChange={(e) => update(r.key, { name: e.target.value })} maxLength={100} /></label>

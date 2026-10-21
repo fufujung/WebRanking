@@ -41,9 +41,11 @@ const drawInput = z.object({
   minutes: z.coerce.number().int().min(1).max(240).nullish().transform((v) => v ?? null),
   youtubeUrl: z.string().trim().max(300).nullish().transform((v) => v || null),
   allowDiscord: z.boolean().default(true),
+  memberWeight: z.coerce.number().int().min(1).max(10).default(1),
+  linkedWeight: z.coerce.number().int().min(1).max(10).default(1),
 });
 
-const PROBLEMS: Record<string, string> = { title: "ใส่ชื่อรอบ", keyword: "ใส่คำที่ให้พิมพ์ (ไม่เกิน 40 ตัว)", winners: "จำนวนผู้โชคดี 1-50 คน", minutes: "เวลาเปิดรับ 1-240 นาที", youtubeUrl: "ลิงก์ YouTube ไม่ถูกต้อง" };
+const PROBLEMS: Record<string, string> = { title: "ใส่ชื่อรอบ", keyword: "ใส่คำที่ให้พิมพ์ (ไม่เกิน 40 ตัว)", winners: "จำนวนผู้โชคดี 1-50 คน", minutes: "เวลาเปิดรับ 1-240 นาที", youtubeUrl: "ลิงก์ YouTube ไม่ถูกต้อง", memberWeight: "ตัวคูณ 1-10", linkedWeight: "ตัวคูณ 1-10" };
 
 function parse<T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T> {
   const r = schema.safeParse(body);
@@ -120,6 +122,8 @@ export async function publicDraw(id: string) {
     status: d.status,
     allowDiscord: d.allowDiscord,
     youtube: Boolean(d.videoId),
+    memberWeight: d.memberWeight,
+    linkedWeight: d.linkedWeight,
     openedAt: d.openedAt,
     closesAt: d.closesAt,
     count,
@@ -178,7 +182,8 @@ export async function addEntry(drawId: string, body: unknown) {
   const externalId = input.source === "MANUAL" ? input.name.toLowerCase() : input.externalId!;
   const existing = await prisma.drawEntry.findUnique({ where: { drawId_source_externalId: { drawId, source: input.source, externalId } } });
   if (existing) return { entry: existing, added: false };
-  const entry = await prisma.drawEntry.create({ data: { drawId, source: input.source, externalId, name: input.name, avatarUrl: input.avatarUrl ?? null } });
+  const linked = input.source === "DISCORD" && Boolean(await prisma.player.findFirst({ where: { discordId: externalId }, select: { id: true } }));
+  const entry = await prisma.drawEntry.create({ data: { drawId, source: input.source, externalId, name: input.name, avatarUrl: input.avatarUrl ?? null, linked } });
   return { entry, added: true };
 }
 
@@ -194,6 +199,11 @@ export async function removeEntry(drawId: string, entryId: string) {
   const e = await prisma.drawEntry.findUnique({ where: { id: entryId } });
   if (!e || e.drawId !== drawId) throw notFound("Entry");
   await prisma.drawEntry.delete({ where: { id: entryId } });
+}
+
+/** How many chances one entry has: the larger of its bonuses, never less than one. */
+export function chances(d: { memberWeight: number; linkedWeight: number }, e: { member: boolean; linked: boolean }) {
+  return Math.max(1, e.member ? d.memberWeight : 1, e.linked ? d.linkedWeight : 1);
 }
 
 let drawing = Promise.resolve();
@@ -217,14 +227,19 @@ export function drawWinners(id: string, body: unknown = {}, now = new Date()) {
     if (d.status === "DRAFT") throw fail(409, "Not opened yet", "ยังไม่ได้เปิดรับ");
     // Entries close before the draw, so nobody joins while names are spinning.
     if (d.status === "OPEN") await prisma.luckyDraw.update({ where: { id }, data: { status: "CLOSED", closedAt: now } });
-    const pool = await prisma.drawEntry.findMany({ where: { drawId: id, place: null }, select: { id: true } });
+    const pool = await prisma.drawEntry.findMany({ where: { drawId: id, place: null }, select: { id: true, member: true, linked: true } });
     const want = Math.min(count ?? d.winners, pool.length);
     if (!want) throw fail(409, "Nobody left to draw", "ไม่มีรายชื่อเหลือให้สุ่ม");
     const top = await prisma.drawEntry.aggregate({ where: { drawId: id }, _max: { place: true } });
     let place = top._max.place ?? 0;
     const picked: string[] = [];
-    const left = pool.map((p) => p.id);
-    for (let i = 0; i < want; i++) picked.push(left.splice(randomInt(left.length), 1)[0]);
+    const left = pool.map((p) => ({ id: p.id, weight: chances(d, p) }));
+    for (let i = 0; i < want; i++) {
+      // Each entry's share is its number of chances.
+      let r = randomInt(left.reduce((sum, e) => sum + e.weight, 0));
+      const at = left.findIndex((e) => (r -= e.weight) < 0);
+      picked.push(left.splice(at, 1)[0].id);
+    }
     for (const entryId of picked) await prisma.drawEntry.update({ where: { id: entryId }, data: { place: ++place, wonAt: now } });
     return prisma.drawEntry.findMany({ where: { id: { in: picked } }, orderBy: winnerOrder });
   });
@@ -242,7 +257,7 @@ export async function voidWinner(drawId: string, entryId: string, body: unknown)
 
 interface ChatItem {
   snippet?: { type?: string; displayMessage?: string; publishedAt?: string; textMessageDetails?: { messageText?: string } };
-  authorDetails?: { channelId?: string; displayName?: string; profileImageUrl?: string; isChatOwner?: boolean; isChatModerator?: boolean };
+  authorDetails?: { channelId?: string; displayName?: string; profileImageUrl?: string; isChatOwner?: boolean; isChatModerator?: boolean; isChatSponsor?: boolean };
 }
 
 async function youtube<T>(path: string, params: Record<string, string>): Promise<T> {
@@ -296,8 +311,9 @@ async function pollOne(d: { id: string; keyword: string; videoId: string; liveCh
       if (item.snippet?.publishedAt && new Date(item.snippet.publishedAt).getTime() < since) continue;
       await prisma.drawEntry.upsert({
         where: { drawId_source_externalId: { drawId: d.id, source: "YOUTUBE", externalId: a.channelId } },
-        create: { drawId: d.id, source: "YOUTUBE", externalId: a.channelId, name: (a.displayName || "ผู้ชม").slice(0, 100), avatarUrl: a.profileImageUrl ?? null },
-        update: {},
+        create: { drawId: d.id, source: "YOUTUBE", externalId: a.channelId, name: (a.displayName || "ผู้ชม").slice(0, 100), avatarUrl: a.profileImageUrl ?? null, member: Boolean(a.isChatSponsor) },
+        // Became a member while the draw is open: counts from their next message.
+        update: a.isChatSponsor ? { member: true } : {},
       });
     }
     const wait = Math.max(page.pollingIntervalMillis ?? MIN_POLL_MS, MIN_POLL_MS);

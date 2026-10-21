@@ -9,6 +9,9 @@ import { useFormAction } from "./useFormAction";
 
 const SOURCE: Record<DrawEntry["source"], string> = { YOUTUBE: "▶ YouTube", DISCORD: "💬 Discord", MANUAL: "✍ เพิ่มเอง" };
 
+/** An entry's chances: the larger of its bonuses (same rule as the API). */
+const weightOf = (d: LuckyDraw, e: DrawEntry) => Math.max(1, e.member ? d.memberWeight : 1, e.linked ? d.linkedWeight : 1);
+
 /** Setting up a draw: name, prize, the word to type, the live link, how many win and for how long it is open. */
 export function DrawForm({ draw }: { draw?: LuckyDraw }) {
   const [state, onSubmit, pending] = useFormAction(draw ? updateDraw.bind(null, draw.id) : createDraw, undefined);
@@ -47,6 +50,20 @@ export function DrawForm({ draw }: { draw?: LuckyDraw }) {
         <input type="checkbox" name="allowDiscord" defaultChecked={draw?.allowDiscord ?? true} style={{ width: "auto" }} />
         ให้กดเข้าร่วมใน Discord ได้ด้วย
       </label>
+      <div className="form-row">
+        <label>
+          โอกาส Member ช่อง YouTube (x1-x10)
+          <input name="memberWeight" type="number" min={1} max={10} required defaultValue={draw?.memberWeight ?? 1} />
+        </label>
+        <label>
+          โอกาสคนผูก Discord กับเว็บ (x1-x10)
+          <input name="linkedWeight" type="number" min={1} max={10} required defaultValue={draw?.linkedWeight ?? 1} />
+        </label>
+      </div>
+      <p className="muted small" style={{ margin: 0 }}>
+        x1 = ทุกคนโอกาสเท่ากัน · Member คือคนที่กดจอยสมาชิกช่อง (จ่ายรายเดือน) YouTube ไม่บอกว่าใครกดซับฟรี · คนผูก Discord คือคนที่กดเข้าร่วมใน Discord และเคยล็อกอินเว็บด้วย Discord · ได้ทั้งสองอย่างใช้ตัวคูณที่มากกว่า
+        {" "}⚠️ ให้คนจ่ายเงินได้โอกาสมากกว่าในของรางวัลที่มีมูลค่า อาจเข้าข่ายการเสี่ยงโชคที่ต้องขออนุญาต
+      </p>
       <p className="muted small" style={{ margin: 0 }}>
         คนที่พิมพ์คำนี้ในแชทไลฟ์ (ตรงไหนของข้อความก็ได้ ตัวเล็กตัวใหญ่ไม่สำคัญ) ได้ 1 สิทธิ์ต่อช่อง พิมพ์ซ้ำไม่เพิ่มสิทธิ์ เจ้าของช่องและแอดมินแชทไม่ถูกนับ
         {" "}ร่วมฟรี ห้ามบังคับซื้อสินค้าเพื่อร่วมสุ่ม
@@ -103,6 +120,11 @@ export function DrawControls({ draw }: { draw: LuckyDrawDetail }) {
             {left && <strong data-countdown>ปิดใน {left}</strong>}
           </div>
           <div className="draw-keyword">พิมพ์ <b>{draw.keyword}</b></div>
+          {(draw.memberWeight > 1 || draw.linkedWeight > 1) && (
+            <div className="muted small" data-weights>
+              โอกาสพิเศษ: {[draw.memberWeight > 1 && `⭐ Member x${draw.memberWeight}`, draw.linkedWeight > 1 && `🔗 ผูก Discord กับเว็บ x${draw.linkedWeight}`].filter(Boolean).join(" · ")}
+            </div>
+          )}
         </div>
         <div className="draw-count"><b data-entry-count>{draw.entries.length}</b> คนเข้าร่วม</div>
       </div>
@@ -175,7 +197,8 @@ export function DrawEntries({ draw }: { draw: LuckyDrawDetail }) {
               <div key={e.id} className="draw-entry" data-entry={e.source}>
                 <span className="grow">
                   <strong>{e.name}</strong>
-                  <span className="muted small"> · {SOURCE[e.source]} · {fmtDateTime(e.createdAt)}</span>
+                  <span className="muted small"> · {SOURCE[e.source]}{e.member ? " · ⭐ Member" : ""}{e.linked ? " · 🔗 ผูกเว็บ" : ""} · {fmtDateTime(e.createdAt)}</span>
+                  {weightOf(draw, e) > 1 && <span className="badge badge-accent" style={{ marginLeft: 6 }}>x{weightOf(draw, e)}</span>}
                 </span>
                 {e.place !== null ? (
                   <span className="badge badge-accent">#{e.place}</span>

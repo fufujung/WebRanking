@@ -635,6 +635,20 @@ await page.click("button:has-text('บันทึกรายชื่อ')");
 await page.locator("tr", { hasText: "Night Owls" }).locator("td", { hasText: "Kite (UID 81000108 · Asia), Lynx, Moss" }).waitFor();
 step("roster saved for Night Owls, with UID and server");
 
+// The team name can be changed in the same place; a name another team has is refused.
+await page.locator("tr", { hasText: "Night Owls" }).locator("button:has-text('แก้รายชื่อ')").click();
+await page.fill('input[name="teamName"]', "Thunder Hawks");
+await page.click("button:has-text('บันทึกรายชื่อ')");
+await page.locator(".error", { hasText: 'มีทีมชื่อ "Thunder Hawks" อยู่แล้ว' }).waitFor();
+await page.fill('input[name="teamName"]', `Night Owls ${uniq}`);
+await page.click("button:has-text('บันทึกรายชื่อ')");
+await page.locator("tr", { hasText: `Night Owls ${uniq}` }).locator("td", { hasText: "Kite (UID 81000108 · Asia), Lynx, Moss" }).waitFor();
+await page.locator("tr", { hasText: `Night Owls ${uniq}` }).locator("button:has-text('แก้รายชื่อ')").first().click();
+await page.fill('input[name="teamName"]', "Night Owls");
+await page.click("button:has-text('บันทึกรายชื่อ')");
+await page.waitForFunction((n) => !document.body.innerText.includes(n), `Night Owls ${uniq}`, { timeout: 10_000 });
+step("organizer renamed a team from its roster (a taken name is refused) and back");
+
 // Shop ads: a banner under the menu, a home page card and a once-a-day popup, managed in the back office.
 console.log("— Shop ads");
 const SHOP = `${base}/rankings?shop=${uniq}`;
@@ -1366,6 +1380,7 @@ if (!(await page.locator(".btn-discord").count())) {
   await pAdmin.fill('form:has-text("สร้างรอบสุ่มใหม่") input[name="prize"]', "เมาส์เกมมิ่ง");
   await pAdmin.fill('form:has-text("สร้างรอบสุ่มใหม่") input[name="keyword"]', `#OT${uniq}`);
   await pAdmin.fill('form:has-text("สร้างรอบสุ่มใหม่") input[name="winners"]', "2");
+  await pAdmin.fill('form:has-text("สร้างรอบสุ่มใหม่") input[name="linkedWeight"]', "3");
   await pAdmin.fill('form:has-text("สร้างรอบสุ่มใหม่") input[name="youtubeUrl"]', "https://example.com/not-youtube");
   await pAdmin.click("button:has-text('สร้างรอบ')");
   await pAdmin.locator(".error:has-text('ลิงก์ YouTube ไม่ถูกต้อง')").waitFor();
@@ -1376,6 +1391,7 @@ if (!(await page.locator(".btn-discord").count())) {
   await pAdmin.click("button:has-text('▶ เปิดรับ')");
   await pAdmin.locator(".badge:has-text('กำลังเปิดรับ')").waitFor();
   await pAdmin.locator("[data-countdown]").waitFor();
+  await pAdmin.locator("[data-weights]:has-text('ผูก Discord กับเว็บ x3')").waitFor();
   await pAdmin.fill('form:has-text("เพิ่มชื่อเอง") textarea[name="lines"]', "Alice\nBob\nalice\nCarol");
   await pAdmin.click("button:has-text('เพิ่มรายชื่อ')");
   await pAdmin.locator(".success:has-text('เพิ่ม 3 ชื่อ (ซ้ำ 1)')").waitFor();
