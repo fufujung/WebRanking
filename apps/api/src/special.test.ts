@@ -112,6 +112,16 @@ describe("special events (เล่นเก่งปากเก่ง)", () =>
     assert.equal(byUid.player.name, "Carl");
     assert.equal(byUid.player.uid, "555555");
     assert.equal((await call("DELETE", `/members/${carlId}/reserve`)).status, 204);
+    // A character that exists without a Discord owner waits for an organizer instead of signing up.
+    const orphan = await ok("POST", "/players", { name: "Dora", uid: "565656" });
+    const waits = await call("POST", `/members/${carlId}/reserve`, { uid: "565656", position: "GUARD", facebook: "Carl C", rank: R });
+    assert.equal(waits.status, 409);
+    assert.equal(waits.body.details.pending, true);
+    assert.equal((await ok("GET", `/players/${orphan.id}`)).discordId, null);
+    const [request] = (await ok("GET", "/players/link-requests")).data;
+    assert.equal(request.player.id, orphan.id);
+    await ok("POST", `/players/link-requests/${request.id}/deny`);
+    assert.equal((await call("DELETE", `/players/${orphan.id}`)).status, 204);
 
     // Someone else's character is refused.
     assert.equal((await call("POST", `/members/${dew}/reserve`, { playerId: bankPlayer, position: "GUARD", facebook: "Dew", rank: R })).status, 403);

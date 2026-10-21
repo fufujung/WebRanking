@@ -486,6 +486,28 @@ export async function remove(kind: keyof typeof deletable, id: string): Promise<
   redirect(`${deletable[kind]}?deleted=1`);
 }
 
+// Trash: deleted tournaments come back within 30 days
+export async function restoreTrash(id: string): Promise<FormState> {
+  let back: { tournamentId: string; name: string; missing: { teams: number; matches: number } } | undefined;
+  const result = await run(async () => {
+    back = await api(`/trash/${encodeURIComponent(id)}/restore`, { method: "POST" });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  const { name, missing } = back!;
+  const left = [missing.teams ? `${missing.teams} ทีม` : "", missing.matches ? `${missing.matches} แมตช์` : ""].filter(Boolean).join(" และ ");
+  return { ok: `กู้คืน ${name} แล้ว${left ? ` (${left} กู้ไม่ได้เพราะทีม/ผู้เล่นถูกลบไปแล้ว)` : ""}` };
+}
+
+export async function forgetTrash(id: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/trash/${encodeURIComponent(id)}`, { method: "DELETE" });
+  });
+  if (result) return result;
+  revalidatePath("/admin/trash");
+  return { ok: "ลบถาวรแล้ว" };
+}
+
 // Shop ads
 const adBody = (form: FormData) => ({
   title: text(form, "title"),
@@ -549,6 +571,25 @@ export async function unlinkDiscord(playerId: string): Promise<FormState> {
   if (result) return result;
   revalidatePath("/", "layout");
   return { ok: "ยกเลิกการผูก Discord แล้ว" };
+}
+
+/** Lets the Discord account act as the character it asked for (other requests for it are turned down). */
+export async function approveLink(requestId: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/players/link-requests/${encodeURIComponent(requestId)}/approve`, { method: "POST" });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: "อนุมัติแล้ว ผูกตัวละครกับบัญชี Discord แล้ว" };
+}
+
+export async function denyLink(requestId: string): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/players/link-requests/${encodeURIComponent(requestId)}/deny`, { method: "POST" });
+  });
+  if (result) return result;
+  revalidatePath("/", "layout");
+  return { ok: "ปฏิเสธคำขอแล้ว" };
 }
 
 // Seasons of the "เล่นเก่งปากเก่ง" events

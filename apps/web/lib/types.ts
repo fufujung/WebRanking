@@ -384,6 +384,7 @@ export interface AdminDashboard {
   topPlayers: LadderPlayer[];
   todo: {
     playersWithoutUid: number;
+    linkRequests: number;
     teamsWithoutLogo: number;
     playersWithoutTeam: number;
     readyMatches: { tournamentId: string; name: string; count: number }[];
@@ -786,4 +787,32 @@ export interface LuckyDraw {
 
 export interface LuckyDrawDetail extends LuckyDraw {
   entries: DrawEntry[];
+}
+
+/** A Discord account asking to be linked to a character that already exists; an organizer approves it. */
+export interface LinkRequest {
+  id: string;
+  playerId: string;
+  discordId: string;
+  name: string | null;
+  createdAt: string;
+  player: { id: string; name: string; nickname: string | null; uid: string | null; server: string | null; discordId: string | null; avatarUrl: string | null; team: { id: string; name: string } | null };
+}
+
+/** A deleted tournament kept for 30 days. */
+export interface TrashItem {
+  id: string;
+  kind: "TOURNAMENT";
+  refId: string;
+  name: string;
+  summary: string | null;
+  deletedAt: string;
+  expiresAt: string;
+}
+
+/** A link this account asked for that still waits for an organizer. */
+export interface PendingLink {
+  id: string;
+  createdAt: string;
+  player: { id: string; name: string; uid: string | null };
 }

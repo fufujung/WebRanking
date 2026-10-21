@@ -64,7 +64,7 @@ stats.get("/admin", requireAdmin, async (req, res) => {
   const now = Date.now();
   const today = Math.floor((now + offset) / DAY) * DAY - offset; // local midnight, as a UTC instant
   const from = new Date(today - (q.days - 1) * DAY);
-  const [teams, players, tournaments, matches, ongoing, recentMatches, newPlayers, newTeams, board, noUid, noLogo, noTeam, ready, disputed, openReg] =
+  const [teams, players, tournaments, matches, ongoing, recentMatches, newPlayers, newTeams, board, noUid, noLogo, noTeam, ready, disputed, openReg, linkRequests] =
     await Promise.all([
       prisma.team.count(),
       prisma.player.count(),
@@ -90,6 +90,7 @@ stats.get("/admin", requireAdmin, async (req, res) => {
         select: { id: true, name: true, maxTeams: true, _count: { select: { entries: true } } },
         orderBy: { startDate: "asc" },
       }),
+      prisma.playerLinkRequest.count(),
     ]);
 
   const days = Array.from({ length: q.days }, (_, i) => {
@@ -133,6 +134,7 @@ stats.get("/admin", requireAdmin, async (req, res) => {
     topPlayers: board.ranked.slice(0, 5),
     todo: {
       playersWithoutUid: noUid,
+      linkRequests,
       teamsWithoutLogo: noLogo,
       playersWithoutTeam: noTeam,
       readyMatches: ready

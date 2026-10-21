@@ -13,7 +13,8 @@ export function DeleteButton({ kind, id, label }: { kind: "teams" | "players" | 
         className="btn btn-sm btn-danger"
         disabled={pending}
         onClick={() => {
-          if (!confirm(`ลบ ${label}? การลบย้อนกลับไม่ได้`)) return;
+          const undo = kind === "tournaments" ? "ย้ายไปถังขยะ กู้คืนได้ภายใน 30 วัน (เหรียญที่คนทายไว้คืนให้ทันที)" : "การลบย้อนกลับไม่ได้";
+          if (!confirm(`ลบ ${label}? ${undo}`)) return;
           start(async () => {
             const res = await remove(kind, id);
             if (res?.error) setError(res.error);

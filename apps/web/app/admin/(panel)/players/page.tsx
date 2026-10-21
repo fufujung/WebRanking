@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { fetchAll } from "@/lib/fetchAll";
-import type { Player } from "@/lib/types";
+import type { LinkRequest, Player } from "@/lib/types";
+import { api } from "@/lib/api";
+import { LinkRequests } from "@/components/admin/LinkRequests";
 import { Avatar, Empty, Pager, pageOffset } from "@/components/ui";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { FilterTabs, ListHead, ListSearch, href } from "@/components/admin/ListParts";
@@ -14,7 +16,8 @@ const SHOWS = ["nouid", "noteam"] as const;
 export default async function AdminPlayers({ searchParams }: { searchParams: Promise<{ q?: string; show?: string; page?: string; deleted?: string }> }) {
   await requireAdmin();
   const sp = await searchParams;
-  const players = (await fetchAll<Player>("/players")).sort((a, b) => a.name.localeCompare(b.name, "th"));
+  const [all, { data: requests }] = await Promise.all([fetchAll<Player>("/players"), api<{ data: LinkRequest[] }>("/players/link-requests")]);
+  const players = all.sort((a, b) => a.name.localeCompare(b.name, "th"));
   const q = (sp.q ?? "").trim().toLowerCase();
   const show = (SHOWS as readonly string[]).includes(sp.show ?? "") ? (sp.show as (typeof SHOWS)[number]) : "all";
   const groups = {
@@ -31,6 +34,7 @@ export default async function AdminPlayers({ searchParams }: { searchParams: Pro
     <>
       <ListHead title="ผู้เล่น" sub={`${players.length} คน · ใส่ UID ไว้ แล้วเปลี่ยนชื่อในเกมได้โดยสถิติไม่หาย`} action={{ href: "/admin/players/new", label: "+ เพิ่มผู้เล่น" }} />
       {sp.deleted && <div className="success" style={{ marginBottom: 16 }}>ลบเรียบร้อยแล้ว</div>}
+      {requests.length > 0 && <LinkRequests rows={requests} />}
       <div className="list-bar">
         <FilterTabs
           label="กรองผู้เล่น"

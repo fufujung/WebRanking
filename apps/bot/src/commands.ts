@@ -3,6 +3,8 @@ import { blacklistCommand } from "./blacklist.js";
 import { seasonCommand } from "./season.js";
 import { coinsCommand, predictCommand } from "./predict.js";
 import { luckyDrawCommand } from "./luckydraw.js";
+import { linkCommands } from "./links.js";
+import { trashCommand } from "./trash.js";
 import { PLAYER_SORTS } from "./format.js";
 import { POSITIONS } from "./positions.js";
 
@@ -300,4 +302,6 @@ export const commandData: ApplicationCommandData[] = [
   coinsCommand,
   predictCommand,
   luckyDrawCommand,
+  ...linkCommands,
+  trashCommand,
 ];

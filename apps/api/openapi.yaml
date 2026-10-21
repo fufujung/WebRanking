@@ -1264,11 +1264,57 @@ paths:
                 server: { type: string }
                 name: { type: string, description: Needed only when no player has this UID yet }
                 gameId: { type: string, description: "The character's game; required when the site has more than one game" }
+                discordName: { type: string, description: Shown to organizers when the link waits for approval }
       responses:
-        "200": { description: Existing player linked }
+        "200": { description: Existing player linked (already this account's, or this account is on one of the player's rosters) }
         "201": { description: New player created and linked }
+        "202": { description: "The player already exists: a link request now waits for an organizer (pending: true)" }
         "400": { description: "No player has this UID and no name was sent (details.needsName: true), or the game is missing (details.needsGame: true)" }
         "409": { description: The player is linked to another Discord account }
+  /api/v1/players/link-requests:
+    get:
+      tags: [Players]
+      summary: Discord links waiting for an organizer, oldest first (admin)
+      responses:
+        "200": { description: "{ data: [{ id, discordId, name, createdAt, player }] }" }
+  /api/v1/players/link-requests/{id}/approve:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Players]
+      summary: Approve a link request; other requests for the same player are turned down (admin)
+      responses:
+        "200": { description: "{ player, discordId, denied: string[] } (denied = Discord ids turned down)" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/players/link-requests/{id}/deny:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Players]
+      summary: Turn down a link request (admin)
+      responses:
+        "200": { description: "{ discordId, player }" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/trash:
+    get:
+      tags: [Tournaments]
+      summary: Deleted tournaments that can still be restored (30 days) (admin)
+      responses:
+        "200": { description: "{ data: [{ id, kind, refId, name, summary, deletedAt, expiresAt }] }" }
+  /api/v1/trash/{id}/restore:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Tournaments]
+      summary: Restore a deleted tournament with its teams, rosters, matches, stats, bracket and stories (admin)
+      description: Rows that point at something deleted since (a team or player) are left out and counted in missing. Prediction picks were refunded at deletion and do not come back.
+      responses:
+        "200": { description: "{ tournamentId, name, missing: { teams, matches } }" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/trash/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    delete:
+      tags: [Tournaments]
+      summary: Remove an item from the trash for good (admin)
+      responses:
+        "204": { description: Removed }
   /api/v1/players/{id}/discord:
     delete:
       tags: [Players]
@@ -1330,7 +1376,7 @@ paths:
         "200": { description: Updated }
     delete:
       tags: [Tournaments]
-      summary: Delete a tournament and its matches (admin)
+      summary: Delete a tournament and its matches (admin); it stays in the trash for 30 days
       responses:
         "204": { description: Deleted }
   /api/v1/tournaments/{id}/entries:

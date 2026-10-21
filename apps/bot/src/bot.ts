@@ -55,6 +55,8 @@ import { PoolManager } from "./pool.js";
 import { parseSeriesScore, TourManager } from "./tour.js";
 import { BlacklistCommands } from "./blacklist.js";
 import { SeasonCommands } from "./season.js";
+import { LinkCommands } from "./links.js";
+import { TrashCommands } from "./trash.js";
 import { PredictManager } from "./predict.js";
 import { DrawManager } from "./luckydraw.js";
 import { positionLabel } from "./positions.js";
@@ -113,6 +115,8 @@ export class TournamentBot {
   readonly pool: PoolManager;
   readonly blacklist: BlacklistCommands;
   readonly season: SeasonCommands;
+  readonly links: LinkCommands;
+  readonly trash: TrashCommands;
   readonly predict: PredictManager;
   readonly draws: DrawManager;
   private trackers = new Map<string, AnnounceTracker>();
@@ -135,6 +139,8 @@ export class TournamentBot {
     this.pool = new PoolManager({ api: this.api, dataDir: opts.dataDir, siteUrl: opts.siteUrl, log: this.log, random: opts.random });
     this.blacklist = new BlacklistCommands(this.api, opts.siteUrl);
     this.season = new SeasonCommands(this.api, opts.siteUrl);
+    this.links = new LinkCommands(this.api, opts.siteUrl);
+    this.trash = new TrashCommands(this.api, opts.siteUrl);
     this.predict = new PredictManager({ api: this.api, dataDir: opts.dataDir, siteUrl: opts.siteUrl, log: this.log, channelsFor: (tid) => this.predictionChannels(tid),
       canManage: (tid, userId, info) => {
         const tour = this.tour.tours.get(tid);
@@ -336,6 +342,8 @@ export class TournamentBot {
     if (prefix === "tp") return this.pool.onButton(i, info);
     if (prefix === "pk") return this.predict.onButton(i, info);
     if (prefix === "ld") return this.draws.onButton(i, info);
+    if (prefix === "lk") return this.links.onButton(i, canSave(info, this.settingsFor(i.guildId ?? "")));
+    if (prefix === "tb") return this.trash.onButton(i, canSave(info, this.settingsFor(i.guildId ?? "")));
     if (prefix !== "tr" || !sourceId) return;
     if (TOUR_ACTIONS.has(action)) return this.tour.onButton(i, info);
     const pending = this.pending.get(sourceId);
@@ -476,6 +484,8 @@ export class TournamentBot {
     if (i.commandName === "pool") return this.pool.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     if (i.commandName === "coins" || i.commandName === "predict") return this.predict.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     if (i.commandName === "luckydraw") return this.draws.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
+    if (i.commandName === "trash") return this.trash.onCommand(i, canSave(memberInfo(i.member as MemberLike, i.memberPermissions), this.settingsFor(i.guildId ?? "")));
+    if (i.commandName === "link" || i.commandName === "linkreq") return this.links.onCommand(i, canSave(memberInfo(i.member as MemberLike, i.memberPermissions), this.settingsFor(i.guildId ?? "")));
     try {
       if (i.commandName === "blacklist" || i.commandName === "season") {
         const info = memberInfo(i.member as MemberLike, i.memberPermissions);

@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { prisma } from "./db.js";
 import { fail, notFound } from "./errors.js";
-import { claimByUid } from "./members.js";
+import { claimByUid, waitingForApproval } from "./members.js";
 import { findByUid } from "./players.js";
 import { MMR_K, MVP_BONUS, PLACEMENT_K, PLACEMENT_SERIES, START_MMR, SVP_BONUS } from "./mmr.js";
 import { MOVEMENT_DAYS, playerBoard, tierCounts, tierInfo, withRanks } from "./leaderboard.js";
@@ -169,7 +169,12 @@ export async function joinReserve(discordId: string, body: unknown) {
   // Everything is checked before a character is linked or created, so a bad form leaves nothing behind.
   const game = await formGame(discordId, input);
   await checkRank(input.rank!, game);
-  const playerId = input.playerId ?? (input.uid ? (await claimByUid(discordId, { uid: input.uid, server: null, name: input.name || null, gameId: input.gameId ?? (await busiestGame()) })).player.id : null);
+  let playerId = input.playerId ?? null;
+  if (!playerId && input.uid) {
+    const claimed = await claimByUid(discordId, { uid: input.uid, name: input.name || undefined, gameId: input.gameId ?? (await busiestGame()) ?? undefined });
+    if (claimed.pending) throw waitingForApproval(input.uid);
+    playerId = claimed.player.id;
+  }
   if (!playerId) throw fail(400, "Send playerId or uid", THAI_PROBLEMS.playerId);
   const player = await ownPlayer(discordId, playerId);
   const taken = await prisma.reservePlayer.findUnique({ where: { playerId: player.id } });
@@ -242,7 +247,8 @@ export async function importReserve(body: unknown) {
       continue;
     }
     try {
-      const { player } = await claimByUid(p.discordId, { uid: p.uid, server: p.server || null, name: p.name, gameId: null });
+      // The organizer's own list: linked straight away.
+      const { player } = await claimByUid(p.discordId, { uid: p.uid, server: p.server || undefined, name: p.name }, { trusted: true });
       if (await prisma.reservePlayer.findUnique({ where: { playerId: player.id } })) {
         skipped.push({ discordId: p.discordId, reason: "character already on the list" });
         continue;
