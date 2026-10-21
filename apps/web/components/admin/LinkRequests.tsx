@@ -15,6 +15,8 @@ export function LinkRequests({ rows }: { rows: LinkRequest[] }) {
   const [state, setState] = useState<FormState>();
   const [pending, start] = useTransition();
   const act = (fn: () => Promise<FormState>) => start(async () => setState(await fn()));
+  // Stays mounted when the last request is handled, so its message stays on screen.
+  if (!rows.length && !state) return null;
   return (
     <section className="card stack link-requests" id="link-requests">
       <div className="row between">

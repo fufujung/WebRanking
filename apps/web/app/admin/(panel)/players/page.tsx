@@ -34,7 +34,7 @@ export default async function AdminPlayers({ searchParams }: { searchParams: Pro
     <>
       <ListHead title="ผู้เล่น" sub={`${players.length} คน · ใส่ UID ไว้ แล้วเปลี่ยนชื่อในเกมได้โดยสถิติไม่หาย`} action={{ href: "/admin/players/new", label: "+ เพิ่มผู้เล่น" }} />
       {sp.deleted && <div className="success" style={{ marginBottom: 16 }}>ลบเรียบร้อยแล้ว</div>}
-      {requests.length > 0 && <LinkRequests rows={requests} />}
+      <LinkRequests rows={requests} />
       <div className="list-bar">
         <FilterTabs
           label="กรองผู้เล่น"
