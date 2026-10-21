@@ -15,6 +15,7 @@ const MAIN: { href: string; label: string; icon: IconName }[] = [
   { href: "/admin/reserve", label: "ตัวสำรอง เล่นเก่งปากเก่ง", icon: "flag" },
   { href: "/admin/seasons", label: "ซีซั่น เล่นเก่งปากเก่ง", icon: "calendar" },
   { href: "/admin/predict", label: "ทายผล · รางวัล", icon: "gift" },
+  { href: "/admin/draws", label: "Lucky Draw สุ่มแจกของ", icon: "dice" },
   { href: "/admin/blacklist", label: "Blacklist", icon: "ban" },
   { href: "/admin/games", label: "เกม", icon: "game" },
   { href: "/admin/ads", label: "โฆษณาร้าน", icon: "megaphone" },

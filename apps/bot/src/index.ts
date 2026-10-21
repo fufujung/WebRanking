@@ -55,6 +55,14 @@ client.once(Events.ClientReady, async (c) => {
   const predict = () => bot.predict.sync(c).catch((e) => console.error("[bot] ซิงก์ทายผลไม่สำเร็จ:", e.message));
   await predict();
   setInterval(predict, 60_000);
+  // Lucky draws: cards follow the count from the YouTube chat every few seconds and announce the winners.
+  let drawing = false;
+  setInterval(async () => {
+    if (drawing) return;
+    drawing = true;
+    await bot.draws.sync(c).catch((e) => console.error("[bot] ซิงก์ Lucky Draw ไม่สำเร็จ:", e.message));
+    drawing = false;
+  }, 5_000);
   // Anything saved on the website shows up here within a few seconds: the API counts changes, and a new
   // count runs both syncs right away instead of waiting for their rounds.
   let seen: number | null = null;

@@ -56,6 +56,7 @@ import { parseSeriesScore, TourManager } from "./tour.js";
 import { BlacklistCommands } from "./blacklist.js";
 import { SeasonCommands } from "./season.js";
 import { PredictManager } from "./predict.js";
+import { DrawManager } from "./luckydraw.js";
 import { positionLabel } from "./positions.js";
 import type { BracketMatch, Draft, Match, MatchDetail, Page, PlayerDetail, RankedPlayer, RankedTeam, TeamDetail, Tournament } from "./types.js";
 
@@ -113,6 +114,7 @@ export class TournamentBot {
   readonly blacklist: BlacklistCommands;
   readonly season: SeasonCommands;
   readonly predict: PredictManager;
+  readonly draws: DrawManager;
   private trackers = new Map<string, AnnounceTracker>();
   /** Result posts being saved right now, so two admins can't record one twice. */
   private busy = new Set<string>();
@@ -139,16 +141,27 @@ export class TournamentBot {
         return Boolean(tour && this.tour.isOrganizer(tour, userId, info));
       },
     });
+    this.draws = new DrawManager({
+      api: this.api,
+      dataDir: opts.dataDir,
+      log: this.log,
+      channels: () => this.announceChannels(),
+      canManage: (guildId, info) => canSave(info, this.settingsFor(guildId ?? "")),
+    });
+  }
+
+  private announceChannels() {
+    return this.settings
+      .entries()
+      .map(([, s]) => s.announceChannelId)
+      .filter((c): c is string => Boolean(c));
   }
 
   /** Prediction cards go to the tournament's own announcement channel when the bot runs it, else to every server's. */
   private predictionChannels(tournamentId: string) {
     const own = this.tour.tours.get(tournamentId);
     if (own) return [own.announceChannelId];
-    return this.settings
-      .entries()
-      .map(([, s]) => s.announceChannelId)
-      .filter((c): c is string => Boolean(c));
+    return this.announceChannels();
   }
 
   settingsFor(guildId: string): Settings {
@@ -322,6 +335,7 @@ export class TournamentBot {
     const info = memberInfo(i.member as MemberLike, i.memberPermissions);
     if (prefix === "tp") return this.pool.onButton(i, info);
     if (prefix === "pk") return this.predict.onButton(i, info);
+    if (prefix === "ld") return this.draws.onButton(i, info);
     if (prefix !== "tr" || !sourceId) return;
     if (TOUR_ACTIONS.has(action)) return this.tour.onButton(i, info);
     const pending = this.pending.get(sourceId);
@@ -461,6 +475,7 @@ export class TournamentBot {
     if (["tour", "register", "roster"].includes(i.commandName)) return this.tour.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     if (i.commandName === "pool") return this.pool.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     if (i.commandName === "coins" || i.commandName === "predict") return this.predict.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
+    if (i.commandName === "luckydraw") return this.draws.onCommand(i, memberInfo(i.member as MemberLike, i.memberPermissions));
     try {
       if (i.commandName === "blacklist" || i.commandName === "season") {
         const info = memberInfo(i.member as MemberLike, i.memberPermissions);
@@ -536,6 +551,7 @@ export class TournamentBot {
     if (i.commandName === "blacklist") return this.blacklist.onAutocomplete(i);
     if (i.commandName === "season") return this.season.onAutocomplete(i);
     if (i.commandName === "predict") return this.predict.onAutocomplete(i);
+    if (i.commandName === "luckydraw") return this.draws.onAutocomplete(i);
     const focused = i.options.getFocused(true);
     try {
       if (i.commandName === "setup" && focused.name === "tournament") {

@@ -2,6 +2,7 @@ import { ApplicationCommandOptionType, ApplicationCommandType, ChannelType, Perm
 import { blacklistCommand } from "./blacklist.js";
 import { seasonCommand } from "./season.js";
 import { coinsCommand, predictCommand } from "./predict.js";
+import { luckyDrawCommand } from "./luckydraw.js";
 import { PLAYER_SORTS } from "./format.js";
 import { POSITIONS } from "./positions.js";
 
@@ -298,4 +299,5 @@ export const commandData: ApplicationCommandData[] = [
   seasonCommand,
   coinsCommand,
   predictCommand,
+  luckyDrawCommand,
 ];

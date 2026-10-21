@@ -189,7 +189,7 @@ model SpecialSeason {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  game        Game?          @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  game        Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
   players     SeasonPlayer[]
   tournaments Tournament[]
   stories     TournamentStory[]
@@ -628,4 +628,57 @@ model SiteSetting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+/// A lucky draw on stream: viewers type a keyword in the YouTube live chat (or press a button in Discord),
+/// one entry each, and the organizer draws the winners at random. Free to enter.
+model LuckyDraw {
+  id           String      @id @default(cuid())
+  title        String
+  /// What viewers type in the chat, e.g. "#OT500" (matched anywhere in the message, any case).
+  keyword      String
+  prize        String?
+  /// How many winners one press of "draw" picks.
+  winners      Int         @default(1)
+  /// Minutes the entries stay open once opened; null = until the organizer closes them.
+  minutes      Int?
+  youtubeUrl   String?
+  videoId      String?
+  liveChatId   String?
+  /// Where reading the live chat got to, so no message is counted twice.
+  pageToken    String?
+  /// Earliest time to read the chat again (YouTube says how long to wait).
+  nextPollAt   DateTime?
+  /// The last problem reading the chat, shown to the organizer.
+  chatError    String?
+  allowDiscord Boolean     @default(true)
+  status       String      @default("DRAFT") // DRAFT | OPEN | CLOSED
+  openedAt     DateTime?
+  closesAt     DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  entries      DrawEntry[]
+}
+
+model DrawEntry {
+  id         String    @id @default(cuid())
+  drawId     String
+  /// YOUTUBE (a chat message), DISCORD (the button) or MANUAL (typed in by the organizer).
+  source     String
+  /// The YouTube channel id, the Discord id, or the typed name: one entry per person.
+  externalId String
+  name       String
+  avatarUrl  String?
+  createdAt  DateTime  @default(now())
+  /// Set when drawn: 1 for the first winner, and so on.
+  place      Int?
+  wonAt      DateTime?
+  /// The organizer struck a winner out (did not claim): they keep the record but lose the prize.
+  voided     Boolean   @default(false)
+
+  draw LuckyDraw @relation(fields: [drawId], references: [id], onDelete: Cascade)
+
+  @@unique([drawId, source, externalId])
+  @@index([drawId, place])
 }

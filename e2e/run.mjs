@@ -1357,6 +1357,65 @@ if (!(await page.locator(".btn-discord").count())) {
   await pAdmin.locator("#predict").scrollIntoViewIfNeeded();
   await pAdmin.screenshot({ path: OUT + "/predict-controls.png" });
   step("organizer set up a hand-made pair on an event without a bracket, a member picked it, the organizer closed it and picked the winner; the controls fit a phone");
+
+  // Lucky draw: set up a round, open it, names come in (typed list + a Discord join), the stream overlay
+  // follows, two winners are drawn with the spin, a no-show is struck out and replaced.
+  await pAdmin.click('.side-nav a[href="/admin/draws"]');
+  await pAdmin.waitForURL(base + "/admin/draws");
+  await pAdmin.fill('form:has-text("สร้างรอบสุ่มใหม่") input[name="title"]', `แจกเมาส์ ${uniq}`);
+  await pAdmin.fill('form:has-text("สร้างรอบสุ่มใหม่") input[name="prize"]', "เมาส์เกมมิ่ง");
+  await pAdmin.fill('form:has-text("สร้างรอบสุ่มใหม่") input[name="keyword"]', `#OT${uniq}`);
+  await pAdmin.fill('form:has-text("สร้างรอบสุ่มใหม่") input[name="winners"]', "2");
+  await pAdmin.fill('form:has-text("สร้างรอบสุ่มใหม่") input[name="youtubeUrl"]', "https://example.com/not-youtube");
+  await pAdmin.click("button:has-text('สร้างรอบ')");
+  await pAdmin.locator(".error:has-text('ลิงก์ YouTube ไม่ถูกต้อง')").waitFor();
+  await pAdmin.fill('form:has-text("สร้างรอบสุ่มใหม่") input[name="youtubeUrl"]', "");
+  await pAdmin.click("button:has-text('สร้างรอบ')");
+  await pAdmin.waitForURL(/\/admin\/draws\/[^/]+$/);
+  const drawId = pAdmin.url().split("/").pop();
+  await pAdmin.click("button:has-text('▶ เปิดรับ')");
+  await pAdmin.locator(".badge:has-text('กำลังเปิดรับ')").waitFor();
+  await pAdmin.locator("[data-countdown]").waitFor();
+  await pAdmin.fill('form:has-text("เพิ่มชื่อเอง") textarea[name="lines"]', "Alice\nBob\nalice\nCarol");
+  await pAdmin.click("button:has-text('เพิ่มรายชื่อ')");
+  await pAdmin.locator(".success:has-text('เพิ่ม 3 ชื่อ (ซ้ำ 1)')").waitFor();
+  await apiCall("POST", `/draws/${drawId}/entries`, { source: "DISCORD", externalId: rival, name: "E2E Discord" });
+  // The page refreshes itself while open: the Discord join shows up without a reload.
+  await pAdmin.locator("[data-entry-count]:text-is('4')").waitFor({ timeout: 10000 });
+  await pAdmin.locator(".draw-entry:has-text('E2E Discord'):has-text('Discord')").waitFor();
+  await pAdmin.screenshot({ path: OUT + "/lucky-draw-admin.png", fullPage: true });
+
+  const overlay = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  await overlay.goto(base + `/overlay/draw?d=${drawId}`);
+  await overlay.locator(`#kw:text-is('#OT${uniq}')`).waitFor();
+  await overlay.locator("#count:text-is('4')").waitFor();
+  await overlay.screenshot({ path: OUT + "/lucky-draw-overlay-open.png" });
+  const pub = await (await overlay.request.get(base + `/overlay/draw/data?d=${drawId}`)).text();
+  if (pub.includes(rival)) throw new Error("the overlay data shows a Discord id");
+
+  await pAdmin.click("button:has-text('🎲 สุ่มผู้โชคดี 2 คน')");
+  await pAdmin.locator('[data-winner="2"]').waitFor();
+  await pAdmin.locator(".badge:has-text('ปิดรับแล้ว')").waitFor();
+  await overlay.locator(".spin.landed").waitFor({ timeout: 15000 });
+  await overlay.locator(".winners .w").nth(1).waitFor({ timeout: 15000 });
+  await overlay.screenshot({ path: OUT + "/lucky-draw-overlay-winner.png" });
+  const late2 = await apiCall("POST", `/draws/${drawId}/entries`, { source: "DISCORD", externalId: String(BigInt(rival) + 1n), name: "Late" }).then(() => "taken", (e) => String(e.message));
+  if (!/→ 409/.test(late2)) throw new Error(`a drawn round still takes entries: ${late2}`);
+  await pAdmin.locator('[data-winner="1"] button:has-text("ตัดสิทธิ์")').click();
+  await pAdmin.locator('[data-winner="1"].draw-voided').waitFor();
+  await pAdmin.click("button:has-text('🎲 สุ่มเพิ่ม 1 คน')");
+  await pAdmin.locator('[data-winner="3"]').waitFor();
+  await overlay.locator(".winners .w").nth(2).waitFor({ timeout: 20000 });
+  await overlay.locator(".winners .w.void").waitFor();
+  await overlay.close();
+  await pAdmin.setViewportSize({ width: 390, height: 844 });
+  await pAdmin.reload();
+  if (await pAdmin.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error("the lucky draw page is wider than a phone screen");
+  await pAdmin.screenshot({ path: OUT + "/lucky-draw-admin-mobile.png", fullPage: true });
+  await pAdmin.setViewportSize({ width: 1280, height: 900 });
+  await pAdmin.goto(base + "/admin/draws");
+  await pAdmin.locator(`tr:has-text('แจกเมาส์ ${uniq}'):has-text('ปิดรับแล้ว')`).waitFor();
+  step("lucky draw: organizer opened a round, names came from a pasted list and Discord, the overlay counted them and spun two winners, a no-show was struck out and replaced; fits a phone");
   await pAdminCtx.close();
   await page.goto(base + "/me");
   await page.locator(`#rewards li:has-text('อันดับ 1 Predict ${uniq}') .reward-code`).waitFor();

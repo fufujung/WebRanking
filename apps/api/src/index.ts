@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import { recomputeRatings } from "./lib/elo.js";
 import { backfillPlayerUids, backfillPositions } from "./lib/players.js";
 import { backfillGames } from "./lib/games.js";
+import { startDrawPoller } from "./lib/draws.js";
 
 const port = Number(process.env.PORT ?? 4000);
 createApp().listen(port, () => {
@@ -18,3 +19,6 @@ backfillGames()
     return recomputeRatings();
   })
   .catch((e) => console.error("Could not update player UIDs and MMR on start:", e));
+
+// Lucky draws: close the ones whose time is up and read the YouTube chat of the open ones.
+startDrawPoller();

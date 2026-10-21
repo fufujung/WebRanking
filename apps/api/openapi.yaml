@@ -38,6 +38,8 @@ tags:
     description: "The special \"เล่นเก่งปากเก่ง\" events: a standing substitutes list and a separate MMR and stats board"
   - name: Predictions
     description: "The prediction game: free coins (daily login, watching live), picks on matches and champions, leaderboards and prizes. Coins cannot be bought, sold or cashed out."
+  - name: Lucky draws
+    description: "Free giveaways on stream: people type a keyword in the YouTube live chat or press join in Discord, then the organizer draws winners at random. Nothing is bought."
   - name: Players
   - name: Tournaments
   - name: Brackets
@@ -274,6 +276,110 @@ paths:
       responses:
         "200": { description: "{ season, seasons, currentSeasonId, ranked, placing, tiers, stats, events, reserve, ranks, rules }" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/draws:
+    get:
+      tags: [Lucky draws]
+      summary: Every lucky draw, newest first, with entry counts and winners (admin)
+      responses:
+        "200": { description: "{ data: [draw] }" }
+    post:
+      tags: [Lucky draws]
+      summary: Set up a lucky draw (admin). It starts as DRAFT; open it to take entries.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LuckyDrawInput" }
+      responses:
+        "201": { description: The draw }
+        "400": { description: "Invalid input; details.th says what to fix, details.field which field" }
+  /api/v1/draws/active:
+    get:
+      tags: [Lucky draws]
+      summary: Draws open now or drawn in the last 6 hours, as their public view (for Discord cards)
+      responses:
+        "200": { description: "{ data: [public draw] }" }
+  /api/v1/draws/{id}/public:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [Lucky draws]
+      summary: "What the stream overlay shows: title, keyword, status, closing time, entry count, a sample of names and the winners (no ids)"
+      responses:
+        "200": { description: Public view }
+        "404": { description: Not found }
+  /api/v1/draws/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [Lucky draws]
+      summary: One draw with every entry, any chat-reading problem (chatError) and the winners in order (admin)
+      responses:
+        "200": { description: The draw }
+    patch:
+      tags: [Lucky draws]
+      summary: Change a draw (admin). A new YouTube link starts reading that video's chat from scratch.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/LuckyDrawInput" } } } }
+      responses:
+        "200": { description: The draw }
+    delete:
+      tags: [Lucky draws]
+      summary: Delete a draw and its entries (admin)
+      responses:
+        "204": { description: Deleted }
+  /api/v1/draws/{id}/open:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Lucky draws]
+      summary: Start taking entries (admin). Closes by itself after `minutes`, if set. While open the API reads the YouTube live chat every few seconds (needs YOUTUBE_API_KEY on the server).
+      responses:
+        "200": { description: The draw }
+  /api/v1/draws/{id}/close:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Lucky draws]
+      summary: Stop taking entries (admin)
+      responses:
+        "200": { description: The draw }
+  /api/v1/draws/{id}/draw:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Lucky draws]
+      summary: Draw winners at random among entries that have not won (admin). Closes entries first. Default count is the draw's `winners`.
+      requestBody: { content: { application/json: { schema: { type: object, properties: { count: { type: integer, minimum: 1, maximum: 50 } } } } } }
+      responses:
+        "200": { description: "{ data: [winners, with place] }" }
+        "409": { description: Not opened yet, or nobody left to draw }
+  /api/v1/draws/{id}/entries:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [Lucky draws]
+      summary: "Add an entry (admin): a Discord member pressing join (open draws only), one typed name, or `lines` (names, one per line). Joining twice changes nothing."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - { type: object, required: [source, name], properties: { source: { type: string, enum: [DISCORD, MANUAL] }, externalId: { type: string, description: "Discord user id (DISCORD)" }, name: { type: string, maxLength: 100 }, avatarUrl: { type: string } } }
+                - { type: object, required: [lines], properties: { lines: { type: string } } }
+      responses:
+        "201": { description: "{ entry, added: true }" }
+        "200": { description: "{ entry, added: false } or { added, skipped } for lines" }
+        "409": { description: "Not open, or Discord entries are off for this draw" }
+  /api/v1/draws/{id}/entries/{entryId}:
+    parameters: [{ $ref: "#/components/parameters/id" }, { name: entryId, in: path, required: true, schema: { type: string } }]
+    delete:
+      tags: [Lucky draws]
+      summary: Remove an entry (admin)
+      responses:
+        "204": { description: Removed }
+  /api/v1/draws/{id}/entries/{entryId}/void:
+    parameters: [{ $ref: "#/components/parameters/id" }, { name: entryId, in: path, required: true, schema: { type: string } }]
+    post:
+      tags: [Lucky draws]
+      summary: Strike out (or restore) a winner who did not claim; kept on record. Draw again with count 1 to replace them (admin).
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [voided], properties: { voided: { type: boolean } } } } } }
+      responses:
+        "200": { description: The entry }
   /api/v1/settings:
     get:
       tags: [Settings]
@@ -1713,6 +1819,17 @@ components:
     Forbidden: { description: Read-only key used for a write, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   schemas:
+    LuckyDrawInput:
+      type: object
+      required: [title, keyword]
+      properties:
+        title: { type: string, maxLength: 100 }
+        keyword: { type: string, maxLength: 40, description: "What people type in the chat, e.g. #OT500 (matched anywhere in the message, any case)" }
+        prize: { type: string, maxLength: 200, nullable: true }
+        winners: { type: integer, minimum: 1, maximum: 50, default: 1 }
+        minutes: { type: integer, minimum: 1, maximum: 240, nullable: true, description: Closes by itself this long after opening }
+        youtubeUrl: { type: string, nullable: true, description: The live stream link whose chat is read }
+        allowDiscord: { type: boolean, default: true }
     GameRank:
       type: object
       required: [name]

@@ -61,3 +61,6 @@ export function fromBangkokInput(v: string): string | null {
 const thaiTimeFmt = new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 /** A date and time in Thai time, wherever the page is rendered. */
 export const fmtThaiTime = (d: string | null | undefined) => (d ? `${thaiTimeFmt.format(new Date(d))} น.` : "-");
+
+/** A lucky draw's state, as the organizer sees it. */
+export const DRAW_STATE: Record<"DRAFT" | "OPEN" | "CLOSED", string> = { DRAFT: "ยังไม่เปิด", OPEN: "กำลังเปิดรับ", CLOSED: "ปิดรับแล้ว" };
