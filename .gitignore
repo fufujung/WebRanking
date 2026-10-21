@@ -11,3 +11,4 @@ apps/api/uploads
 *.tsbuildinfo
 apps/bot/data
 apps/web/AGENTS.md
+.claude/worktrees
