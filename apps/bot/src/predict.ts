@@ -277,6 +277,11 @@ export function rewardDm(r: PendingReward, siteUrl?: string) {
     .join("\n");
 }
 
+/** Under a prize DM: the winner says the prize arrived (the API checks the prize is theirs). */
+export function receivedButton(rewardId: string) {
+  return [new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId(`pk:got:${rewardId}`).setLabel("ได้รับรางวัลแล้ว").setEmoji("✅").setStyle(ButtonStyle.Success))];
+}
+
 type Profile = { id: string; username: string; globalName?: string | null; displayAvatarURL?: () => string };
 const profile = (u: Profile) => ({ name: (u.globalName || u.username || "ผู้เล่น").slice(0, 100), ...(u.displayAvatarURL ? { avatarUrl: u.displayAvatarURL() } : {}) });
 
@@ -355,7 +360,7 @@ export class PredictManager {
     const { data } = await this.api.get<{ data: PendingReward[] }>("/predict/rewards/unnotified");
     for (const r of data) {
       const user = await client.users?.fetch(r.discordId).catch(() => null);
-      const sent = user ? await user.send(rewardDm(r, this.opts.siteUrl)).then(() => true, () => false) : false;
+      const sent = user ? await user.send({ content: rewardDm(r, this.opts.siteUrl), components: receivedButton(r.id) }).then(() => true, () => false) : false;
       if (!sent) this.opts.log(`prize DM to ${r.discordId} failed (DMs closed?); the prize is on their website page`);
       // Marked either way: the prize waits on the website, and the bot does not retry every minute.
       await this.api.post(`/predict/rewards/${encodeURIComponent(r.id)}/notified`, {});
@@ -384,6 +389,13 @@ export class PredictManager {
         }
         await this.sync(i.client);
         return void (await i.editReply(text));
+      }
+      if (action === "got" && marketId) {
+        // pk:got:<reward>: marks the presser's own prize only (the API refuses someone else's).
+        await i.deferReply({ ephemeral: true });
+        await this.api.post(`/predict/members/${i.user.id}/rewards/${encodeURIComponent(marketId)}/received`, {});
+        await i.editReply("✅ บันทึกแล้วว่าได้รับรางวัล ขอบคุณครับ");
+        return void (await i.message?.edit({ components: [] }).catch(() => null));
       }
       if (action === "bet" && marketId && teamId) {
         const w = await this.api.get<WalletView>(`/predict/members/${i.user.id}`);

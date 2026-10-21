@@ -9,6 +9,7 @@ import { PLAYER_SORTS } from "./format.js";
 import { POSITIONS } from "./positions.js";
 import { gameOption, mmrCommand, searchCommand } from "./ladder.js";
 import { guildCommand, meCommand, myTeamCommand } from "./me.js";
+import { manageCommand } from "./manage.js";
 
 export const READ_POST_COMMAND = "อ่านผลจากโพสต์นี้";
 
@@ -316,4 +317,5 @@ export const commandData: ApplicationCommandData[] = [
   meCommand,
   myTeamCommand,
   guildCommand,
+  manageCommand,
 ];

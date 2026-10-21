@@ -42,6 +42,12 @@ export const luckyDrawCommand: ApplicationCommandData = {
         { type: O.Integer, name: "linked_x", description: "โอกาสคนผูก Discord กับเว็บ (ไม่ใส่ = x1)", minValue: 1, maxValue: 10 },
       ],
     },
+    {
+      type: O.Subcommand,
+      name: "open",
+      description: "เปิดรอบที่สร้างไว้บนเว็บ (ไม่เลือก = ดูรอบที่ยังไม่เปิด)",
+      options: [{ type: O.String, name: "draw", description: "รอบที่ยังไม่เปิด", autocomplete: true }],
+    },
     { type: O.Subcommand, name: "close", description: "ปิดรับ", options: [{ type: O.String, name: "draw", description: "รอบ", required: true, autocomplete: true }] },
     {
       type: O.Subcommand,
@@ -248,16 +254,33 @@ export class DrawManager {
         await i.editReply(r.added ? "✅ เข้าร่วมแล้ว รอลุ้นตอนสุ่มบนไลฟ์ได้เลย" : "คุณเข้าร่วมรอบนี้อยู่แล้ว (คนละ 1 สิทธิ์)");
         return void (await this.sync(i.client));
       }
-      if (action !== "close" && action !== "draw") return;
+      if (action !== "close" && action !== "draw" && action !== "open") return;
       if (!this.opts.canManage(i.guildId, info)) return void (await i.reply({ ephemeral: true, content: "ปุ่มนี้สำหรับผู้จัดเท่านั้น" }));
       await i.deferReply({ ephemeral: true });
-      await i.editReply(await (action === "close" ? this.close(drawId) : this.draw(drawId)));
+      await i.editReply(await (action === "close" ? this.close(drawId) : action === "open" ? this.open(drawId) : this.draw(drawId)));
       await this.sync(i.client);
     } catch (e) {
       const text = thaiError(e);
       if (i.deferred || i.replied) await i.editReply(text).catch(() => null);
       else await i.reply({ ephemeral: true, content: text }).catch(() => null);
     }
+  }
+
+  /** Opens a draw made on the website (a draft), or one that was closed. */
+  private async open(drawId: string) {
+    const d = await this.api.post<{ title: string }>(`/draws/${encodeURIComponent(drawId)}/open`, {});
+    return `🎁 เปิดรับ **${d.title}** แล้ว การ์ดขึ้นในห้องประกาศ`;
+  }
+
+  /** The drafts waiting to be opened, one button each. */
+  private async drafts() {
+    const { data } = await this.api.get<{ data: DrawView[] }>("/draws");
+    const drafts = data.filter((d) => d.status === "DRAFT").slice(0, 5);
+    if (!drafts.length) return { content: "ไม่มีรอบที่ยังไม่เปิด สร้างได้ที่หน้า Lucky Draw ในหลังบ้าน หรือ /luckydraw new", components: [] };
+    return {
+      content: ["🎁 รอบที่ยังไม่เปิด", ...drafts.map((d, n) => `**${n + 1}.** ${d.title} · พิมพ์ \`${d.keyword}\` · ${d.winners} รางวัล${d.prize ? ` · ${d.prize}` : ""}`)].join("\n").slice(0, 1990),
+      components: [new ActionRowBuilder<ButtonBuilder>().addComponents(drafts.map((d, n) => new ButtonBuilder().setCustomId(`ld:open:${d.id}`).setLabel(`▶️ เปิด ${n + 1}`).setStyle(ButtonStyle.Success)))],
+    };
   }
 
   private async close(drawId: string) {
@@ -295,6 +318,9 @@ export class DrawManager {
         });
         await this.api.post(`/draws/${encodeURIComponent(d.id)}/open`, {});
         text = "🎁 เปิดรับแล้ว การ์ดขึ้นในห้องประกาศ จัดการต่อได้ที่ปุ่มบนการ์ด หรือหน้า Lucky Draw ในหลังบ้าน";
+      } else if (sub === "open") {
+        if (!id) return void (await i.editReply(await this.drafts()));
+        text = await this.open(id);
       } else if (sub === "close") text = await this.close(id);
       else if (sub === "draw") text = await this.draw(id, i.options.getInteger("count") ?? undefined);
       else {
@@ -317,8 +343,10 @@ export class DrawManager {
     const STATE = { DRAFT: "ยังไม่เปิด", OPEN: "เปิดรับ", CLOSED: "ปิดรับแล้ว" } as const;
     try {
       const { data } = await this.api.get<{ data: (DrawView & { entries: number })[] }>("/draws");
+      const sub = i.options.getSubcommand(false);
       await i.respond(
         data
+          .filter((d) => sub !== "open" || d.status === "DRAFT")
           .filter((d) => d.title.toLowerCase().includes(q) || d.keyword.toLowerCase().includes(q))
           .slice(0, 25)
           .map((d) => ({ name: `${d.title} · ${d.keyword} · ${STATE[d.status]} · ${d.entries} คน`.slice(0, 100), value: d.id })),
