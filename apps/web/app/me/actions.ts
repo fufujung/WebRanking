@@ -33,11 +33,12 @@ export async function claimPlayer(_: MeState, form: FormData): Promise<MeState> 
   const m = await member();
   const name = text(form, "name");
   try {
-    const p = await api<Player>(`/players/discord/${m.id}/claim`, {
+    const p = await api<Player & { pending?: boolean }>(`/players/discord/${m.id}/claim`, {
       method: "POST",
-      json: { uid: text(form, "uid"), server: text(form, "server") || undefined, name: name || undefined, gameId: text(form, "gameId") || undefined },
+      json: { uid: text(form, "uid"), server: text(form, "server") || undefined, name: name || undefined, gameId: text(form, "gameId") || undefined, discordName: m.name },
     });
     revalidatePath("/", "layout");
+    if (p.pending) return { ok: `ส่งคำขอผูกตัวละคร ${p.name} แล้ว รอผู้จัดอนุมัติ (กันคนอื่นแอบอ้าง UID ของคุณ)` };
     return { ok: `ผูกโปรไฟล์ ${p.name} กับบัญชี Discord แล้ว` };
   } catch (e) {
     const d = e instanceof ApiError ? (e.details as { needsName?: boolean; needsGame?: boolean } | undefined) : undefined;

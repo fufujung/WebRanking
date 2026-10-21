@@ -17,6 +17,7 @@ import { special } from "./routes/special.js";
 import { predict } from "./routes/predict.js";
 import { draws } from "./routes/draws.js";
 import { settings } from "./routes/settings.js";
+import { trash } from "./routes/trash.js";
 import { matches } from "./routes/matches.js";
 import { players } from "./routes/players.js";
 import { rankings } from "./routes/rankings.js";
@@ -84,6 +85,7 @@ export function createApp() {
   v1.use("/predict", predict);
   v1.use("/draws", draws);
   v1.use("/settings", settings);
+  v1.use("/trash", trash);
   v1.use(uploads);
   app.use("/api/v1", v1);
 

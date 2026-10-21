@@ -1129,7 +1129,8 @@ export class TourManager {
       const uid = text("uid");
       if (!id && uid) {
         const t = await this.api.get<{ gameId?: string | null }>(`/tournaments/${tid}`);
-        const p = await this.api.post<{ id: string }>(`/players/discord/${i.user.id}/claim`, { uid, server: text("server") || undefined, name: text("name") || undefined, gameId: t.gameId ?? undefined });
+        const p = await this.api.post<{ id: string; name: string; pending?: boolean }>(`/players/discord/${i.user.id}/claim`, { uid, server: text("server") || undefined, name: text("name") || undefined, gameId: t.gameId ?? undefined, discordName: (i.user.globalName || i.user.username || "").slice(0, 100) || undefined });
+        if (p.pending) return void (await i.editReply(`⏳ ตัวละคร **${p.name}** (UID ${uid}) มีอยู่แล้ว ส่งคำขอผูกให้ผู้จัดอนุมัติแล้ว อนุมัติเมื่อไหร่กด 🙋 ลงชื่ออีกครั้ง (จะแจ้งทาง DM)`));
         id = p.id;
       }
       if (!id) return void (await i.editReply("เลือกตัวละครที่จะลงก่อน"));

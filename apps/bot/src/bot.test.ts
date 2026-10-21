@@ -595,7 +595,7 @@ describe("info commands", () => {
     const broken = new TournamentBot({ api: { ...api, get: async () => Promise.reject(new (await import("./api.js")).ApiError(0, "ติดต่อเว็บไม่ได้ (เปิด npm run dev ไว้หรือยัง?)")) }, dataDir: path.join(tmp, "data3"), log: () => {} });
     const i = command("rank", {});
     await broken.onCommand(i);
-    assert.match(last<any>(i.replies), /ติดต่อเว็บไม่ได้/);
+    assert.match(text(last<any>(i.replies)), /ติดต่อเว็บไม่ได้/);
   });
 });
 

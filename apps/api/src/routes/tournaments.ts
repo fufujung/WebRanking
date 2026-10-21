@@ -10,7 +10,8 @@ import * as comp from "../lib/competition.js";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { matchInclude, matchOrder } from "../lib/selects.js";
 import { syncBlacklist } from "../lib/blacklist.js";
-import { refundTournament, syncPredictions } from "../lib/predict.js";
+import { syncPredictions } from "../lib/predict.js";
+import { trashTournament } from "../lib/trash.js";
 import { confirmTeams, drawTeams, removeSignup, soloView } from "../lib/solo.js";
 import { tournamentSeason } from "../lib/seasons.js";
 import { setStories, tournamentStories } from "../lib/stories.js";
@@ -107,9 +108,8 @@ tournaments.patch("/:id", requireAdmin, async (req, res) => {
 });
 
 tournaments.delete("/:id", requireAdmin, async (req, res) => {
-  await refundTournament(String(req.params.id));
-  await prisma.tournament.delete({ where: { id: String(req.params.id) } });
-  await recomputeRatings();
+  // Kept in the trash for 30 days (picks are refunded), see lib/trash.ts.
+  await trashTournament(String(req.params.id));
   res.status(204).end();
 });
 

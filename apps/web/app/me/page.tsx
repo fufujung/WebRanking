@@ -2,7 +2,7 @@ import Link from "next/link";
 import { api, qs } from "@/lib/api";
 import { getMember } from "@/lib/member";
 import { discordEnabled } from "@/lib/discord";
-import type { MyCharacter, ReservePlayer, GameRank, Wallet } from "@/lib/types";
+import type { MyCharacter, PendingLink, ReservePlayer, GameRank, Wallet } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
 import { ConfirmReward } from "@/app/predict/PredictForms";
 import { siteOrigin } from "@/lib/site";
@@ -60,12 +60,13 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
     );
   }
 
-  const [{ data: mine }, games, origin, { data: reserves }, wallet] = await Promise.all([
+  const [{ data: mine }, games, origin, { data: reserves }, wallet, { pending }] = await Promise.all([
     api<{ data: MyCharacter[] }>(`/members/${me.id}`),
     allGames(),
     siteOrigin(),
     api<{ data: (ReservePlayer & { player: { gameId: string | null } })[] }>(`/members/${me.id}/reserves`),
     api<Wallet>(`/predict/members/${me.id}`),
+    api<{ pending: PendingLink[] }>(`/players/discord/${me.id}`),
   ]);
   // เล่นเก่งปากเก่ง keeps a list per game (UIDs and names differ between games): one form for each game the member plays.
   const byGame = [...new Map(mine.map((c) => [c.game?.id ?? "", c.game])).values()];
@@ -159,6 +160,11 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
           <h2 style={{ marginTop: 0 }}>📝 ลงชื่อตัวสำรอง เล่นเก่งปากเก่ง</h2>
           <p className="muted" style={{ margin: 0 }}>ผูกตัวละครของคุณด้านล่างก่อน (ใส่ชื่อในเกมและ UID) แล้วฟอร์มลงชื่อตัวสำรองจะขึ้นตรงนี้</p>
         </section>
+      )}
+      {pending.length > 0 && (
+        <div className="notice mt" data-pending-links>
+          ⏳ รอผู้จัดอนุมัติการผูกตัวละคร: {pending.map((l) => `${l.player.name}${l.player.uid ? ` (UID ${l.player.uid})` : ""}`).join(", ")} · อนุมัติแล้วตัวละครจะขึ้นในหน้านี้เอง
+        </div>
       )}
       <ClaimForm first={mine.length === 0} games={games} />
       <p className="muted small mt">ชื่อในเกม ทีม และสถิติ อัปเดตจากผลการแข่งและบอท Discord อัตโนมัติ ถ้าข้อมูลผิด แจ้งผู้จัดได้เลย</p>

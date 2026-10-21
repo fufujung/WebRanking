@@ -350,9 +350,25 @@ describe("Discord accounts (log in with Discord on the website)", () => {
   test("claiming by UID links an existing player, refuses one linked to someone else, creates a new one", async () => {
     // ShadowKing (UID 700100) has no Discord link yet.
     ids.p = (await ok("GET", "/players/uid/700100?server=Asia")).id;
+    // UIDs are public: linking a character that exists waits for an organizer.
+    const asked = await call("POST", `/players/discord/${me}/claim`, { uid: "700100", server: "Asia", discordName: "me#1" });
+    assert.equal(asked.status, 202);
+    assert.equal(asked.body.pending, true);
+    assert.equal(asked.body.discordId, null, "not linked before approval");
+    const rival = await call("POST", `/players/discord/${other}/claim`, { uid: "700100", server: "Asia" });
+    assert.equal(rival.status, 202, "someone else can ask too; the organizer decides");
+    const waiting = (await ok("GET", "/players/link-requests")).data.filter((r: any) => r.playerId === ids.p);
+    assert.deepEqual(waiting.map((r: any) => r.discordId).sort(), [me, other].sort());
+    assert.equal(waiting.find((r: any) => r.discordId === me).name, "me#1");
+    assert.deepEqual((await ok("GET", `/players/discord/${me}`)).pending.map((r: any) => r.player.uid), ["700100"]);
+    const approved = await ok("POST", `/players/link-requests/${waiting.find((r: any) => r.discordId === me).id}/approve`);
+    assert.equal(approved.player.discordId, me);
+    assert.deepEqual(approved.denied, [other], "the other request is dropped");
+    assert.equal((await ok("GET", "/players/link-requests")).data.some((r: any) => r.playerId === ids.p), false);
     const claimed = await ok("POST", `/players/discord/${me}/claim`, { uid: "700100", server: "Asia" });
     assert.equal(claimed.id, ids.p);
     assert.equal(claimed.discordId, me);
+    assert.equal(claimed.pending, false, "already theirs: no new request");
     const taken = await call("POST", `/players/discord/${other}/claim`, { uid: "700100", server: "Asia" });
     assert.equal(taken.status, 409);
     assert.match(taken.body.details.th, /ผูกกับบัญชี Discord อื่น/);

@@ -2,8 +2,8 @@
  * /blacklist in Discord: anyone sees who is on it; organizers add players and lift entries.
  * Walkover entries are made by the API itself; the tournament manager announces them.
  */
-import { ApplicationCommandOptionType as O, type ApplicationCommandData, type APIEmbed, type AutocompleteInteraction, type ChatInputCommandInteraction } from "discord.js";
-import type { Api } from "./api.js";
+import { ActionRowBuilder, ApplicationCommandOptionType as O, ButtonBuilder, ButtonStyle, type ApplicationCommandData, type APIEmbed, type AutocompleteInteraction, type ButtonInteraction, type ChatInputCommandInteraction } from "discord.js";
+import { thaiError, type Api } from "./api.js";
 import { fitEmbed, isPublicUrl, RED, siteLink } from "./format.js";
 import type { BlacklistEntry, Bracket, BracketMatch, Page } from "./types.js";
 
@@ -45,6 +45,12 @@ export const blacklistCommand: ApplicationCommandData = {
         { type: O.String, name: "entry", description: "รายการที่จะยกเลิก", required: true, autocomplete: true },
         { type: O.String, name: "note", description: "เหตุผล", maxLength: 300 },
       ],
+    },
+    {
+      type: O.Subcommand,
+      name: "delete",
+      description: "ผู้จัด: ลบรายการที่เพิ่มผิด (คืน MMR) รายการจากการแพ้บายให้ใช้ lift",
+      options: [{ type: O.String, name: "entry", description: "รายการที่จะลบ", required: true, autocomplete: true }],
     },
   ],
 };
@@ -94,6 +100,23 @@ export class BlacklistCommands {
       return void (await i.editReply({ embeds: [blacklistEmbed(page.data, page.total, this.siteUrl, title)], allowedMentions: { parse: [] } }));
     }
     if (!organizer) return void (await i.reply({ ephemeral: true, content: "คำสั่งนี้สำหรับผู้จัดเท่านั้น" }));
+    if (sub === "delete") {
+      await i.deferReply({ ephemeral: true });
+      const id = i.options.getString("entry", true);
+      const page = await this.api.get<Page<BlacklistEntry>>("/blacklist?limit=500");
+      const e = page.data.find((x) => x.id === id);
+      if (!e) return void (await i.editReply("ไม่พบรายการนี้ใน Blacklist"));
+      return void (await i.editReply({
+        content: `ลบ ${who(e.player)} · ${e.reason} (-${e.penalty} MMR) ออกจาก Blacklist ถาวร? MMR จะคืนให้`,
+        components: [
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder().setCustomId(`bk:dely:${e.id}`).setLabel("ลบรายการ").setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId("bk:no").setLabel("ยกเลิก").setStyle(ButtonStyle.Secondary),
+          ),
+        ],
+        allowedMentions: { parse: [] },
+      }));
+    }
     await i.deferReply();
     if (sub === "add") {
       const e = await this.api.post<BlacklistEntry>("/blacklist", {
@@ -120,6 +143,20 @@ export class BlacklistCommands {
         content: `✅ ยกเลิกโทษของ ${who(e.player)} แล้ว คืน ${e.penalty} MMR (ตอนนี้ ${e.player.mmr} MMR)${note ? `\nเหตุผล: ${note}` : ""}`,
         allowedMentions: { users: e.player.discordId ? [e.player.discordId] : [] },
       }));
+    }
+  }
+
+  /** bk:dely:<entry> deletes after the confirm; bk:no cancels. Organizers only. */
+  async onButton(i: ButtonInteraction, organizer: boolean) {
+    const [, action, id] = i.customId.split(":");
+    if (!organizer) return void (await i.reply({ ephemeral: true, content: "ปุ่มนี้สำหรับผู้จัดเท่านั้น" }));
+    if (action === "no") return void (await i.update({ content: "ยกเลิกแล้ว", components: [] }));
+    if (action !== "dely" || !id) return;
+    try {
+      await this.api.delete(`/blacklist/${encodeURIComponent(id)}`);
+      await i.update({ content: "🗑️ ลบออกจาก Blacklist แล้ว คืน MMR ให้แล้ว", components: [] });
+    } catch (e) {
+      await i.update({ content: `❌ ${thaiError(e)}`, components: [] }).catch(() => null);
     }
   }
 

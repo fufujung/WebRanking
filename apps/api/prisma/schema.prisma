@@ -80,9 +80,9 @@ model Player {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  team         Team?             @relation(fields: [teamId], references: [id], onDelete: SetNull)
-  game         Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
-  guild        Guild?            @relation(fields: [guildId], references: [id], onDelete: SetNull)
+  team         Team?               @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  game         Game?               @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  guild        Guild?              @relation(fields: [guildId], references: [id], onDelete: SetNull)
   guildInvites GuildInvite[]
   statLines    MatchPlayerStat[]
   rosters      RosterPlayer[]
@@ -92,6 +92,7 @@ model Player {
   blacklist    BlacklistEntry[]
   reserve      ReservePlayer?
   seasons      SeasonPlayer[]
+  linkRequests PlayerLinkRequest[]
 
   @@index([teamId])
   @@index([uid])
@@ -687,4 +688,36 @@ model DrawEntry {
 
   @@unique([drawId, source, externalId])
   @@index([drawId, place])
+}
+
+/**
+ * A Discord account asking to be linked to a character that already exists (found by UID). UIDs are
+ * public, so an organizer approves the link before the account can act as that character.
+ */
+model PlayerLinkRequest {
+  id        String   @id @default(cuid())
+  playerId  String
+  discordId String
+  /// The Discord name at the time of asking, for the organizer.
+  name      String?
+  createdAt DateTime @default(now())
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, discordId])
+  @@index([discordId])
+}
+
+/// "ถังขยะ": a deleted tournament with everything that belonged to it, kept as JSON for 30 days so an
+/// organizer can bring it back. Prediction picks are refunded when it is deleted and are not restored.
+model TrashItem {
+  id        String   @id @default(cuid())
+  kind      String // TOURNAMENT
+  refId     String // the id the item had, used again when it is restored
+  name      String
+  summary   String? // e.g. "8 ทีม · 12 แมตช์"
+  data      String // JSON snapshot
+  deletedAt DateTime @default(now())
+
+  @@index([deletedAt])
 }

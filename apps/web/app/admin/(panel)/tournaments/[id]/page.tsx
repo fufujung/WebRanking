@@ -56,7 +56,7 @@ export default async function EditTournament({ params, searchParams }: { params:
         <div className="row">
           <Link className="btn btn-sm" href={`/tournaments/${t.id}`}>ดูหน้ารายการ</Link>
           <Link className="btn btn-sm btn-primary" href={`/admin/matches/new?tournamentId=${t.id}`}>+ บันทึกผลการแข่งในรายการนี้</Link>
-          <DeleteButton kind="tournaments" id={t.id} label={`ทัวร์นาเมนต์ ${t.name} (แมตช์ทั้งหมดในรายการจะถูกลบด้วย)`} />
+          <DeleteButton kind="tournaments" id={t.id} label={`ทัวร์นาเมนต์ ${t.name} พร้อมแมตช์ทั้งหมดในรายการ`} />
         </div>
       </div>
       {sp.saved && <div className="success" style={{ marginBottom: 16 }}>บันทึกแล้ว</div>}

@@ -20,7 +20,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <span>หลังบ้านผู้จัด</span>
           </div>
         </div>
-        <AdminNav badges={{ "/admin": todo || undefined, "/admin/tournaments": dash?.totals.ongoingTournaments || undefined }} />
+        <AdminNav badges={{ "/admin": todo || undefined, "/admin/tournaments": dash?.totals.ongoingTournaments || undefined, "/admin/players": dash?.todo.linkRequests || undefined }} />
         <div className="side-summary" aria-label="สรุประบบ">
           <strong>The Ranking</strong>
           <dl>

@@ -15,6 +15,8 @@ export const claimInput = z.object({
   name: z.string().trim().max(100).optional().transform((s) => s || null),
   /** The game this character plays; may be left out when the site has only one game. */
   gameId: z.string().trim().max(40).optional().transform((s) => s || null),
+  /** The account's Discord name, shown to the organizer who approves the link. */
+  discordName: z.string().trim().max(100).optional().transform((s) => s || null),
 });
 
 /**
@@ -29,28 +31,86 @@ export async function playersOfDiscord(id: string) {
   return prisma.player.findMany({ where: { discordId: id }, include: { team: teamSummary }, orderBy: { name: "asc" } });
 }
 
-/** Links the player with this UID to the account, or creates them when the UID is new. */
-export async function claimByUid(id: string, input: z.infer<typeof claimInput>) {
+/**
+ * Links the player with this UID to the account, or creates them when the UID is new. UIDs are public,
+ * so linking a character that already exists waits for an organizer (pending), unless the account is
+ * already on a roster with that character or the caller is the organizer (trusted).
+ */
+export async function claimByUid(id: string, input: z.input<typeof claimInput>, opts: { trusted?: boolean } = {}) {
+  const parsed = claimInput.parse(input);
   return prisma.$transaction(async (tx) => {
-    const owner = await findByUid(tx, input.uid, input.server);
+    const owner = await findByUid(tx, parsed.uid, parsed.server);
     if (owner) {
       if (owner.discordId && owner.discordId !== id) {
-        throw fail(409, "This player is linked to another Discord account", `UID ${input.uid} ผูกกับบัญชี Discord อื่นอยู่แล้ว ถ้าเป็นของคุณจริงให้ติดต่อผู้จัด`);
+        throw fail(409, "This player is linked to another Discord account", `UID ${parsed.uid} ผูกกับบัญชี Discord อื่นอยู่แล้ว ถ้าเป็นของคุณจริงให้ติดต่อผู้จัด`);
+      }
+      const proven = opts.trusted || owner.discordId === id || (await tx.rosterPlayer.count({ where: { playerId: owner.id, discordId: id } })) > 0;
+      if (!proven) {
+        await tx.playerLinkRequest.upsert({
+          where: { playerId_discordId: { playerId: owner.id, discordId: id } },
+          create: { playerId: owner.id, discordId: id, name: parsed.discordName },
+          update: parsed.discordName ? { name: parsed.discordName } : {},
+        });
+        const player = await tx.player.findUniqueOrThrow({ where: { id: owner.id }, include: { team: teamSummary } });
+        return { player, created: false, pending: true };
       }
       const player = await tx.player.update({
         where: { id: owner.id },
-        data: { discordId: id, ...(owner.gameId ? {} : { gameId: await gameFor(tx, input.gameId) }) },
+        data: { discordId: id, ...(owner.gameId ? {} : { gameId: await gameFor(tx, parsed.gameId) }) },
         include: { team: teamSummary },
       });
-      return { player, created: false };
+      await tx.playerLinkRequest.deleteMany({ where: { playerId: owner.id } });
+      return { player, created: false, pending: false };
     }
-    if (!input.name) throw fail(400, "No player has this UID yet; send a name to create one", `ยังไม่มีผู้เล่น UID ${input.uid} ในระบบ ใส่ชื่อในเกมเพื่อสร้างโปรไฟล์ใหม่`, { needsName: true });
+    if (!parsed.name) throw fail(400, "No player has this UID yet; send a name to create one", `ยังไม่มีผู้เล่น UID ${parsed.uid} ในระบบ ใส่ชื่อในเกมเพื่อสร้างโปรไฟล์ใหม่`, { needsName: true });
     const player = await tx.player.create({
-      data: { name: input.name, uid: input.uid, server: input.server, discordId: id, gameId: await gameFor(tx, input.gameId) },
+      data: { name: parsed.name, uid: parsed.uid, server: parsed.server, discordId: id, gameId: await gameFor(tx, parsed.gameId) },
       include: { team: teamSummary },
     });
-    return { player, created: true };
+    return { player, created: true, pending: false };
   });
+}
+
+/** Thrown where a character must already be the account's own, but its link still waits for approval. */
+export const waitingForApproval = (uid: string) =>
+  fail(409, "The link to this character waits for an organizer", `ส่งคำขอผูกตัวละคร UID ${uid} แล้ว รอผู้จัดอนุมัติก่อน แล้วค่อยทำรายการนี้อีกครั้ง`, { pending: true });
+
+/** Links waiting for an organizer, oldest first. */
+export async function linkRequests() {
+  const rows = await prisma.playerLinkRequest.findMany({
+    orderBy: { createdAt: "asc" },
+    take: 200,
+    include: { player: { select: { id: true, name: true, nickname: true, uid: true, server: true, discordId: true, avatarUrl: true, team: teamSummary } } },
+  });
+  return rows;
+}
+
+/** The organizer lets the account act as the character; other requests for it are dropped. */
+export async function approveLink(requestId: string) {
+  return prisma.$transaction(async (tx) => {
+    const req = await tx.playerLinkRequest.findUnique({ where: { id: requestId }, include: { player: true } });
+    if (!req) throw notFound("Link request");
+    if (req.player.discordId && req.player.discordId !== req.discordId) {
+      throw fail(409, "This player is linked to another Discord account", "ตัวละครนี้ผูกกับบัญชี Discord อื่นไปแล้ว ยกเลิกการผูกเดิมก่อน");
+    }
+    const player = await tx.player.update({ where: { id: req.playerId }, data: { discordId: req.discordId }, include: { team: teamSummary } });
+    const others = await tx.playerLinkRequest.findMany({ where: { playerId: req.playerId, id: { not: req.id } }, select: { discordId: true } });
+    await tx.playerLinkRequest.deleteMany({ where: { playerId: req.playerId } });
+    return { player, discordId: req.discordId, denied: others.map((o) => o.discordId) };
+  });
+}
+
+/** The organizer turns a request down. */
+export async function denyLink(requestId: string) {
+  const req = await prisma.playerLinkRequest.findUnique({ where: { id: requestId }, include: { player: { select: { name: true, uid: true } } } });
+  if (!req) throw notFound("Link request");
+  await prisma.playerLinkRequest.delete({ where: { id: requestId } });
+  return { discordId: req.discordId, player: req.player };
+}
+
+/** Characters this account asked for and that still wait for an organizer. */
+export function pendingLinksOf(id: string) {
+  return prisma.playerLinkRequest.findMany({ where: { discordId: id }, include: { player: { select: { id: true, name: true, uid: true } } }, orderBy: { createdAt: "asc" } });
 }
 
 /** The chosen game, or the only game when the site has just one. */

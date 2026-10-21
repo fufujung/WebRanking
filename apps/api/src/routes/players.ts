@@ -13,7 +13,7 @@ import { gameIdOrNull } from "../lib/games.js";
 import { playerBoard, tierInfo } from "../lib/leaderboard.js";
 import { PLACEMENT_SERIES } from "../lib/mmr.js";
 import { specialSummary } from "../lib/special.js";
-import { claimByUid, claimInput, discordId, playersOfDiscord, unlinkDiscord } from "../lib/members.js";
+import { approveLink, claimByUid, denyLink, discordId, linkRequests, pendingLinksOf, playersOfDiscord, unlinkDiscord } from "../lib/members.js";
 
 export const players = Router();
 
@@ -48,15 +48,33 @@ players.get("/uid/:uid", async (req, res) => {
   res.json(await playerDetail(found.id));
 });
 
-/** Players a Discord account plays as (for "Log in with Discord" on the website). */
+/** Players a Discord account plays as (for "Log in with Discord" on the website), and links still waiting for an organizer. */
 players.get("/discord/:discordId", requireAdmin, async (req, res) => {
-  res.json({ data: await playersOfDiscord(discordId.parse(req.params.discordId)) });
+  const id = discordId.parse(req.params.discordId);
+  const [data, pending] = await Promise.all([playersOfDiscord(id), pendingLinksOf(id)]);
+  res.json({ data, pending });
 });
 
-/** Links the player with this UID to the Discord account, or creates the player when nobody has the UID. */
+/**
+ * Links the player with this UID to the Discord account, or creates the player when nobody has the UID.
+ * A character that already exists waits for an organizer: 202 with pending: true.
+ */
 players.post("/discord/:discordId/claim", requireAdmin, async (req, res) => {
-  const { player, created } = await claimByUid(discordId.parse(req.params.discordId), claimInput.parse(req.body));
-  res.status(created ? 201 : 200).json(player);
+  const { player, created, pending } = await claimByUid(discordId.parse(req.params.discordId), req.body);
+  res.status(pending ? 202 : created ? 201 : 200).json({ ...player, pending });
+});
+
+/** Links waiting for an organizer's approval. */
+players.get("/link-requests", requireAdmin, async (_req, res) => {
+  res.json({ data: await linkRequests() });
+});
+
+players.post("/link-requests/:id/approve", requireAdmin, async (req, res) => {
+  res.json(await approveLink(String(req.params.id)));
+});
+
+players.post("/link-requests/:id/deny", requireAdmin, async (req, res) => {
+  res.json(await denyLink(String(req.params.id)));
 });
 
 /** Removes the Discord link from a player. */

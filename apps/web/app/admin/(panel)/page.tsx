@@ -56,6 +56,7 @@ export default async function AdminHome({ searchParams }: { searchParams: Promis
   ];
 
   const tasks: { href: string; icon: IconName; text: React.ReactNode; tone: "warn" | "info" | "danger" }[] = [
+    ...(todo.linkRequests ? [{ href: "/admin/players#link-requests", icon: "players" as const, tone: "warn" as const, text: <><b>{todo.linkRequests} คำขอ</b> ผูก Discord กับตัวละคร รออนุมัติ</> }] : []),
     ...todo.disputes.map((d) => ({ href: `/admin/tournaments/${d.tournamentId}#bracket`, icon: "flag" as const, tone: "danger" as const, text: <>มีการโต้แย้งผล M{d.number} ใน <b>{d.name}</b></> })),
     ...todo.readyMatches.map((r) => ({ href: `/admin/tournaments/${r.tournamentId}#bracket`, icon: "matches" as const, tone: "warn" as const, text: <><b>{r.count} แมตช์</b> ใน {r.name} พร้อมแข่ง รอบันทึกผล</> })),
     ...todo.openRegistration.map((t) => ({ href: `/admin/tournaments/${t.id}`, icon: "tournaments" as const, tone: "info" as const, text: <>{t.name} เปิดรับสมัคร <b>{t.teams}{t.maxTeams ? `/${t.maxTeams}` : ""} ทีม</b></> })),
