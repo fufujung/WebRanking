@@ -1792,3 +1792,109 @@ describe("Discord invite for the site's join button", () => {
     assert.equal((await api.get<any>("/settings")).discordInvite, null);
   });
 });
+
+describe("changes made on the website show up in Discord", () => {
+  test("teams, registration, the draw, the start, a reopened result and a reset all follow the website", async () => {
+    const create = command("tour", "create", { name: "Web Sync Cup", format: "SINGLE_ELIMINATION", start: bkk(24 * 60), roster_min: 1, roster_max: 3, organizer_role: ORG_ROLE });
+    await bot.onCommand(create);
+    const tid = bot.tour.toursIn(GUILD).find((x) => x.name === "Web Sync Cup")!.tournamentId;
+    const tour = () => bot.tour.tours.get(tid)!;
+    const msg = (ref: { channelId: string; messageId: string } | null) => (ref ? channels.get(ref.channelId)?.messages.get(ref.messageId) : undefined);
+    await bot.tour.sync(fakeClient, tid);
+
+    // Two teams signed up on the website: the sign-up post counts them.
+    const reg = (name: string, t: number) => api.post<any>(`/tournaments/${tid}/registrations`, { teamName: name, captainDiscordId: captain(t), players: [{ name: `${name} One`, discordId: captain(t) }] });
+    const red = await reg("Web Red", 0);
+    const blue = await reg("Web Blue", 1);
+    await bot.tour.sync(fakeClient, tid);
+    assert.match(msg(tour().panel)!.embed.fields[0].name, /ทีมที่สมัครแล้ว \(2\)/);
+    await api.patch(`/tournaments/${tid}`, { registrationOpen: false });
+    await bot.tour.sync(fakeClient, tid);
+    assert.match(msg(tour().panel)!.embed.title, /ปิดรับสมัคร: Web Sync Cup/);
+
+    // The draw on the website: the draft is posted; started on the website: announced, rooms made.
+    await api.post(`/tournaments/${tid}/bracket/seed`, { method: "manual", order: [red.id, blue.id] });
+    await bot.tour.sync(fakeClient, tid);
+    assert.ok(msg(tour().draft), "the draft is posted");
+    await api.post(`/tournaments/${tid}/bracket/start`, {});
+    await bot.tour.sync(fakeClient, tid);
+    assert.equal(announce().texts.filter((x) => /\*\*Web Sync Cup\*\* เริ่มแข่งแล้ว/.test(x)).length, 1);
+    const room = Object.values(tour().rooms)[0];
+    assert.ok(room, "a match room");
+    await bot.tour.sync(fakeClient, tid);
+    assert.equal(announce().texts.filter((x) => /\*\*Web Sync Cup\*\* เริ่มแข่งแล้ว/.test(x)).length, 1, "announced once");
+
+    // A result recorded and then reopened on the website: the room says so.
+    await api.post(`/tournaments/${tid}/bracket/matches/M1/result`, { scoreA: 2, scoreB: 0 });
+    await bot.tour.sync(fakeClient, tid);
+    await api.post(`/tournaments/${tid}/bracket/matches/M1/reopen`, { force: true });
+    await bot.tour.sync(fakeClient, tid);
+    assert.ok(channels.get(room.channelId)!.texts.some((x) => /ผู้จัดยกเลิกผล M1 ให้แข่งใหม่/.test(x)));
+
+    // Reset on the website: the rooms go and the channel is told.
+    await api.delete(`/tournaments/${tid}/bracket?force=true`);
+    await bot.tour.sync(fakeClient, tid);
+    assert.equal(channels.has(room.channelId), false, "the room is deleted");
+    assert.deepEqual(tour().rooms, {});
+    assert.ok(announce().texts.some((x) => /ผู้จัดรีเซ็ตสายแข่ง \*\*Web Sync Cup\*\*/.test(x)));
+  });
+});
+
+describe("prediction controls in Discord", () => {
+  test("organizers close and reopen a card, set up a pair by hand and pick its winner; others cannot", async () => {
+    const fan = person(701);
+    members.set(fan, { roles: [], manage: false, name: "Fan7" });
+    bot.settings.set(GUILD, { ...bot.settingsFor(GUILD), announceChannelId: ANNOUNCE });
+    await bot.onCommand(command("coins", null, {}, fan));
+    const t = await api.post<any>("/tournaments", { name: "Show Night", startDate: new Date(Date.now() + 86400_000).toISOString(), registrationOpen: true, rosterMin: 1, rosterMax: 3 });
+    const reg = (name: string, n: number) => api.post<any>(`/tournaments/${t.id}/registrations`, { teamName: name, captainDiscordId: person(n), players: [{ name: `${name} P1`, discordId: person(n) }] });
+    const a = await reg("Stars", 711);
+    await reg("Moons", 712);
+
+    // /predict pair: tournaments and teams come from autocomplete; organizers only.
+    const pickT = command("predict", "pair", { focused: "tournament", value: "show" }, OWNER);
+    await bot.onAutocomplete(pickT);
+    assert.ok(last<any>(pickT.replies).some((c: any) => c.value === t.id), "a tournament without a bracket is offered");
+    const pickA = command("predict", "pair", { focused: "a", value: "sta", tournament: t.id }, OWNER);
+    await bot.onAutocomplete(pickA);
+    assert.deepEqual(last<any>(pickA.replies).map((c: any) => c.name), ["Stars"]);
+    const moons = (await api.get<any>(`/tournaments/${t.id}`)).teams.find((x: any) => x.name === "Moons").id;
+    const nope = command("predict", "pair", { tournament: t.id, a: a.id, b: moons }, fan);
+    await bot.onCommand(nope);
+    assert.match(text(last(nope.replies)), /สำหรับผู้จัดเท่านั้น/);
+    const pair = command("predict", "pair", { tournament: t.id, a: a.id, b: moons, name: "เกมโชว์" }, OWNER);
+    await bot.onCommand(pair);
+    assert.match(text(last(pair.replies)), /เปิดให้ทายแล้ว/);
+
+    const card = announce().sent.find((m) => /ทายผล เกมโชว์ · Show Night/.test(m.embed?.title ?? ""))!;
+    assert.ok(card, "the pair gets a card");
+    const close = card.buttons.find((x: any) => x.custom_id.startsWith("pk:close:"));
+    assert.equal(close.label, "ปิดรับทาย (ผู้จัด)");
+    await bot.onModal(submitForm(card.buttons.find((x: any) => x.label === "Stars").custom_id.replace("pk:bet:", "pk:amt:"), fan, ANNOUNCE, { amount: "20" }));
+
+    const denied = press(close.custom_id, fan, card);
+    await bot.onButton(denied);
+    assert.match(text(last(denied.replies)), /สำหรับผู้จัดเท่านั้น/);
+    const closing = press(close.custom_id, OWNER, card);
+    await bot.onButton(closing);
+    assert.match(text(last(closing.replies)), /ปิดรับทายคู่นี้แล้ว/);
+    assert.match(card.embed.description, /ปิดทายแล้ว รอผล/);
+    assert.deepEqual(card.buttons.map((x: any) => x.label), ["เปิดรับทายอีกครั้ง (ผู้จัด)", "Stars ชนะ (ผู้จัด)", "Moons ชนะ (ผู้จัด)", "ยกเลิก คืนเหรียญ (ผู้จัด)"]);
+
+    const reopen = press(card.buttons[0].custom_id, REF, card);
+    await bot.onButton(reopen);
+    assert.match(text(last(reopen.replies)), /สำหรับผู้จัดเท่านั้น/, "the organizer role of another tournament does not count");
+    const all = command("predict", "close", { tournament: t.id }, OWNER);
+    await bot.onCommand(all);
+    assert.match(text(last(all.replies)), /ปิดรับทายแล้ว 0 คู่/);
+
+    const win = press(card.buttons.find((x: any) => x.label === "Stars ชนะ (ผู้จัด)").custom_id, OWNER, card);
+    await bot.onButton(win);
+    assert.match(text(last(win.replies)), /บันทึกผลแล้ว/);
+    assert.match(card.embed.description, /ผล: \*\*Stars\*\* ชนะ/);
+    assert.equal(card.buttons.length, 0);
+    const me = command("predict", "me", {}, fan);
+    await bot.onCommand(me);
+    assert.match(JSON.stringify(last(me.replies)), /Show Night เกมโชว์: Stars 20 เหรียญ · คืนเหรียญ|Show Night เกมโชว์: Stars 20 เหรียญ · ได้ 20/);
+  });
+});

@@ -1315,6 +1315,48 @@ if (!(await page.locator(".btn-discord").count())) {
   await pAdmin.locator(`tr:has-text('อันดับ 1 Predict ${uniq}'):has-text('E2E Discord')`).waitFor();
   if ((await pAdmin.locator("main").textContent()).includes(`OT${uniq}`)) throw new Error("the admin page shows prize codes");
   await pAdmin.screenshot({ path: OUT + "/predict-admin.png", fullPage: true });
+
+  // An event without a bracket: the organizer sets up a pair to predict, a member picks, the organizer
+  // closes it and picks the winner; "close all" closes the bracket matches of another event.
+  const show = await apiCall("POST", "/tournaments", { name: `Show ${uniq}`, startDate: new Date(Date.now() + 86400_000).toISOString(), registrationOpen: true, rosterMin: 1, rosterMax: 3 });
+  for (const [name, n] of [["Sun", 1], ["Rain", 2]]) {
+    await apiCall("POST", `/tournaments/${show.id}/registrations`, { teamName: `${name} ${uniq}`, captainDiscordId: String(880000000000000000n + BigInt(uniq) * 10n + BigInt(n)), players: [{ name: `${name} P ${uniq}` }] });
+  }
+  await pAdmin.goto(base + `/admin/tournaments/${show.id}#predict`);
+  const pairForm = pAdmin.locator('form:has-text("สร้างคู่ให้ทายเอง")');
+  await pairForm.locator('select[name="teamAId"]').selectOption({ label: `Sun ${uniq}` });
+  await pairForm.locator('select[name="teamBId"]').selectOption({ label: `Rain ${uniq}` });
+  await pairForm.locator('input[name="label"]').fill("เกมโชว์");
+  await pairForm.locator("button:has-text('เปิดให้ทายคู่นี้')").click();
+  await pairForm.locator(".success:has-text('เปิดคู่ให้ทายแล้ว')").waitFor();
+  await pAdmin.reload();
+  const pairRow = pAdmin.locator(".predict-admin-row:has-text('เกมโชว์')");
+  await pairRow.locator(".badge:has-text('เปิดรับทาย')").waitFor();
+  await page.goto(base + `/predict?t=${show.id}`);
+  await page.locator("text=🎯 เกมโชว์").first().waitFor();
+  const showMarket = (await apiCall("GET", `/predict/tournaments/${show.id}`)).markets[0];
+  const sunId = showMarket.options.find((o) => o.team.name === `Sun ${uniq}`).team.id;
+  await apiCall("POST", `/predict/members/${rival}/bets`, { marketId: showMarket.id, teamId: sunId, amount: 5 });
+  await pAdmin.reload();
+  await pairRow.locator("button:has-text('ปิดรับ')").click();
+  await pAdmin.locator(".success:has-text('ปิดรับทายแล้ว')").waitFor();
+  await pairRow.locator(".badge:has-text('ปิดรับแล้ว')").waitFor();
+  const late = await apiCall("POST", `/predict/members/${rival}/bets`, { marketId: showMarket.id, teamId: sunId, amount: 6 }).then(() => "taken", (e) => String(e.message));
+  if (!/→ 409/.test(late)) throw new Error(`a closed pair still takes picks: ${late}`);
+  pAdmin.once("dialog", (d) => d.accept());
+  await pairRow.locator(`button:has-text('Sun ${uniq} ชนะ')`).click();
+  await pAdmin.locator(".success:has-text('บันทึกผลแล้ว')").waitFor();
+  await pairRow.locator(".badge:has-text('มีผลแล้ว')").waitFor();
+  await pAdmin.setViewportSize({ width: 390, height: 844 });
+  await pAdmin.reload();
+  if (await pAdmin.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error("the admin tournament page is wider than a phone screen");
+  await pAdmin.locator("#predict").scrollIntoViewIfNeeded();
+  await pAdmin.screenshot({ path: OUT + "/predict-controls-mobile.png" });
+  await pAdmin.setViewportSize({ width: 1280, height: 900 });
+  await pAdmin.goto(base + `/admin/tournaments/${pt.id}#predict`);
+  await pAdmin.locator("#predict").scrollIntoViewIfNeeded();
+  await pAdmin.screenshot({ path: OUT + "/predict-controls.png" });
+  step("organizer set up a hand-made pair on an event without a bracket, a member picked it, the organizer closed it and picked the winner; the controls fit a phone");
   await pAdminCtx.close();
   await page.goto(base + "/me");
   await page.locator(`#rewards li:has-text('อันดับ 1 Predict ${uniq}') .reward-code`).waitFor();

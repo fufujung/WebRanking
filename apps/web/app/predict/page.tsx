@@ -15,13 +15,13 @@ export const metadata = { title: "ทายผล · ใช้เหรียญ
 const ratio = (m: Market, coins: number) => (coins > 0 ? ` · x${(Math.floor((m.pool / coins) * 100) / 100).toFixed(m.pool / coins >= 10 ? 1 : 2)}` : "");
 
 const STAGE: Record<string, string> = { W: "สายบน", L: "สายล่าง", GF: "ชิงชนะเลิศ", P3: "ชิงที่ 3", RR: "ตารางแข่ง" };
-const marketTitle = (m: Market) => (m.kind === "CHAMPION" ? "🏆 ใครจะเป็นแชมป์" : `คู่ที่ ${m.number ?? m.key}${m.stage && m.stage !== "W" ? ` · ${STAGE[m.stage] ?? m.stage}` : ""}`);
+const marketTitle = (m: Market) => (m.kind === "CHAMPION" ? "🏆 ใครจะเป็นแชมป์" : m.kind === "CUSTOM" ? `🎯 ${m.title}` : `คู่ที่ ${m.number ?? m.key}${m.stage && m.stage !== "W" ? ` · ${STAGE[m.stage] ?? m.stage}` : ""}`);
 
 function marketState(m: Market) {
   if (m.status === "SETTLED") return { text: "มีผลแล้ว", cls: "badge" };
   if (m.status === "REFUNDED") return { text: "คืนเหรียญแล้ว", cls: "badge" };
   if (m.open) return { text: m.locksAt ? `เปิดทายถึง ${fmtThaiTime(m.locksAt)}` : "เปิดทาย", cls: "badge badge-accent" };
-  if (m.kind !== "CHAMPION" && !m.locksAt && m.status === "OPEN") return { text: "รอตั้งเวลาแข่ง", cls: "badge" };
+  if (m.kind !== "CHAMPION" && !m.locksAt && m.status === "OPEN") return { text: "รอเริ่มแข่งหรือตั้งเวลา", cls: "badge" };
   return { text: "ปิดทายแล้ว รอผล", cls: "badge" };
 }
 

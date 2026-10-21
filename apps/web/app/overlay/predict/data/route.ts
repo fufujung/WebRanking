@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     if (!tid) return Response.json({ market: null });
     const { tournament, markets } = await api<{ tournament: { name: string }; markets: Market[] }>(`/predict/tournaments/${encodeURIComponent(tid)}`);
     const key = q.get("m");
-    const matches = markets.filter((x) => x.kind === "MATCH");
+    const matches = markets.filter((x) => x.kind === "MATCH" || x.kind === "CUSTOM");
     const waiting = (x: Market) => !x.open && (x.status === "OPEN" || x.status === "CLOSED") && x.locksAt !== null;
     const time = (x: Market) => (x.locksAt ? new Date(x.locksAt).getTime() : 0);
     const m = key
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
         matches.filter((x) => x.status === "SETTLED" || x.status === "REFUNDED").sort((a, b) => (b.number ?? 0) - (a.number ?? 0))[0]);
     if (!m) return Response.json({ tournament: tournament.name, market: null });
     const title =
-      m.kind === "CHAMPION" ? "ใครจะเป็นแชมป์" : `คู่ที่ ${m.number ?? m.key}${m.game ? ` · เกม ${m.game}` : ""}${m.stage && STAGE[m.stage] ? ` · ${STAGE[m.stage]}` : ""}`;
+      m.kind === "CHAMPION" ? "ใครจะเป็นแชมป์" : m.kind === "CUSTOM" ? m.title : `คู่ที่ ${m.number ?? m.key}${m.game ? ` · เกม ${m.game}` : ""}${m.stage && STAGE[m.stage] ? ` · ${STAGE[m.stage]}` : ""}`;
     const winners = m.options.filter((o) => o.team.id === m.winnerTeamId);
     return Response.json({
       tournament: tournament.name,

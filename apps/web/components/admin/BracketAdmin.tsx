@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import {
+  endBracket,
   decideMatch,
   reopenSlot,
   resetBracket,
@@ -74,6 +75,16 @@ export function BracketAdmin({ tournamentId, format, bracket, entries }: { tourn
       <Message state={state} />
       {status !== "NONE" && (
         <div className="row">
+          {status === "LIVE" && !confirmReset && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={pending}
+              onClick={() => confirm("จบทัวร์นาเมนต์ตอนนี้? แมตช์ที่ยังไม่ได้แข่งจะไม่ได้แข่ง และบอทจะปิดห้องแข่งใน Discord") && act(() => endBracket(tournamentId))}
+            >
+              🏁 จบทัวร์นาเมนต์
+            </button>
+          )}
           {!confirmReset ? (
             <button type="button" className="btn btn-sm btn-danger" disabled={pending} onClick={() => setConfirmReset(true)}>
               ลบสายทั้งหมด

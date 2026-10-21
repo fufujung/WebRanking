@@ -24,7 +24,7 @@ export function CheerCard({ market: m, coins }: { market: Market; coins: number 
       setState(r);
       if (r?.ok) setPicked(teamId);
     });
-  const title = m.kind === "CHAMPION" ? "🏆 ใครจะเป็นแชมป์" : `คู่ที่ ${m.number ?? m.key}${m.stage && STAGE[m.stage] ? ` · ${STAGE[m.stage]}` : ""}`;
+  const title = m.kind === "CHAMPION" ? "🏆 ใครจะเป็นแชมป์" : m.kind === "CUSTOM" ? `🎯 ${m.title}` : `คู่ที่ ${m.number ?? m.key}${m.stage && STAGE[m.stage] ? ` · ${STAGE[m.stage]}` : ""}`;
   return (
     <article className="card cheer-card">
       <header className="row between">

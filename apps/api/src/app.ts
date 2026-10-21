@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import cors from "cors";
+import { countChanges, currentRevision } from "./lib/revision.js";
 import express from "express";
 import swaggerUi from "swagger-ui-express";
 import YAML from "yaml";
@@ -61,6 +62,11 @@ export function createApp() {
 
   const v1 = express.Router();
   v1.use(requireApiKey);
+  v1.use(countChanges);
+  // The bot asks this every few seconds to follow website changes without waiting for its slower rounds.
+  v1.get("/revision", (_req, res) => {
+    res.json({ revision: currentRevision() });
+  });
   v1.use("/teams", teams);
   v1.use("/players", players);
   v1.use("/tournaments", tournaments);

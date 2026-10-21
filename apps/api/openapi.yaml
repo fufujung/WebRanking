@@ -514,6 +514,66 @@ paths:
             schema: { type: object, properties: { status: { type: string, enum: [OPEN, CLOSED] } } }
       responses:
         "200": { description: Market }
+    delete:
+      tags: [Predictions]
+      summary: Delete a hand-made pair (admin); stakes go back
+      responses:
+        "204": { description: Deleted }
+        "409": { description: Not a hand-made pair }
+  /api/v1/predict/markets/{id}/settle:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Predictions]
+      summary: Set the winner of a hand-made pair, or call it off (winnerTeamId null = everyone gets their coins back) (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [winnerTeamId], properties: { winnerTeamId: { type: string, nullable: true } } }
+      responses:
+        "200": { description: Market }
+        "409": { description: A bracket market (settled by the match result) }
+  /api/v1/predict/tournaments/{id}/status:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Predictions]
+      summary: Close (or open again) every market of a tournament that has no result yet (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [status], properties: { status: { type: string, enum: [OPEN, CLOSED] } } }
+      responses:
+        "200": { description: "{ changed }" }
+  /api/v1/predict/tournaments/{id}/markets:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Predictions]
+      summary: Set up a pair to predict by hand ("A vs B"), for events without a bracket or show matches (admin). Opens at once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [teamAId, teamBId]
+              properties:
+                teamAId: { type: string }
+                teamBId: { type: string }
+                label: { type: string, maxLength: 60, description: 'Its name, e.g. "รอบชิง" (default "A vs B")' }
+                locksAt: { type: string, format: date-time, nullable: true, description: Closes by itself at this time }
+      responses:
+        "201": { description: Market }
+        "400": { description: Both teams must be in the tournament and different }
+  /api/v1/revision:
+    get:
+      tags: [Tournaments]
+      summary: A counter that goes up with every saved change; the bot polls it to follow website changes quickly
+      responses:
+        "200": { description: "{ revision }" }
   /api/v1/predict/codes:
     get:
       tags: [Predictions]

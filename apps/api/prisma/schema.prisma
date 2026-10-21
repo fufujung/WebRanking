@@ -530,8 +530,10 @@ model CoinTx {
 model Market {
   id           String    @id @default(cuid())
   tournamentId String
-  kind         String // MATCH | CHAMPION
+  kind         String // MATCH | GAME | CHAMPION | CUSTOM (a pair an organizer set up by hand)
   key          String
+  /// CUSTOM pairs: the organizer's name for it, e.g. "รอบชิง" (empty = "ทีม A vs ทีม B").
+  label        String?
   /// The teams to pick from, as a JSON array of team ids.
   teamIds      String
   status       String    @default("OPEN") // OPEN | CLOSED (by an organizer) | SETTLED | REFUNDED

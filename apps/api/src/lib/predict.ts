@@ -204,7 +204,7 @@ async function syncTournament(tx: Tx, tournamentId: string) {
     }
   }
   // Matches and games gone from the bracket (reset, a team moved out, fewer games): everyone gets their coins back.
-  for (const m of t.markets) if (m.kind !== "CHAMPION" && !live.has(m.key) && m.status !== "REFUNDED") await applyOutcome(tx, m.id, { kind: "refund" });
+  for (const m of t.markets) if ((m.kind === "MATCH" || m.kind === "GAME") && !live.has(m.key) && m.status !== "REFUNDED") await applyOutcome(tx, m.id, { kind: "refund" });
 
   // The champion: open while teams sign up and the bracket is drafted, closed once play starts.
   const teams = t.entries.map((e) => e.teamId);
@@ -254,13 +254,24 @@ function syncForRead(tournamentId: string) {
   return serial(() => (fresh() ? Promise.resolve() : runSync(tournamentId)));
 }
 
+/** A market's name for people: the champion, "คู่ที่ 3 · เกม 2", or a hand-made pair's name. */
+export function marketTitle(m: { kind: string; key: string; label?: string | null; teamIds: string }, number: number | null, teamName: (id: string) => string) {
+  if (m.kind === "CHAMPION") return "ใครจะเป็นแชมป์";
+  if (m.kind === "CUSTOM") return m.label || parseIds(m.teamIds).map(teamName).join(" vs ");
+  const [code, game] = m.key.split("#");
+  return `คู่ที่ ${number ?? code}${game ? ` · เกม ${game}` : ""}`;
+}
+
 /** Can people still pick in this market right now? */
 export function marketOpen(m: { kind: string; status: string; locksAt: Date | null }, t: { bracketStatus: string }, now = new Date()) {
   if (m.status !== "OPEN") return false;
   if (m.locksAt && now >= m.locksAt) return false;
   if (m.kind === "CHAMPION") return t.bracketStatus === "NONE" || t.bracketStatus === "DRAFT";
-  // A match opens once it has a start time, so nobody picks while watching it.
-  return m.locksAt !== null;
+  // A pair the organizer set up opens straight away, until they close it (or its closing time).
+  if (m.kind === "CUSTOM") return true;
+  // A bracket match opens once it has a start time or the bracket is under way; organizers close a
+  // match with no start time themselves before it is played.
+  return m.locksAt !== null || t.bracketStatus === "LIVE";
 }
 
 /** Discord accounts that play in the tournament for these teams: they may not predict their own games. */
@@ -304,7 +315,7 @@ export async function placeBet(discordId: string, body: unknown, now = new Date(
     prisma.$transaction(async (tx) => {
       const m = await tx.market.findUniqueOrThrow({ where: { id: input.marketId }, include: { tournament: { select: { bracketStatus: true } } } });
       if (!marketOpen(m, m.tournament, now)) {
-        const why = m.kind !== "CHAMPION" && !m.locksAt && m.status === "OPEN" ? "แมตช์นี้ยังไม่ได้ตั้งเวลาแข่ง ยังทายไม่ได้" : "ปิดทายแมตช์นี้แล้ว";
+        const why = m.kind !== "CHAMPION" && !m.locksAt && m.status === "OPEN" ? "สายแข่งยังไม่เริ่ม และแมตช์นี้ยังไม่ได้ตั้งเวลาแข่ง ยังทายไม่ได้" : "ปิดทายแมตช์นี้แล้ว";
         throw fail(409, "Predictions are closed", why);
       }
       const teams = parseIds(m.teamIds);
@@ -343,13 +354,85 @@ export async function cancelBet(discordId: string, marketId: string, now = new D
   );
 }
 
+const statusInput = z.object({ status: z.enum(["OPEN", "CLOSED"]) });
+
 /** Organizers close a market early, or open it again. */
 export async function setMarketStatus(marketId: string, body: unknown) {
-  const { status } = z.object({ status: z.enum(["OPEN", "CLOSED"]) }).parse(body);
-  const m = await prisma.market.findUnique({ where: { id: marketId } });
-  if (!m) throw notFound("Market");
-  if (m.status === "SETTLED" || m.status === "REFUNDED") throw fail(409, "The market is settled", "แมตช์นี้มีผลแล้ว");
-  return prisma.market.update({ where: { id: marketId }, data: { status } });
+  const { status } = statusInput.parse(body);
+  return serial(async () => {
+    const m = await prisma.market.findUnique({ where: { id: marketId } });
+    if (!m) throw notFound("Market");
+    if (m.status === "SETTLED" || m.status === "REFUNDED") throw fail(409, "The market is settled", "แมตช์นี้มีผลแล้ว");
+    return prisma.market.update({ where: { id: marketId }, data: { status } });
+  });
+}
+
+/** Organizers close (or open again) every market of a tournament that has no result yet, in one go. */
+export async function setTournamentMarketsStatus(tournamentId: string, body: unknown) {
+  const { status } = statusInput.parse(body);
+  if (!(await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true } }))) throw notFound("Tournament");
+  await syncPredictions(tournamentId);
+  return serial(async () => {
+    const { count } = await prisma.market.updateMany({ where: { tournamentId, status: status === "OPEN" ? "CLOSED" : "OPEN" }, data: { status } });
+    return { changed: count };
+  });
+}
+
+const customInput = z.object({
+  teamAId: z.string().trim().min(1).max(40),
+  teamBId: z.string().trim().min(1).max(40),
+  label: z.string().trim().max(60).optional().transform((v) => v || null),
+  /** Optional: predictions close by themselves at this time (the organizer can still close them earlier). */
+  locksAt: z.coerce.date().nullish(),
+});
+
+/**
+ * A pair the organizer sets up by hand: "ทีม A vs ทีม B" to predict, for an event without a bracket or a
+ * show match. It opens right away; the organizer closes it and then picks the winner (or calls it off).
+ */
+export async function createCustomMarket(tournamentId: string, body: unknown) {
+  const parsed = customInput.safeParse(body);
+  if (!parsed.success) throw fail(400, "Validation failed", "เลือกสองทีมที่จะให้ทาย", { field: String(parsed.error.issues[0]?.path[0] ?? "") });
+  const { teamAId, teamBId, label, locksAt } = parsed.data;
+  if (teamAId === teamBId) throw fail(400, "Pick two different teams", "เลือกสองทีมที่ต่างกัน", { field: "teamBId" });
+  const entries = await prisma.tournamentEntry.findMany({ where: { tournamentId, teamId: { in: [teamAId, teamBId] } }, select: { teamId: true } });
+  if (!(await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true } }))) throw notFound("Tournament");
+  if (entries.length !== 2) throw fail(400, "Both teams must be in the tournament", "ทั้งสองทีมต้องอยู่ในรายการนี้", { field: "teamAId" });
+  return serial(async () => {
+    const n = await prisma.market.count({ where: { tournamentId, kind: "CUSTOM" } });
+    return prisma.market.create({
+      data: { tournamentId, kind: "CUSTOM", key: `custom:${n + 1}:${Date.now().toString(36)}`, label, teamIds: JSON.stringify([teamAId, teamBId]), locksAt: locksAt ?? null },
+    });
+  });
+}
+
+/** The result of a hand-made pair: the winner's pickers share the pot, or (no winner) everyone gets their coins back. */
+export async function settleCustomMarket(marketId: string, body: unknown) {
+  const { winnerTeamId } = z.object({ winnerTeamId: z.string().trim().max(40).nullable() }).parse(body);
+  return serial(() =>
+    prisma.$transaction(async (tx) => {
+      const m = await tx.market.findUnique({ where: { id: marketId } });
+      if (!m) throw notFound("Market");
+      if (m.kind !== "CUSTOM") throw fail(409, "Only hand-made pairs are settled by hand", "คู่ในสายแข่งได้ผลจากการบันทึกผลแมตช์");
+      if (winnerTeamId && !parseIds(m.teamIds).includes(winnerTeamId)) throw fail(400, "Pick one of the teams", "เลือกทีมที่อยู่ในคู่นี้", { field: "winnerTeamId" });
+      await applyOutcome(tx, m.id, winnerTeamId ? { kind: "winner", teamId: winnerTeamId } : { kind: "refund" });
+      return tx.market.findUniqueOrThrow({ where: { id: marketId } });
+    }),
+  );
+}
+
+/** Takes a hand-made pair away: stakes go back and won coins are taken back. */
+export async function deleteCustomMarket(marketId: string) {
+  return serial(() =>
+    prisma.$transaction(async (tx) => {
+      const m = await tx.market.findUnique({ where: { id: marketId } });
+      if (!m) throw notFound("Market");
+      if (m.kind !== "CUSTOM") throw fail(409, "Only hand-made pairs can be deleted", "ลบได้เฉพาะคู่ที่สร้างเอง");
+      await applyOutcome(tx, m.id, { kind: "refund" });
+      await tx.bet.deleteMany({ where: { marketId } });
+      await tx.market.delete({ where: { id: marketId } });
+    }),
+  );
 }
 
 /**
@@ -385,6 +468,9 @@ export async function tournamentMarkets(tournamentId: string, discordId?: string
         id: m.id,
         kind: m.kind,
         key: m.key,
+        /** What to call it: the champion, "คู่ที่ 3", or a hand-made pair's own name ("ทีม A vs ทีม B" by default). */
+        title: marketTitle(m, slot?.number ?? null, (id) => teams.get(id)?.name ?? "ทีม"),
+        label: m.label,
         /** The game in the series (1..BO) for a per-game market; the series market itself has none. */
         game: game ? Number(game) : null,
         match: m.kind === "GAME" ? code : null,
@@ -452,16 +538,18 @@ export async function wallet(discordId: string, now = new Date()) {
       where: { discordId },
       orderBy: { createdAt: "desc" },
       take: 30,
-      include: { market: { select: { id: true, kind: true, key: true, status: true, winnerTeamId: true, tournament: { select: { id: true, name: true } } } } },
+      include: { market: { select: { id: true, kind: true, key: true, label: true, teamIds: true, status: true, winnerTeamId: true, tournament: { select: { id: true, name: true } } } } },
     }),
     prisma.reward.findMany({ where: { discordId }, orderBy: { createdAt: "desc" }, include: { code: { select: { code: true, label: true } } } }),
   ]);
   const teams = new Map((await prisma.team.findMany({ where: { id: { in: bets.map((b) => b.teamId) } }, select: { id: true, name: true } })).map((t) => [t.id, t.name]));
   const slots = await prisma.bracketMatch.findMany({ where: { tournamentId: { in: [...new Set(bets.map((b) => b.market.tournament.id))] } }, select: { tournamentId: true, code: true, number: true } });
   const numberOf = new Map(slots.map((s) => [`${s.tournamentId}/${s.code}`, s.number]));
-  /** "แชมป์", "คู่ที่ 3" or "คู่ที่ 3 · เกม 2". */
+  const marketTeams = new Map((await prisma.team.findMany({ where: { id: { in: [...new Set(bets.flatMap((b) => (b.market.kind === "CUSTOM" ? parseIds(b.market.teamIds) : [])))] } }, select: { id: true, name: true } })).map((t) => [t.id, t.name]));
+  /** "แชมป์", "คู่ที่ 3", "คู่ที่ 3 · เกม 2", or a hand-made pair's name. */
   const label = (m: (typeof bets)[number]["market"]) => {
     if (m.kind === "CHAMPION") return "แชมป์";
+    if (m.kind === "CUSTOM") return marketTitle(m, null, (id) => marketTeams.get(id) ?? "ทีม");
     const [code, game] = m.key.split("#");
     return `คู่ที่ ${numberOf.get(`${m.tournament.id}/${code}`) ?? code}${game ? ` · เกม ${game}` : ""}`;
   };
@@ -476,7 +564,7 @@ export async function wallet(discordId: string, now = new Date()) {
     welcome: p ? 0 : COINS.welcome,
     watchedToday: p?.watchDay === today ? p.watchToday : 0,
     rules: COINS,
-    bets: bets.map((b) => ({ ...b, market: { ...b.market, label: label(b.market) }, teamName: teams.get(b.teamId) ?? "ทีม" })),
+    bets: bets.map((b) => ({ ...b, market: { id: b.market.id, kind: b.market.kind, key: b.market.key, status: b.market.status, winnerTeamId: b.market.winnerTeamId, tournament: b.market.tournament, label: label(b.market) }, teamName: teams.get(b.teamId) ?? "ทีม" })),
     rewards: rewards.map(({ code, ...r }) => ({ ...r, code: code?.code ?? null, codeLabel: code?.label ?? null })),
   };
 }
@@ -499,8 +587,17 @@ export async function predictionTournaments(now = new Date()) {
   const recent = new Date(now.getTime() - 14 * 86400_000);
   const list = await prisma.tournament.findMany({
     where: {
-      format: { not: null },
-      OR: [{ bracketStatus: { in: ["NONE", "DRAFT", "LIVE"] }, status: { not: "COMPLETED" } }, { bracketStatus: "DONE", updatedAt: { gte: recent }, markets: { some: {} } }],
+      AND: [
+        // Events without a bracket show up once the organizer sets up a pair to predict.
+        { OR: [{ format: { not: null } }, { markets: { some: { kind: "CUSTOM" } } }] },
+        {
+          OR: [
+            { bracketStatus: { in: ["NONE", "DRAFT", "LIVE"] }, status: { not: "COMPLETED" } },
+            { bracketStatus: "DONE", updatedAt: { gte: recent }, markets: { some: {} } },
+            { status: "COMPLETED", updatedAt: { gte: recent }, markets: { some: { kind: "CUSTOM" } } },
+          ],
+        },
+      ],
     },
     orderBy: { startDate: "asc" },
     take: 30,

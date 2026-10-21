@@ -47,6 +47,29 @@ export const predictCommand: ApplicationCommandData = {
     },
     { type: O.Subcommand, name: "me", description: "คำทายและรางวัลของคุณ" },
     { type: O.Subcommand, name: "open", description: "คู่ที่เปิดให้ทายตอนนี้" },
+    {
+      type: O.Subcommand,
+      name: "close",
+      description: "ผู้จัด: ปิดรับทายทุกคู่ของรายการ",
+      options: [{ type: O.String, name: "tournament", description: "รายการ", required: true, autocomplete: true }],
+    },
+    {
+      type: O.Subcommand,
+      name: "reopen",
+      description: "ผู้จัด: เปิดรับทายทุกคู่ที่ปิดไว้อีกครั้ง",
+      options: [{ type: O.String, name: "tournament", description: "รายการ", required: true, autocomplete: true }],
+    },
+    {
+      type: O.Subcommand,
+      name: "pair",
+      description: "ผู้จัด: สร้างคู่ให้ทายเอง (ทีม A vs ทีม B) เปิดให้ทายทันที",
+      options: [
+        { type: O.String, name: "tournament", description: "รายการ", required: true, autocomplete: true },
+        { type: O.String, name: "a", description: "ทีม A", required: true, autocomplete: true },
+        { type: O.String, name: "b", description: "ทีม B", required: true, autocomplete: true },
+        { type: O.String, name: "name", description: "ชื่อคู่ เช่น รอบชิง (ไม่ใส่ก็ได้)", maxLength: 60 },
+      ],
+    },
   ],
 };
 
@@ -57,8 +80,11 @@ interface Team {
 }
 export interface MarketView {
   id: string;
-  kind: "MATCH" | "GAME" | "CHAMPION";
+  /** CUSTOM: a pair the organizer set up by hand. */
+  kind: "MATCH" | "GAME" | "CHAMPION" | "CUSTOM";
   key: string;
+  /** "ใครจะเป็นแชมป์", "คู่ที่ 3", or a hand-made pair's name. */
+  title?: string;
   game: number | null;
   match: string | null;
   number: number | null;
@@ -121,7 +147,8 @@ interface Card {
 }
 
 const bkkTime = (d: string) => new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(d));
-const title = (t: { name: string }, m: MarketView) => (m.kind === "CHAMPION" ? `🔮 ทายแชมป์ · ${t.name}` : `🔮 ทายผลคู่ที่ ${m.number ?? m.key} · ${t.name}`);
+const title = (t: { name: string }, m: MarketView) =>
+  m.kind === "CHAMPION" ? `🔮 ทายแชมป์ · ${t.name}` : m.kind === "CUSTOM" ? `🔮 ทายผล ${m.title ?? "คู่พิเศษ"} · ${t.name}` : `🔮 ทายผลคู่ที่ ${m.number ?? m.key} · ${t.name}`;
 const bar = (percent: number) => "▰".repeat(Math.round(percent / 10)) + "▱".repeat(10 - Math.round(percent / 10));
 
 /** The card: teams with how the coins are split, and the result once there is one. */
@@ -134,7 +161,7 @@ export function marketEmbed(t: { id: string; name: string }, m: MarketView, site
     : m.status === "REFUNDED"
       ? "↩️ คืนเหรียญทุกคนแล้ว (ชนะบาย/ไม่มีการแข่ง หรือไม่มีใครทายถูก)"
       : m.open
-        ? `⏳ ทายได้ถึง ${m.locksAt ? `${bkkTime(m.locksAt)} น.` : "ก่อนเริ่มแข่ง"} · กดปุ่มทีมแล้วใส่จำนวนเหรียญ`
+        ? `⏳ ทายได้ถึง ${m.locksAt ? `${bkkTime(m.locksAt)} น.` : "ผู้จัดปิดรับ (ก่อนเริ่มแข่ง)"} · กดปุ่มทีมแล้วใส่จำนวนเหรียญ`
         : "🔒 ปิดทายแล้ว รอผล";
   return fitEmbed({
     title: title(t, m),
@@ -154,9 +181,28 @@ export function marketEmbed(t: { id: string; name: string }, m: MarketView, site
   });
 }
 
-/** One button per team (Discord allows five in a row), plus "my pick" and, for a series, "per game". */
-export function marketButtons(m: MarketView, games?: { tournamentId: string; count: number }) {
-  if (!m.open) return [];
+/**
+ * One button per team (Discord allows five in a row), plus "my pick", for a series "per game", and the
+ * organizers' close button. A closed card keeps only the organizers' buttons: open again and, for a pair
+ * set up by hand, who won.
+ */
+export function marketButtons(m: MarketView, games?: { tournamentId: string; count: number }, tournamentId = games?.tournamentId ?? "") {
+  const done = m.status === "SETTLED" || m.status === "REFUNDED";
+  if (done) return [];
+  if (!m.open) {
+    if (m.status !== "CLOSED" && m.kind !== "CUSTOM") return [];
+    return [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        ...(m.status === "CLOSED" ? [new ButtonBuilder().setCustomId(`pk:reopen:${m.id}:${tournamentId}`).setLabel("เปิดรับทายอีกครั้ง (ผู้จัด)").setEmoji("🔓").setStyle(ButtonStyle.Secondary)] : []),
+        ...(m.kind === "CUSTOM"
+          ? [
+              ...m.options.slice(0, 2).map((o) => new ButtonBuilder().setCustomId(`pk:win:${m.id}:${o.team.id}:${tournamentId}`).setLabel(`${o.team.name} ชนะ (ผู้จัด)`.slice(0, 80)).setEmoji("🏁").setStyle(ButtonStyle.Success)),
+              new ButtonBuilder().setCustomId(`pk:void:${m.id}:${tournamentId}`).setLabel("ยกเลิก คืนเหรียญ (ผู้จัด)").setEmoji("↩️").setStyle(ButtonStyle.Secondary),
+            ]
+          : []),
+      ),
+    ];
+  }
   const rows: ActionRowBuilder<ButtonBuilder>[] = [];
   const teams = m.options.slice(0, 20);
   for (let i = 0; i < teams.length; i += 5) {
@@ -173,6 +219,7 @@ export function marketButtons(m: MarketView, games?: { tournamentId: string; cou
       ...(games?.count && m.kind === "MATCH"
         ? [new ButtonBuilder().setCustomId(`pk:games:${games.tournamentId}:${m.key}`).setLabel(`ทายรายเกม (BO${games.count})`).setEmoji("🎯").setStyle(ButtonStyle.Success)]
         : []),
+      new ButtonBuilder().setCustomId(`pk:close:${m.id}:${tournamentId}`).setLabel("ปิดรับทาย (ผู้จัด)").setEmoji("🔒").setStyle(ButtonStyle.Danger),
     ),
   );
   return rows;
@@ -243,6 +290,8 @@ export class PredictManager {
       log: (...args: unknown[]) => void;
       /** Where a tournament's cards go: its own announcement channel, else every server's. */
       channelsFor: (tournamentId: string) => string[];
+      /** May this person close, open and settle the tournament's predictions (its organizers, server admins)? */
+      canManage?: (tournamentId: string, userId: string, info: { roleIds: string[]; manageGuild: boolean }) => boolean;
     },
   ) {
     this.cards = new JsonStore(path.join(opts.dataDir, "predict-cards.json"));
@@ -302,9 +351,29 @@ export class PredictManager {
     }
   }
 
-  async onButton(i: ButtonInteraction) {
-    const [, action, marketId, teamId] = i.customId.split(":");
+  private canManage(tournamentId: string, userId: string, info: { roleIds: string[]; manageGuild: boolean }) {
+    return info.manageGuild || Boolean(tournamentId && this.opts.canManage?.(tournamentId, userId, info));
+  }
+
+  async onButton(i: ButtonInteraction, info: { roleIds: string[]; manageGuild: boolean } = { roleIds: [], manageGuild: false }) {
+    const [, action, marketId, teamId, extra] = i.customId.split(":");
     try {
+      if ((action === "close" || action === "reopen" || action === "win" || action === "void") && marketId) {
+        // pk:close|reopen:<market>:<tournament>, pk:win:<market>:<team>:<tournament>, pk:void:<market>:<tournament>
+        const tid = action === "win" ? extra : teamId;
+        if (!this.canManage(tid ?? "", i.user.id, info)) return void (await i.reply({ ephemeral: true, content: "ปุ่มนี้สำหรับผู้จัดเท่านั้น" }));
+        await i.deferReply({ ephemeral: true });
+        let text: string;
+        if (action === "close" || action === "reopen") {
+          await this.api.patch(`/predict/markets/${encodeURIComponent(marketId)}`, { status: action === "close" ? "CLOSED" : "OPEN" });
+          text = action === "close" ? "🔒 ปิดรับทายคู่นี้แล้ว (คำทายที่มีอยู่ยังอยู่ รอผล)" : "🔓 เปิดรับทายอีกครั้งแล้ว";
+        } else {
+          await this.api.post(`/predict/markets/${encodeURIComponent(marketId)}/settle`, { winnerTeamId: action === "win" ? teamId : null });
+          text = action === "win" ? "🏁 บันทึกผลแล้ว แจกเหรียญให้คนทายถูกแล้ว" : "↩️ ยกเลิกคู่นี้ คืนเหรียญทุกคนแล้ว";
+        }
+        await this.sync(i.client);
+        return void (await i.editReply(text));
+      }
       if (action === "bet" && marketId && teamId) {
         const w = await this.api.get<WalletView>(`/predict/members/${i.user.id}`);
         const name = i.component && "label" in i.component ? String(i.component.label ?? "ทีม") : "ทีม";
@@ -352,7 +421,7 @@ export class PredictManager {
     }
   }
 
-  async onCommand(i: ChatInputCommandInteraction) {
+  async onCommand(i: ChatInputCommandInteraction, info: { roleIds: string[]; manageGuild: boolean } = { roleIds: [], manageGuild: false }) {
     try {
       if (i.commandName === "coins") {
         await i.deferReply({ ephemeral: true });
@@ -410,6 +479,23 @@ export class PredictManager {
           ],
         }));
       }
+      if (sub === "close" || sub === "reopen" || sub === "pair") {
+        const tid = i.options.getString("tournament", true);
+        if (!this.canManage(tid, i.user.id, info)) return void (await i.reply({ ephemeral: true, content: "คำสั่งนี้สำหรับผู้จัดเท่านั้น" }));
+        await i.deferReply({ ephemeral: true });
+        if (sub === "pair") {
+          await this.api.post(`/predict/tournaments/${encodeURIComponent(tid)}/markets`, {
+            teamAId: i.options.getString("a", true),
+            teamBId: i.options.getString("b", true),
+            label: i.options.getString("name") ?? undefined,
+          });
+          await this.sync(i.client);
+          return void (await i.editReply(`✅ เปิดให้ทายแล้ว การ์ดขึ้นในห้องประกาศ · กด 🔒 ปิดรับทาย ในการ์ดก่อนเริ่มแข่ง แล้วกดทีมที่ชนะ`));
+        }
+        const r = await this.api.post<{ changed: number }>(`/predict/tournaments/${encodeURIComponent(tid)}/status`, { status: sub === "close" ? "CLOSED" : "OPEN" });
+        await this.sync(i.client);
+        return void (await i.editReply(sub === "close" ? `🔒 ปิดรับทายแล้ว ${r.changed} คู่` : `🔓 เปิดรับทายอีกครั้งแล้ว ${r.changed} คู่`));
+      }
       if (sub === "open") {
         await i.deferReply({ ephemeral: true });
         const { data } = await this.api.get<{ data: PredictTournament[] }>("/predict/tournaments");
@@ -437,8 +523,21 @@ export class PredictManager {
   }
 
   async onAutocomplete(i: AutocompleteInteraction) {
-    const q = String(i.options.getFocused()).toLowerCase();
+    const focused = i.options.getFocused(true);
+    const q = String(focused.value).toLowerCase();
+    const sub = i.options.getSubcommand(false);
     try {
+      if (focused.name === "a" || focused.name === "b") {
+        // The teams of the chosen tournament.
+        const tid = i.options.getString("tournament");
+        const t = tid ? await this.api.get<{ teams: { id: string; name: string }[] }>(`/tournaments/${encodeURIComponent(tid)}`).catch(() => null) : null;
+        return void (await i.respond((t?.teams ?? []).filter((x) => x.name.toLowerCase().includes(q)).slice(0, 25).map((x) => ({ name: x.name.slice(0, 100), value: x.id }))));
+      }
+      if (sub === "pair" || sub === "close" || sub === "reopen") {
+        // Organizers pick from every running tournament, bracket or not.
+        const { data } = await this.api.get<{ data: { id: string; name: string; status: string }[] }>(`/tournaments?limit=50${q ? `&search=${encodeURIComponent(q)}` : ""}`);
+        return void (await i.respond(data.filter((t) => t.status !== "COMPLETED").slice(0, 25).map((t) => ({ name: t.name.slice(0, 100), value: t.id }))));
+      }
       const { data } = await this.api.get<{ data: PredictTournament[] }>("/predict/tournaments");
       await i.respond(data.filter((t) => t.name.toLowerCase().includes(q)).slice(0, 25).map((t) => ({ name: t.name.slice(0, 100), value: t.id })));
     } catch {

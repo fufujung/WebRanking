@@ -249,6 +249,11 @@ export async function resetBracket(tournamentId: string, force: boolean) {
   return bracketRun(tournamentId, () => api(bracketPath(tournamentId, force ? "?force=true" : ""), { method: "DELETE" }), "ลบสายแล้ว");
 }
 
+/** Ends a running tournament now: matches not played stay unplayed, and the bot closes their rooms. */
+export async function endBracket(tournamentId: string) {
+  return bracketRun(tournamentId, () => api(bracketPath(tournamentId, "/end"), { method: "POST", json: {} }), "จบทัวร์นาเมนต์แล้ว");
+}
+
 /** Sets (or clears, with an empty value) the start time of one match or a whole round. Times are Thai time. */
 export async function scheduleBracket(tournamentId: string, target: { match: string } | { stage: string; round: number }, value: string) {
   const scheduledAt = value ? fromBangkokInput(value) : null;
@@ -696,4 +701,46 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
   if (res) return res;
   revalidatePath("/", "layout");
   return { ok: "บันทึกแล้ว" };
+}
+
+// ---------- Predictions: closing, opening and hand-made pairs ----------
+
+async function predictRun(tournamentId: string, fn: () => Promise<unknown>, ok: string): Promise<FormState> {
+  const result = await run(async () => {
+    await fn();
+  });
+  revalidatePath(`/admin/tournaments/${tournamentId}`);
+  revalidatePath("/predict");
+  return result ?? { ok };
+}
+
+/** Closes one market (no new picks) or opens it again. */
+export async function setMarketOpen(tournamentId: string, marketId: string, open: boolean) {
+  return predictRun(tournamentId, () => api(`/predict/markets/${encodeURIComponent(marketId)}`, { method: "PATCH", json: { status: open ? "OPEN" : "CLOSED" } }), open ? "เปิดรับทายแล้ว" : "ปิดรับทายแล้ว");
+}
+
+/** Closes (or opens again) every market of the tournament without a result. */
+export async function setAllMarketsOpen(tournamentId: string, open: boolean) {
+  return predictRun(tournamentId, () => api(`/predict/tournaments/${encodeURIComponent(tournamentId)}/status`, { method: "POST", json: { status: open ? "OPEN" : "CLOSED" } }), open ? "เปิดรับทายทุกคู่แล้ว" : "ปิดรับทายทุกคู่แล้ว");
+}
+
+/** A pair to predict set up by hand ("ทีม A vs ทีม B"). */
+export async function createPair(tournamentId: string, _: FormState, form: FormData): Promise<FormState> {
+  const close = text(form, "locksAt");
+  const locksAt = close ? fromBangkokInput(close) : null;
+  if (close && !locksAt) return { error: "เวลาปิดรับไม่ถูกต้อง" };
+  return predictRun(
+    tournamentId,
+    () => api(`/predict/tournaments/${encodeURIComponent(tournamentId)}/markets`, { method: "POST", json: { teamAId: text(form, "teamAId"), teamBId: text(form, "teamBId"), label: text(form, "label") || undefined, locksAt } }),
+    "เปิดคู่ให้ทายแล้ว",
+  );
+}
+
+/** The winner of a hand-made pair, or null to call it off (coins back). */
+export async function settlePair(tournamentId: string, marketId: string, winnerTeamId: string | null) {
+  return predictRun(tournamentId, () => api(`/predict/markets/${encodeURIComponent(marketId)}/settle`, { method: "POST", json: { winnerTeamId } }), winnerTeamId ? "บันทึกผลแล้ว แจกเหรียญให้คนทายถูกแล้ว" : "ยกเลิกคู่นี้ คืนเหรียญแล้ว");
+}
+
+export async function deletePair(tournamentId: string, marketId: string) {
+  return predictRun(tournamentId, () => api(`/predict/markets/${encodeURIComponent(marketId)}`, { method: "DELETE" }), "ลบคู่แล้ว คืนเหรียญแล้ว");
 }

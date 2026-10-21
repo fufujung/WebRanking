@@ -311,3 +311,109 @@ describe("predictions", () => {
     assert.equal((await call("POST", `/predict/members/${alice}/rewards/${item.data[0].id}/received`)).status, 404, "only the winner confirms");
   });
 });
+
+describe("organizer controls", () => {
+  const fan = discord();
+  const fan2 = discord();
+
+  before(async () => {
+    for (const who of [fan, fan2]) await ok("POST", `/predict/members/${who}/daily`, { name: "Fan" });
+  });
+
+  test("bracket matches open as soon as the bracket starts, even without a start time; organizers close one or all", async () => {
+    const t = await newTournament();
+    const a = await registerTeam(t.id, "Kings");
+    const b = await registerTeam(t.id, "Queens");
+    await ok("POST", `/tournaments/${t.id}/bracket/seed`, { method: "manual", order: [a.id, b.id] });
+    await ok("POST", `/tournaments/${t.id}/bracket/start`);
+    let m1 = (await markets(t.id)).markets.find((m: any) => m.kind === "MATCH");
+    assert.equal(m1.open, true, "open without a start time once the bracket is under way");
+    assert.equal(m1.title, "คู่ที่ 1");
+    assert.equal((await bet(fan, m1.id, a.id, 10)).status, 200);
+
+    await ok("PATCH", `/predict/markets/${m1.id}`, { status: "CLOSED" });
+    m1 = (await markets(t.id)).markets.find((m: any) => m.id === m1.id);
+    assert.equal(m1.open, false);
+    assert.equal((await bet(fan2, m1.id, b.id, 10)).status, 409, "closed: no new picks");
+    assert.equal((await call("DELETE", `/predict/members/${fan}/bets/${m1.id}`)).status, 409, "closed: picks stay");
+
+    const opened = await ok("POST", `/predict/tournaments/${t.id}/status`, { status: "OPEN" });
+    assert.equal(opened.changed, 1);
+    assert.equal((await markets(t.id)).markets.find((m: any) => m.id === m1.id).open, true);
+    const closed = await ok("POST", `/predict/tournaments/${t.id}/status`, { status: "CLOSED" });
+    assert.ok(closed.changed >= 1);
+    assert.equal((await markets(t.id)).markets.some((m: any) => m.open), false, "close all closes every market");
+    assert.equal((await call("POST", `/predict/tournaments/${t.id}/status`, { status: "CLOSED" }, reader)).status, 403, "organizers only");
+
+    // The result still settles a closed match.
+    await ok("POST", `/tournaments/${t.id}/bracket/matches/M1/result`, { scoreA: 2, scoreB: 0 });
+    const done = (await markets(t.id)).markets.find((m: any) => m.id === m1.id);
+    assert.equal(done.status, "SETTLED");
+  });
+
+  test("a hand-made pair: open at once, closed by the organizer, settled by picking the winner, and listed for an event without a bracket", async () => {
+    const t = await newTournament({ format: null });
+    const a = await registerTeam(t.id, "Red");
+    const b = await registerTeam(t.id, "Blue");
+    const other = await newTournament();
+    const outsider = await registerTeam(other.id, "Green");
+    assert.equal((await ok("GET", "/predict/tournaments")).data.some((x: any) => x.id === t.id), false, "nothing to predict yet");
+
+    const bad = await call("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: a.id, teamBId: outsider.id });
+    assert.equal(bad.status, 400);
+    assert.match(bad.body.details.th, /ต้องอยู่ในรายการนี้/);
+    assert.equal((await call("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: a.id, teamBId: a.id })).status, 400);
+    assert.equal((await call("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: a.id, teamBId: b.id }, reader)).status, 403);
+
+    const pair = await ok("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: a.id, teamBId: b.id, label: "โชว์แมตช์" });
+    assert.equal(pair.kind, "CUSTOM");
+    const listed = (await ok("GET", "/predict/tournaments")).data.find((x: any) => x.id === t.id);
+    assert.equal(listed?.open, 1, "an event without a bracket is listed once it has a pair");
+    let view = (await markets(t.id)).markets;
+    assert.equal(view.length, 1, "no champion pick without a bracket");
+    assert.equal(view[0].title, "โชว์แมตช์");
+    assert.equal(view[0].open, true);
+
+    assert.equal((await bet(fan, pair.id, a.id, 30)).status, 200);
+    assert.equal((await bet(fan2, pair.id, b.id, 10)).status, 200);
+    const before1 = (await wallet(fan)).coins;
+    await ok("PATCH", `/predict/markets/${pair.id}`, { status: "CLOSED" });
+    // A bracket's own matches are settled by their results, not by hand.
+    const won = await ok("POST", `/predict/markets/${pair.id}/settle`, { winnerTeamId: a.id });
+    assert.equal(won.status, "SETTLED");
+    assert.equal((await wallet(fan)).coins, before1 + 40, "the winner takes the whole pot");
+    // Changed by mistake: the other team won after all; the coins move.
+    await ok("POST", `/predict/markets/${pair.id}/settle`, { winnerTeamId: b.id });
+    assert.equal((await wallet(fan)).coins, before1);
+    const w2 = await wallet(fan2);
+    assert.equal(w2.bets[0].market.label, "โชว์แมตช์");
+    assert.equal(w2.bets[0].payout, 40);
+    // Called off: everyone gets their stake back.
+    await ok("POST", `/predict/markets/${pair.id}/settle`, { winnerTeamId: null });
+    assert.equal((await wallet(fan)).coins, before1 + 30);
+    view = (await markets(t.id)).markets;
+    assert.equal(view[0].status, "REFUNDED");
+
+    // A plain pair is called "A vs B", and can be deleted (stakes back).
+    const plain = await ok("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: b.id, teamBId: a.id });
+    assert.equal((await markets(t.id)).markets.find((m: any) => m.id === plain.id).title, "Blue vs Red");
+    const coins = (await wallet(fan2)).coins;
+    await bet(fan2, plain.id, a.id, 5);
+    await ok("DELETE", `/predict/markets/${plain.id}`);
+    assert.equal((await wallet(fan2)).coins, coins);
+    const champ = await newTournament();
+    const c1 = await registerTeam(champ.id, "C1");
+    await registerTeam(champ.id, "C2");
+    const cm = (await markets(champ.id)).markets[0];
+    assert.equal((await call("POST", `/predict/markets/${cm.id}/settle`, { winnerTeamId: c1.id })).status, 409, "only hand-made pairs are settled by hand");
+    assert.equal((await call("DELETE", `/predict/markets/${cm.id}`)).status, 409);
+  });
+
+  test("the change counter goes up with organizer changes, not with members' picks", async () => {
+    const r0 = (await ok("GET", "/revision")).revision;
+    await ok("POST", `/predict/members/${fan}/watch`, {});
+    assert.equal((await ok("GET", "/revision")).revision, r0);
+    await newTournament();
+    assert.ok((await ok("GET", "/revision")).revision > r0);
+  });
+});
