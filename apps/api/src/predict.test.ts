@@ -195,6 +195,11 @@ describe("predictions", () => {
     await ok("POST", `/tournaments/${t.id}/bracket/matches/M1/reopen`, { force: true });
     after = { alice: (await wallet(alice)).coins, bob: (await wallet(bob)).coins, carol: (await wallet(carol)).coins };
     assert.deepEqual(after, before, "every pick is open again, coins back to staked");
+    // The winner is already known: a taken-back result leaves the match closed, so nobody can switch to the winner.
+    const reopened = (await markets(t.id)).markets.find((m: any) => m.kind === "MATCH");
+    assert.equal(reopened.status, "CLOSED");
+    assert.equal(reopened.open, false);
+    assert.equal((await bet(bob, reopened.id, a.id, 30)).status, 409, "no switching sides once the result was seen");
     await ok("POST", `/tournaments/${t.id}/bracket/matches/M1/walkover`, { teamId: b.id, mode: "organizer", force: true });
     after = { alice: (await wallet(alice)).coins, bob: (await wallet(bob)).coins, carol: (await wallet(carol)).coins };
     assert.equal(after.alice - before.alice, 60, "a walkover gives every stake back");
@@ -318,6 +323,24 @@ describe("organizer controls", () => {
 
   before(async () => {
     for (const who of [fan, fan2]) await ok("POST", `/predict/members/${who}/daily`, { name: "Fan" });
+  });
+
+  test("the whole pot is paid out: coins left by rounding go to the biggest winning pick", async () => {
+    const t = await newTournament({ format: null });
+    const a = await registerTeam(t.id, "Odd");
+    const b = await registerTeam(t.id, "Even");
+    const pair = await ok("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: a.id, teamBId: b.id });
+    const [p1, p2, p3, loser] = [discord(), discord(), discord(), discord()];
+    for (const who of [p1, p2, p3, loser]) await ok("POST", `/predict/members/${who}/daily`, { name: "P" });
+    // Pot 3+3+5 on Odd, 10 on Even: shares 3+2.72, 3+2.72, 5+4.54 round down to 5, 5, 9 = 19 of 21.
+    await bet(p1, pair.id, a.id, 3);
+    await bet(p2, pair.id, a.id, 3);
+    await bet(p3, pair.id, a.id, 5);
+    await bet(loser, pair.id, b.id, 10);
+    await ok("POST", `/predict/markets/${pair.id}/settle`, { winnerTeamId: a.id });
+    const paid = await Promise.all([p1, p2, p3].map(async (who) => (await wallet(who)).bets[0].payout));
+    assert.equal(paid.reduce((x, y) => x + y, 0), 21, "nothing is lost to rounding");
+    assert.deepEqual(paid, [6, 5, 10], "the biggest pick first, then the earliest");
   });
 
   test("bracket matches open as soon as the bracket starts, even without a start time; organizers close one or all", async () => {

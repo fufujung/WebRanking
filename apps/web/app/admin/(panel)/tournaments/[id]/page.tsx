@@ -14,10 +14,12 @@ import { allGames } from "@/lib/games";
 import { allSeasons } from "@/lib/seasons";
 import { SoloAdmin } from "@/components/admin/SoloAdmin";
 import { PickTeam, type Candidate } from "@/components/admin/PickPlayers";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "แก้ไขทัวร์นาเมนต์" };
 
 export default async function EditTournament({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string }> }) {
+  await requireAdmin();
   const [t, teams, sp, games, seasons] = await Promise.all([
     apiOrNull<TournamentDetail>(`/tournaments/${encodeURIComponent((await params).id)}`),
     fetchAll<Team>("/teams"),

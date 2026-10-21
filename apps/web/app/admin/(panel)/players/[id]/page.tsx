@@ -8,10 +8,12 @@ import { allGames } from "@/lib/games";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { MergePlayer } from "@/components/admin/MergePlayer";
 import { UnlinkDiscord } from "@/components/admin/UnlinkDiscord";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "แก้ไขผู้เล่น" };
 
 export default async function EditPlayer({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdmin();
   const [player, teams, players, games] = await Promise.all([
     apiOrNull<PlayerDetail>(`/players/${encodeURIComponent((await params).id)}`),
     fetchAll<Team>("/teams"),

@@ -3,10 +3,12 @@ import { apiOrNull } from "@/lib/api";
 import type { Ad } from "@/lib/types";
 import { AdForm } from "@/components/admin/AdForm";
 import { DeleteButton } from "@/components/admin/DeleteButton";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "แก้ไขโฆษณา" };
 
 export default async function EditAd({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdmin();
   const ad = await apiOrNull<Ad>(`/ads/${encodeURIComponent((await params).id)}`);
   if (!ad) notFound();
   return (

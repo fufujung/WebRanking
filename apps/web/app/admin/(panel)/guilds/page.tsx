@@ -4,12 +4,14 @@ import type { GuildListItem } from "@/lib/types";
 import { Avatar, Empty, Pager, pageOffset } from "@/components/ui";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { FilterTabs, ListHead, ListSearch, href } from "@/components/admin/ListParts";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "จัดการกิลด์" };
 
 const LIMIT = 50;
 
 export default async function AdminGuilds({ searchParams }: { searchParams: Promise<{ q?: string; show?: string; page?: string; deleted?: string }> }) {
+  await requireAdmin();
   const sp = await searchParams;
   const guilds = await fetchAll<GuildListItem>("/guilds");
   const q = (sp.q ?? "").trim().toLowerCase();

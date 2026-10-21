@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { avatarUrl, callbackUrl, discordEnabled, discordUser } from "@/lib/discord";
+import { avatarUrl, callbackUrl, discordEnabled, discordUser, safeNext } from "@/lib/discord";
 import { startMemberSession } from "@/lib/member";
 
 /** Discord sends the visitor back here with a one-time code. */
@@ -24,6 +24,6 @@ export async function GET(req: Request) {
     console.error(e);
     return back("?error=discord");
   }
-  if (next && /^\/(?!\/)[\w\-/]*$/.test(next)) return NextResponse.redirect(new URL(next, callbackUrl(req)));
+  if (safeNext(next)) return NextResponse.redirect(new URL(next, callbackUrl(req)));
   return back("");
 }

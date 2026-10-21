@@ -7,11 +7,13 @@ import { StoryEditor } from "@/components/admin/StoryEditor";
 import { fmtDate } from "@/lib/format";
 import { Avatar, Empty, StatusBadge } from "@/components/ui";
 import { RemoveSeasonPlayer, SeasonForm, SeasonPaste } from "@/components/admin/SeasonAdmin";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "จัดการซีซั่น" };
 
 /** One season: its name and dates, the players allowed to play, and its events. */
 export default async function AdminSeason({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ q?: string }> }) {
+  await requireAdmin();
   const { id } = await params;
   const q = ((await searchParams).q ?? "").trim().toLowerCase();
   const season = await apiOrNull<SeasonView>(`/special/seasons/${encodeURIComponent(id)}`);

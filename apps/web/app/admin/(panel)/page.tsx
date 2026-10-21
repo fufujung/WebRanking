@@ -9,6 +9,7 @@ import { TierEmblem } from "@/components/Tier";
 import { AdminSearch } from "@/components/admin/AdminSearch";
 import { DayBars, Donut, Sparkline } from "@/components/admin/Charts";
 import { Icon, type IconName } from "@/components/admin/Icons";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "หลังบ้าน" };
 
@@ -26,6 +27,7 @@ function cumulative(total: number, perDay: number[]) {
 }
 
 export default async function AdminHome({ searchParams }: { searchParams: Promise<{ deleted?: string }> }) {
+  await requireAdmin();
   const sp = await searchParams;
   const [dash, recent, teams, players, tournaments, extract] = await Promise.all([
     adminDashboard(),

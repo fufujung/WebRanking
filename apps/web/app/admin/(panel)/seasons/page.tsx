@@ -7,11 +7,13 @@ import { Empty } from "@/components/ui";
 import { GameTabs } from "@/components/GameTabs";
 import { ListHead } from "@/components/admin/ListParts";
 import { SeasonForm } from "@/components/admin/SeasonAdmin";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "ซีซั่น เล่นเก่งปากเก่ง" };
 
 /** Seasons of the special events: each lists the players (name + UID) allowed to play in its events. */
 export default async function AdminSeasons({ searchParams }: { searchParams: Promise<{ game?: string }> }) {
+  await requireAdmin();
   const sp = await searchParams;
   const { games, game } = await currentGame(sp.game);
   const { data } = await api<{ data: SpecialSeason[] }>(`/special/seasons${qs({ gameId: game?.id })}`);

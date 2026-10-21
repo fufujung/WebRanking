@@ -3,10 +3,12 @@ import { notFound } from "next/navigation";
 import { apiOrNull } from "@/lib/api";
 import type { Game } from "@/lib/types";
 import { RankEditor } from "@/components/admin/RankEditor";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "แรงค์ในเกม" };
 
 export default async function GameRanks({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdmin();
   const game = await apiOrNull<Game>(`/games/${encodeURIComponent((await params).id)}`);
   if (!game) notFound();
   return (

@@ -4,6 +4,7 @@ import type { Player } from "@/lib/types";
 import { Avatar, Empty, Pager, pageOffset } from "@/components/ui";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { FilterTabs, ListHead, ListSearch, href } from "@/components/admin/ListParts";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "จัดการผู้เล่น" };
 
@@ -11,6 +12,7 @@ const LIMIT = 50;
 const SHOWS = ["nouid", "noteam"] as const;
 
 export default async function AdminPlayers({ searchParams }: { searchParams: Promise<{ q?: string; show?: string; page?: string; deleted?: string }> }) {
+  await requireAdmin();
   const sp = await searchParams;
   const players = (await fetchAll<Player>("/players")).sort((a, b) => a.name.localeCompare(b.name, "th"));
   const q = (sp.q ?? "").trim().toLowerCase();

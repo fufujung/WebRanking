@@ -9,11 +9,13 @@ import { facebookHref } from "@/lib/special";
 import { Avatar, Empty } from "@/components/ui";
 import { FilterTabs, ListHead, ListSearch, href } from "@/components/admin/ListParts";
 import { ReserveActions } from "@/components/admin/ReserveAdmin";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "ตัวสำรอง เล่นเก่งปากเก่ง" };
 
 /** The always-open substitutes list with contact details, for organizers only. */
 export default async function AdminReserve({ searchParams }: { searchParams: Promise<{ q?: string; pos?: string; game?: string }> }) {
+  await requireAdmin();
   const sp = await searchParams;
   // Each game keeps its own list (UIDs and names differ between games).
   const { games, game } = await currentGame(sp.game);

@@ -477,8 +477,9 @@ export async function removeReserve(playerId: string): Promise<FormState> {
 const deletable = { guilds: "/admin/guilds", teams: "/admin/teams", players: "/admin/players", tournaments: "/admin/tournaments", matches: "/admin/matches", ads: "/admin/ads" } as const;
 
 export async function remove(kind: keyof typeof deletable, id: string): Promise<FormState> {
+  if (!Object.hasOwn(deletable, kind)) return { error: "ลบรายการนี้ไม่ได้" };
   const result = await run(async () => {
-    await api(`/${kind}/${id}`, { method: "DELETE" });
+    await api(`/${kind}/${encodeURIComponent(id)}`, { method: "DELETE" });
   });
   if (result) return result;
   revalidatePath("/", "layout");

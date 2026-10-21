@@ -3,10 +3,12 @@ import type { Game } from "@/lib/types";
 import { Empty } from "@/components/ui";
 import { ListHead } from "@/components/admin/ListParts";
 import { AddGameForm, GameRow } from "@/components/admin/GameForms";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "เกม" };
 
 export default async function AdminGames() {
+  await requireAdmin();
   const games = (await api<{ data: Game[] }>("/games")).data;
   return (
     <>

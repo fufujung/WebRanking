@@ -5,6 +5,7 @@ import { fmtDate, formatLabel, statusLabel } from "@/lib/format";
 import { Empty, StatusBadge } from "@/components/ui";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { FilterTabs, ListHead, ListSearch, href } from "@/components/admin/ListParts";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "จัดการทัวร์นาเมนต์" };
 
@@ -13,6 +14,7 @@ const STATUSES: Status[] = ["ONGOING", "UPCOMING", "COMPLETED"];
 const BRACKET: Record<string, string> = { DRAFT: "จัดสายแล้ว ยังไม่เริ่ม", LIVE: "สายกำลังแข่ง", DONE: "สายจบแล้ว" };
 
 export default async function AdminTournaments({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; deleted?: string }> }) {
+  await requireAdmin();
   const sp = await searchParams;
   const all = (await fetchAll<Tournament>("/tournaments")).sort(
     (a, b) => ORDER[a.status] - ORDER[b.status] || b.startDate.localeCompare(a.startDate),

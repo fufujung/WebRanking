@@ -1,10 +1,12 @@
 import { api, API_URL } from "@/lib/api";
 import type { ApiKeyInfo } from "@/lib/types";
 import { KeyManager } from "@/components/admin/KeyManager";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "API keys" };
 
 export default async function KeysPage() {
+  await requireAdmin();
   const { data } = await api<{ data: ApiKeyInfo[] }>("/keys");
   const docs = `${process.env.PUBLIC_API_URL ?? API_URL}/docs`;
   return (

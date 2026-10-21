@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
-import { callbackUrl, discord, discordEnabled } from "@/lib/discord";
+import { callbackUrl, discord, discordEnabled, safeNext } from "@/lib/discord";
 
 const STATE = "tr_oauth_state";
 const NEXT = "tr_oauth_next";
@@ -21,7 +21,7 @@ export async function GET(req: Request) {
   const res = NextResponse.redirect(url);
   // Where to go after logging in (e.g. back to a team invite). Only paths on this site.
   const next = new URL(req.url).searchParams.get("next");
-  if (next && /^\/(?!\/)[\w\-/]*$/.test(next)) res.cookies.set(NEXT, next, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 600 });
+  if (safeNext(next)) res.cookies.set(NEXT, next, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 600, secure: new URL(callbackUrl(req)).protocol === "https:" });
   res.cookies.set(STATE, state, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 600, secure: new URL(callbackUrl(req)).protocol === "https:" });
   return res;
 }

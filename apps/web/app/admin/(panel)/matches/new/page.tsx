@@ -3,10 +3,12 @@ import { api, apiOrNull } from "@/lib/api";
 import { fetchAll } from "@/lib/fetchAll";
 import type { BracketSlot, Player, Team, Tournament } from "@/lib/types";
 import { MatchForm, type BracketTarget } from "@/components/admin/MatchForm";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "บันทึกผลการแข่ง" };
 
 export default async function NewMatch({ searchParams }: { searchParams: Promise<{ tournamentId?: string; slot?: string }> }) {
+  await requireAdmin();
   const [sp, tournaments, teams, players, extract] = await Promise.all([
     searchParams,
     fetchAll<Tournament>("/tournaments"),

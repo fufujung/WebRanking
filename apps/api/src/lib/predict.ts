@@ -127,7 +127,8 @@ type Outcome = { kind: "none" } | { kind: "refund" } | { kind: "winner"; teamId:
 /**
  * Brings every bet of a market to what its outcome pays: nothing yet, the stake back (refund), or the
  * winners' share of the pool. Only the difference from what was already paid moves, so it can run again
- * and again, and a reopened or overturned result takes the coins back.
+ * and again, and a reopened or overturned result takes the coins back. Taking a result back leaves the
+ * market closed: the winner is already known, so it must not take picks again until an organizer reopens it.
  */
 async function applyOutcome(tx: Tx, marketId: string, outcome: Outcome) {
   const bets = await tx.bet.findMany({ where: { marketId } });
@@ -136,8 +137,17 @@ async function applyOutcome(tx: Tx, marketId: string, outcome: Outcome) {
   const winPool = winners.reduce((n, b) => n + b.amount, 0);
   // Nobody picked the winner: everyone gets their coins back.
   const refundAll = outcome.kind === "refund" || (outcome.kind === "winner" && winPool === 0);
+  // Shares are rounded down; the coins left over go one each to the biggest winning picks (earliest first),
+  // so the whole pool is paid out.
+  const share = (b: (typeof bets)[number]) => b.amount + Math.floor(((pool - winPool) * b.amount) / winPool);
+  const bonus = new Set<string>();
+  if (outcome.kind === "winner" && !refundAll) {
+    let left = pool - winners.reduce((n, b) => n + share(b), 0);
+    const order = [...winners].sort((x, y) => y.amount - x.amount || x.createdAt.getTime() - y.createdAt.getTime() || x.id.localeCompare(y.id));
+    for (const b of order) if (left-- > 0) bonus.add(b.id);
+  }
   for (const b of bets) {
-    const target = outcome.kind === "none" ? null : refundAll ? b.amount : b.teamId === (outcome as { teamId: string }).teamId ? b.amount + Math.floor(((pool - winPool) * b.amount) / winPool) : 0;
+    const target = outcome.kind === "none" ? null : refundAll ? b.amount : b.teamId === (outcome as { teamId: string }).teamId ? share(b) + (bonus.has(b.id) ? 1 : 0) : 0;
     const diff = (target ?? 0) - (b.payout ?? 0);
     if (diff) await addCoins(tx, b.discordId, diff, diff > 0 ? (refundAll ? "REFUND" : "PAYOUT") : "ADJUST", { marketId, note: diff < 0 ? "ผลการแข่งถูกแก้ไข" : undefined });
     if (target !== b.payout) await tx.bet.update({ where: { id: b.id }, data: { payout: target } });
@@ -147,7 +157,7 @@ async function applyOutcome(tx: Tx, marketId: string, outcome: Outcome) {
   const data =
     outcome.kind === "none"
       ? m.status === "SETTLED" || m.status === "REFUNDED"
-        ? { status: "OPEN", winnerTeamId: null, settledAt: null }
+        ? { status: "CLOSED", winnerTeamId: null, settledAt: null }
         : null
       : { status: status!, winnerTeamId: outcome.kind === "winner" ? outcome.teamId : null, settledAt: m.settledAt ?? new Date() };
   if (data) await tx.market.update({ where: { id: marketId }, data });

@@ -4,12 +4,14 @@ import type { Team } from "@/lib/types";
 import { Avatar, Empty, Pager, pageOffset } from "@/components/ui";
 import { DeleteButton } from "@/components/admin/DeleteButton";
 import { FilterTabs, ListHead, ListSearch, href } from "@/components/admin/ListParts";
+import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "จัดการทีม" };
 
 const LIMIT = 50;
 
 export default async function AdminTeams({ searchParams }: { searchParams: Promise<{ q?: string; show?: string; page?: string; deleted?: string }> }) {
+  await requireAdmin();
   const sp = await searchParams;
   const teams = (await fetchAll<Team>("/teams")).sort((a, b) => a.name.localeCompare(b.name, "th"));
   const q = (sp.q ?? "").trim().toLowerCase();
