@@ -64,7 +64,7 @@ export function positionText(chars: MyCharacter[], siteUrl?: string) {
 
 export function notLinkedText(siteUrl?: string) {
   const me = siteLink(siteUrl, "/me");
-  return `บัญชี Discord ของคุณยังไม่ได้ผูกกับตัวละคร ล็อกอินด้วย Discord แล้วผูก UID ที่หน้าโปรไฟล์ของฉันบนเว็บ${me ? ` (${me})` : ""}`;
+  return `บัญชี Discord ของคุณยังไม่ได้ผูกกับตัวละคร พิมพ์ \`/link\` ใส่ UID ในเกมใน Discord หรือผูกที่หน้าโปรไฟล์ของฉันบนเว็บ${me ? ` (${me})` : ""}`;
 }
 
 export class LadderCommands {

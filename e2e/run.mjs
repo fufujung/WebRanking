@@ -517,6 +517,45 @@ const gone = await page.request.get(matchUrl);
 if (gone.status() !== 404) throw new Error("deleted match still visible: " + gone.status());
 step("match deleted, page now 404");
 
+// Trash bin: a deleted tournament comes back from ถังขยะ
+{
+  const call = (method, url, body) =>
+    fetch(`${API}/api/v1${url}`, { method, headers: { "X-API-Key": WEB_KEY, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const cup = await (await call("POST", "/tournaments", { name: `Trash Cup ${uniq}`, startDate: "2026-11-01" })).json();
+  await page.goto(`${base}/admin/tournaments/${cup.id}`);
+  page.once("dialog", (d) => {
+    if (!d.message().includes("ถังขยะ")) problems.push("tournament delete confirm does not mention the trash: " + d.message());
+    d.accept();
+  });
+  await page.click(".page-head button:has-text('ลบ')");
+  await page.waitForURL(/\/admin\/tournaments\?deleted=1/);
+  await page.click(".success a:has-text('ถังขยะ')");
+  await page.waitForURL(base + "/admin/trash");
+  const row = page.locator(`[data-trash-item]:has-text('Trash Cup ${uniq}')`);
+  await row.locator("text=เหลือ 30 วัน").waitFor();
+  await page.screenshot({ path: path.join(OUT, "admin-trash.png"), fullPage: true });
+  await row.locator("button:has-text('กู้คืน')").click();
+  await page.locator(`.success:has-text('กู้คืน Trash Cup ${uniq} แล้ว')`).waitFor();
+  if ((await call("GET", `/tournaments/${cup.id}`)).status !== 200) throw new Error("restored tournament is not back");
+  step("tournament deleted to the trash and restored from /admin/trash");
+
+  // A Discord account asking for an existing character waits until an organizer approves it.
+  const owned = await (await call("POST", "/players", { name: `Claimed ${uniq}`, uid: `65${uniq}` })).json();
+  const asker = `66${uniq}0001`;
+  const asked = await call("POST", `/players/discord/${asker}/claim`, { uid: `65${uniq}`, discordName: "E2E asker" });
+  if (asked.status !== 202) throw new Error("claiming an existing UID should wait for approval: " + asked.status);
+  await page.goto(base + "/admin");
+  await page.locator('.side-link[href="/admin/players"] .side-count').waitFor();
+  await page.goto(base + "/admin/players");
+  const req = page.locator(`[data-link-request]:has-text('Claimed ${uniq}')`);
+  await req.locator("text=E2E asker").waitFor();
+  await req.locator("button:has-text('อนุมัติ')").click();
+  await page.locator(".success:has-text('อนุมัติแล้ว')").waitFor();
+  const linked = await (await call("GET", `/players/${owned.id}`)).json();
+  if (linked.discordId !== asker) throw new Error("approved link not saved");
+  step("organizer approved a Discord link request on /admin/players");
+}
+
 // Bracket: a single elimination cup seeded by hand, started, played and corrected
 await page.goto(base + "/admin/tournaments/new");
 await page.fill('input[name="name"]', `Bracket Cup ${uniq}`);
@@ -863,8 +902,15 @@ if (!(await page.locator(".btn-discord").count())) {
   await page.fill('.claim-form input[name="uid"]', "81000100");
   await page.fill('.claim-form input[name="server"]', "Asia");
   await page.click(".claim-form button:has-text('ผูกโปรไฟล์')");
+  await page.locator(".claim-form .success:has-text('รอผู้จัดอนุมัติ')").waitFor();
+  await page.goto(base + "/me");
+  await page.locator("[data-pending-links]:has-text('Ace')").waitFor();
+  if (await page.locator(".me-player:has-text('Ace')").count()) throw new Error("an existing character was linked without approval");
+  const [aceRequest] = (await apiCall("GET", "/players/link-requests")).data.filter((r) => r.player.uid === "81000100");
+  await apiCall("POST", `/players/link-requests/${aceRequest.id}/approve`);
+  await page.goto(base + "/me");
   await page.locator(".me-player:has-text('Ace')").waitFor();
-  step("logged in with Discord; created a new profile by UID and linked an existing one");
+  step("logged in with Discord; created a new profile by UID; an existing one waited for approval, then linked");
 
   const mine = page.locator(`.me-player:has-text('Disc-${uniq}')`);
   await mine.locator('input[name="nickname"]').fill(`Nick ${uniq}`);

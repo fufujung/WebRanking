@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { forgetTrash, restoreTrash, type FormState } from "@/app/admin/actions";
 import { fmtDateTime } from "@/lib/format";
 import type { TrashItem } from "@/lib/types";
+import { Empty } from "@/components/ui";
 
 /** Deleted tournaments: restore one, or remove it for good before the 30 days are up. */
 export function TrashList({ rows }: { rows: TrashItem[] }) {
@@ -12,8 +13,10 @@ export function TrashList({ rows }: { rows: TrashItem[] }) {
   const [pending, start] = useTransition();
   const act = (fn: () => Promise<FormState>) => start(async () => setState(await fn()));
   const daysLeft = (iso: string) => Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000));
+  // Kept mounted when the list empties, so the message about the last restore stays on screen.
   return (
     <section className="card stack">
+      {rows.length === 0 && <Empty>ถังขยะว่าง</Empty>}
       {state?.ok && <div className="success small">{state.ok}</div>}
       {state?.error && <div className="error small">{state.error}</div>}
       {rows.map((r) => (

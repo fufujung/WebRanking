@@ -1,6 +1,5 @@
 import { api } from "@/lib/api";
 import type { TrashItem } from "@/lib/types";
-import { Empty } from "@/components/ui";
 import { ListHead } from "@/components/admin/ListParts";
 import { TrashList } from "@/components/admin/TrashList";
 import { requireAdmin } from "@/lib/auth";
@@ -13,7 +12,7 @@ export default async function AdminTrash() {
   return (
     <>
       <ListHead title="ถังขยะ" sub="ทัวร์นาเมนต์ที่ลบไป กู้คืนได้ภายใน 30 วัน พร้อมทีม รายชื่อ แมตช์ สถิติ สาย และลิงก์ต้นเรื่อง หลังจากนั้นลบถาวรเอง" />
-      {data.length === 0 ? <Empty>ถังขยะว่าง</Empty> : <TrashList rows={data} />}
+      <TrashList rows={data} />
     </>
   );
 }
