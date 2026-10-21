@@ -128,12 +128,12 @@ export function announcementEmbed(m: MatchDetail, siteUrl?: string): APIEmbed {
   });
 }
 
-const medal = (rank: number) => (rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `\`${String(rank).padStart(2)}.\``);
+export const medal = (rank: number) => (rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `\`${String(rank).padStart(2)}.\``);
 
-export function teamRankingEmbed(teams: RankedTeam[], siteUrl?: string): APIEmbed {
-  const link = siteLink(siteUrl, "/rankings");
+export function teamRankingEmbed(teams: RankedTeam[], siteUrl?: string, game?: { id: string; name: string } | null): APIEmbed {
+  const link = siteLink(siteUrl, `/rankings${game ? `?game=${encodeURIComponent(game.id)}` : ""}`);
   return fitEmbed({
-    title: "🏆 Ranking ทีม",
+    title: `🏆 Ranking ทีม${game ? ` · ${game.name}` : ""}`,
     url: isPublicUrl(link) ? link : undefined,
     description: teams.length
       ? teams.map((t) => `${medal(t.rank)} **${t.name}** · ${t.rating} · ชนะ ${t.stats.wins} แพ้ ${t.stats.losses}`).join("\n")

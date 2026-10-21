@@ -198,3 +198,97 @@ export interface Bracket {
   /** Standing blacklist entries from this tournament's walkovers (one per player of the team that did not come). */
   blacklist?: BracketBlacklist[];
 }
+
+// ---------- MMR ladder, search, the player's own team and guild ----------
+
+export interface Tier {
+  key: string;
+  name: string;
+  nameTh: string;
+  color: string;
+  min: number;
+  next: number | null;
+}
+export interface Game {
+  id: string;
+  name: string;
+  players?: number;
+}
+/** One row of GET /rankings/mmr. */
+export interface LadderPlayer {
+  id: string;
+  name: string;
+  nickname: string | null;
+  rank: number;
+  mmr: number;
+  tier: Tier;
+  series: number;
+  wins: number;
+  losses: number;
+  rankChange: number | null;
+  blacklisted?: boolean;
+  team: { id: string; name: string } | null;
+}
+export interface MmrLadder extends Page<LadderPlayer> {
+  placing: { id: string; name: string; nickname: string | null; mmr: number; series: number; seriesToPlace: number }[];
+  tiers: (Tier & { players: number })[];
+  rules: { start: number; placementSeries: number };
+}
+export interface SearchResults {
+  teams: { id: string; name: string; tag: string | null; rating: number }[];
+  players: { id: string; name: string; nickname: string | null; team: { id: string; name: string } | null }[];
+  tournaments: { id: string; name: string; status: Tournament["status"]; startDate: string }[];
+}
+/** One of the caller's characters, as GET /members/{discordId} returns it (the website's "my profile"). */
+export interface MyCharacter {
+  id: string;
+  name: string;
+  nickname: string | null;
+  uid: string | null;
+  mmr: number;
+  tier: Tier;
+  toNextTier: number;
+  game: { id: string; name: string } | null;
+  rank: number | null;
+  rankedPlayers: number;
+  series: number;
+  seriesToPlace: number;
+  team: {
+    id: string;
+    name: string;
+    tag: string | null;
+    rating: number;
+    isCaptain: boolean;
+    inviteCode: string | null;
+    members: { id: string; name: string; nickname: string | null; mmr: number; linked: boolean; captain: boolean }[];
+  } | null;
+  guild: {
+    id: string;
+    name: string;
+    tag: string | null;
+    capacity: number;
+    memberCount: number;
+    isLeader: boolean;
+    myRank: number | null;
+    members: { id: string; name: string; nickname: string | null; mmr: number; guildRank: number | null; leader: boolean; linked: boolean }[];
+    invites: { id: string; player: { id: string; name: string; uid: string | null; linked: boolean; inGuild: boolean } }[];
+  } | null;
+  guildInvites: { id: string; guild: { id: string; name: string; tag: string | null; capacity: number; memberCount: number } }[];
+}
+export interface GuildRow {
+  id: string;
+  name: string;
+  tag: string | null;
+  score: number | null;
+  rank: number | null;
+  memberCount: number;
+  capacity: number;
+  game: { id: string; name: string } | null;
+  leader: { name: string; nickname: string | null } | null;
+}
+export interface GuildDetail extends GuildRow {
+  description: string | null;
+  guilds: number;
+  full: boolean;
+  members: { id: string; name: string; nickname: string | null; mmr: number; tier: Tier; guildRank: number | null; leader: boolean; mmrRank: number | null; team: { name: string } | null }[];
+}
