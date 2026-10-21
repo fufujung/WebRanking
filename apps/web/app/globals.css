@@ -925,6 +925,9 @@ label.pick-row { display: flex; flex-direction: row; align-items: center; text-a
 .predict-admin-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--border); }
 .predict-admin-row .row { flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 640px) { .predict-admin-row .row { justify-content: flex-start; } }
+.predict-lock { flex-wrap: wrap; gap: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.predict-lock-all { flex-wrap: wrap; gap: 10px; margin-bottom: 12px; border-color: var(--accent); }
+.predict-lock-all .row { flex-wrap: wrap; }
 
 /* Lucky draw admin */
 .draw-keyword { font-size: 20px; }
