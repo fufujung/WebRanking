@@ -336,8 +336,12 @@ async function pollOne(d: { id: string; keyword: string; videoId: string; liveCh
 
 /** Closes draws whose time is up and reads the chat of the open ones that are due. */
 export async function pollDraws(now = new Date()) {
-  await prisma.luckyDraw.updateMany({ where: { status: "OPEN", closesAt: { lte: now } }, data: { status: "CLOSED", closedAt: now } });
-  const due = await prisma.luckyDraw.findMany({ where: { status: "OPEN", videoId: { not: null }, OR: [{ nextPollAt: null }, { nextPollAt: { lte: now } }] } });
+  // Runs every couple of seconds: with no draw open it only reads, so it never waits on (or holds) a write lock.
+  const open = await prisma.luckyDraw.findMany({ where: { status: "OPEN" } });
+  if (!open.length) return;
+  const late = open.filter((d) => d.closesAt && d.closesAt <= now).map((d) => d.id);
+  if (late.length) await prisma.luckyDraw.updateMany({ where: { id: { in: late }, status: "OPEN" }, data: { status: "CLOSED", closedAt: now } });
+  const due = open.filter((d) => !late.includes(d.id) && d.videoId && (!d.nextPollAt || d.nextPollAt <= now));
   if (!due.length) return;
   if (!process.env.YOUTUBE_API_KEY) {
     await prisma.luckyDraw.updateMany({ where: { id: { in: due.map((d) => d.id) } }, data: { chatError: "ยังไม่ได้ตั้ง YOUTUBE_API_KEY ใน apps/api/.env เลยอ่านแชท YouTube ไม่ได้ (ใช้ปุ่ม Discord หรือวางรายชื่อเองได้)", nextPollAt: new Date(now.getTime() + 60_000) } });

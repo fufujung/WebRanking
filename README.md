@@ -313,7 +313,7 @@ endpoint หลัก: `/api/v1/games`, `/api/v1/rankings/mmr` (ใส่ `?game
 ## ทดสอบ
 
 ```bash
-npm test            # เทส API 193 เคส และบอท Discord 102 เคส (ใช้ Discord และ AI แบบจำลอง)
+npm test            # เทส API 195 เคส และบอท Discord 102 เคส (ใช้ Discord และ AI แบบจำลอง)
 npm run typecheck   # ตรวจ TypeScript ทั้ง API เว็บ และบอท
 npm run test:e2e    # เปิดเบราว์เซอร์จริงทดสอบทุกหน้าและทุกฟอร์ม (ต้องรัน npm run dev ไว้ก่อน)
 ```
@@ -341,5 +341,5 @@ npm start
 ```
 
 - SQLite เหมาะกับเริ่มต้นและเครื่องเดียว ถ้าจะขยายให้เปลี่ยน `provider` ใน `apps/api/prisma/schema.prisma` เป็น `postgresql` แล้วตั้ง `DATABASE_URL`
-- สำรองไฟล์ฐานข้อมูล (`apps/api/prisma/dev.db`) และโฟลเดอร์ `apps/api/uploads`
+- สำรองไฟล์ฐานข้อมูล (`apps/api/prisma/dev.db` พร้อม `dev.db-wal` และ `dev.db-shm` ถ้ามี เพราะฐานข้อมูลใช้โหมด WAL งานที่เพิ่งบันทึกอาจยังอยู่ในไฟล์ `-wal`) และโฟลเดอร์ `apps/api/uploads`
 - เปลี่ยน `ADMIN_PASSWORD` และ `SESSION_SECRET` เป็นค่าของคุณเอง
