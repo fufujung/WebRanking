@@ -12,11 +12,20 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * For data every visitor sees the same (public lists, boards, brackets): kept this many seconds, so a crowd
+ * opening a page during a stream costs the server one read instead of one per visitor. Never for anything
+ * tied to who is looking (wallets, their own picks) or for admin pages, which must always be fresh.
+ */
+export const PUBLIC = { revalidate: 10 } as const;
+
+type ApiInit = RequestInit & { json?: unknown; revalidate?: number };
+
 /** Calls the backend with the server-side API key. Never import this from client components. */
-export async function api<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
-  const { json, headers, ...rest } = init;
+export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
+  const { json, headers, revalidate, ...rest } = init;
   const res = await fetch(`${API_URL}/api/v1${path}`, {
-    cache: "no-store",
+    ...(revalidate ? { next: { revalidate } } : { cache: "no-store" as const }),
     ...rest,
     headers: {
       "X-API-Key": process.env.API_KEY ?? "",
@@ -32,9 +41,9 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
 }
 
 /** Like api(), but returns null on 404 so pages can render notFound(). */
-export async function apiOrNull<T>(path: string): Promise<T | null> {
+export async function apiOrNull<T>(path: string, init: ApiInit = {}): Promise<T | null> {
   try {
-    return await api<T>(path);
+    return await api<T>(path, init);
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) return null;
     throw e;

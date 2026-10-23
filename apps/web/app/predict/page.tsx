@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { api, qs } from "@/lib/api";
+import { api, PUBLIC, qs } from "@/lib/api";
 import type { Market, PredictLeader, PredictRules, PredictTournament, Wallet } from "@/lib/types";
 import { fmtThaiTime } from "@/lib/format";
 import { getMember } from "@/lib/member";
@@ -172,16 +172,16 @@ export default async function PredictPage({ searchParams }: { searchParams: Prom
   const member = await getMember();
   const admin = await isAdmin();
   const [tournaments, rules, overall, wallet] = await Promise.all([
-    api<{ data: PredictTournament[] }>("/predict/tournaments").then((r) => r.data),
-    api<PredictRules>("/predict/rules"),
-    api<{ data: PredictLeader[] }>("/predict/leaderboard?limit=20").then((r) => r.data),
+    api<{ data: PredictTournament[] }>("/predict/tournaments", PUBLIC).then((r) => r.data),
+    api<PredictRules>("/predict/rules", PUBLIC),
+    api<{ data: PredictLeader[] }>("/predict/leaderboard?limit=20", PUBLIC).then((r) => r.data),
     member ? api<Wallet>(`/predict/members/${member.id}`) : null,
   ]);
   const active = tournaments.find((t) => t.id === sp.t) ?? tournaments[0] ?? null;
   const [view, board, seasonBoard] = await Promise.all([
-    active ? api<{ markets: Market[] }>(`/predict/tournaments/${encodeURIComponent(active.id)}${qs({ discordId: member?.id })}`) : null,
-    active ? api<{ data: PredictLeader[] }>(`/predict/leaderboard${qs({ tournamentId: active.id, limit: 20 })}`).then((r) => r.data) : [],
-    active?.season ? api<{ data: PredictLeader[] }>(`/predict/leaderboard${qs({ seasonId: active.season.id, limit: 20 })}`).then((r) => r.data) : null,
+    active ? api<{ markets: Market[] }>(`/predict/tournaments/${encodeURIComponent(active.id)}${qs({ discordId: member?.id })}`, member ? {} : PUBLIC) : null,
+    active ? api<{ data: PredictLeader[] }>(`/predict/leaderboard${qs({ tournamentId: active.id, limit: 20 })}`, PUBLIC).then((r) => r.data) : [],
+    active?.season ? api<{ data: PredictLeader[] }>(`/predict/leaderboard${qs({ seasonId: active.season.id, limit: 20 })}`, PUBLIC).then((r) => r.data) : null,
   ]);
   const all = view?.markets ?? [];
   // Per-game markets show inside their match's card.

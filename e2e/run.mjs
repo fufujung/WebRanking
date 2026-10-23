@@ -44,6 +44,14 @@ page.on("response", (r) => {
   if (r.status() >= 500) problems.push(`HTTP ${r.status()} ${r.url()}`);
 });
 const step = (s) => console.log("✓", s);
+/** Public pages keep their data a few seconds (PUBLIC in lib/api.ts): reload until a change shows. */
+async function reloadUntil(pg, selector, seconds = 30) {
+  for (let i = 0; i < seconds && !(await pg.locator(selector).first().isVisible()); i++) {
+    await pg.waitForTimeout(1000);
+    await pg.reload();
+  }
+  await pg.locator(selector).first().waitFor({ timeout: 5000 });
+}
 
 // Stand-in for Discord's OAuth: approves at once and says the visitor is "E2E Discord".
 const DISCORD_USER = { id: "424242424242424242", username: "e2e_discord", global_name: "E2E Discord", avatar: null };
@@ -1372,7 +1380,7 @@ if (!(await page.locator(".btn-discord").count())) {
   await page.reload();
   await page.locator(".market-card:has-text('คู่ที่ 1') > .market-mine:has-text('ได้ 50 เหรียญ')").waitFor();
   await page.locator(".market-card:has-text('คู่ที่ 1') .market-game .market-mine:has-text('ได้ 20 เหรียญ')").waitFor();
-  await page.locator(`table tr:has-text('E2E Discord'):has-text('+30')`).first().waitFor();
+  await reloadUntil(page, `table tr:has-text('E2E Discord'):has-text('+30')`);
   step("member took the daily coins, picked a team and game 1 of the BO3 on /predict (more coins than they have is refused), won the other side's coins on both; /predict fits a phone; the stream overlay shows the split, the payout per side and the result");
 
   const pAdminCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
