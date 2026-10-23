@@ -4,8 +4,10 @@ import { recomputeRatings } from "./lib/elo.js";
 import { backfillPlayerUids, backfillPositions } from "./lib/players.js";
 import { backfillGames } from "./lib/games.js";
 import { startDrawPoller } from "./lib/draws.js";
+import { tuneDatabase } from "./lib/db.js";
 
 const port = Number(process.env.PORT ?? 4000);
+tuneDatabase().catch((e) => console.error("Could not switch the database to WAL:", e));
 createApp().listen(port, () => {
   console.log(`API listening on http://localhost:${port} (docs: http://localhost:${port}/docs)`);
 });
