@@ -565,7 +565,9 @@ await page.fill('input[name="lateMinutes"]', "10");
 await page.click("button:has-text('สร้างทัวร์นาเมนต์')");
 await page.waitForURL(/\/admin\/tournaments\/(?!new)/);
 const cupUrl = page.url();
-await page.locator("text=ต้องมีอย่างน้อย 2 ทีม").waitFor();
+// The tournament page is split into topics; a new cup opens on teams.
+await page.locator('[data-topic="register"][aria-pressed="true"]').waitFor();
+await page.locator('[data-topic-panel="bracket"]').locator("text=ต้องมีอย่างน้อย 2 ทีม").waitFor({ state: "attached" });
 const cupTeams = ["Thunder Hawks", "Siam Dragons", "Night Owls"];
 for (const [i, name] of cupTeams.entries()) {
   const c = page.locator("input[role=combobox]");
@@ -576,6 +578,7 @@ for (const [i, name] of cupTeams.entries()) {
   await page.locator("h2", { hasText: `ทีมที่ลงแข่ง (${i + 1})` }).waitFor();
 }
 step("bracket cup created with 3 teams");
+await page.click('[data-topic="bracket"]');
 
 await page.click("button:has-text('จัดเอง (แมนนวล)')");
 // Pair 1: Thunder Hawks vs Night Owls; pair 2: Siam Dragons gets the bye.
@@ -661,7 +664,9 @@ await page.waitForFunction(() => document.querySelectorAll("button.bm.bm-READY")
 step("semi-final reopened, final cleared");
 
 // Roster: organizers can set a team's players
-await page.locator("tr", { hasText: "Night Owls" }).locator("button:has-text('แก้รายชื่อ')").click();
+await page.click('[data-topic="roster"]');
+const roster = page.locator('[data-topic-panel="roster"]');
+await roster.locator("tr", { hasText: "Night Owls" }).locator("button:has-text('แก้รายชื่อ')").click();
 const rosterInputs = page.locator('label:has-text("ชื่อตัวละคร") input');
 await rosterInputs.nth(0).fill("Kite");
 await page.locator('label:has-text("UID") input').nth(0).fill("81000108");
@@ -671,18 +676,18 @@ await rosterInputs.nth(1).fill("Lynx");
 await page.click("button:has-text('+ เพิ่มผู้เล่น')");
 await rosterInputs.nth(2).fill("Moss");
 await page.click("button:has-text('บันทึกรายชื่อ')");
-await page.locator("tr", { hasText: "Night Owls" }).locator("td", { hasText: "Kite (UID 81000108 · Asia), Lynx, Moss" }).waitFor();
+await roster.locator("tr", { hasText: "Night Owls" }).locator("td", { hasText: "Kite (UID 81000108 · Asia), Lynx, Moss" }).waitFor();
 step("roster saved for Night Owls, with UID and server");
 
 // The team name can be changed in the same place; a name another team has is refused.
-await page.locator("tr", { hasText: "Night Owls" }).locator("button:has-text('แก้รายชื่อ')").click();
+await roster.locator("tr", { hasText: "Night Owls" }).locator("button:has-text('แก้รายชื่อ')").click();
 await page.fill('input[name="teamName"]', "Thunder Hawks");
 await page.click("button:has-text('บันทึกรายชื่อ')");
 await page.locator(".error", { hasText: 'มีทีมชื่อ "Thunder Hawks" อยู่แล้ว' }).waitFor();
 await page.fill('input[name="teamName"]', `Night Owls ${uniq}`);
 await page.click("button:has-text('บันทึกรายชื่อ')");
-await page.locator("tr", { hasText: `Night Owls ${uniq}` }).locator("td", { hasText: "Kite (UID 81000108 · Asia), Lynx, Moss" }).waitFor();
-await page.locator("tr", { hasText: `Night Owls ${uniq}` }).locator("button:has-text('แก้รายชื่อ')").first().click();
+await roster.locator("tr", { hasText: `Night Owls ${uniq}` }).locator("td", { hasText: "Kite (UID 81000108 · Asia), Lynx, Moss" }).waitFor();
+await roster.locator("tr", { hasText: `Night Owls ${uniq}` }).locator("button:has-text('แก้รายชื่อ')").first().click();
 await page.fill('input[name="teamName"]', "Night Owls");
 await page.click("button:has-text('บันทึกรายชื่อ')");
 await page.waitForFunction((n) => !document.body.innerText.includes(n), `Night Owls ${uniq}`, { timeout: 10_000 });
@@ -1093,7 +1098,7 @@ if (!(await page.locator(".btn-discord").count())) {
   await admin.click("button:has-text('เข้าสู่ระบบ')");
   await admin.waitForURL(base + "/admin");
   await admin.goto(base + `/admin/tournaments/${soloId}`);
-  await admin.click("button:has-text('สุ่มทีม')");
+  await admin.click(".solo-admin button:has-text('สุ่มทีม')");
   await admin.locator(".solo-team").nth(1).waitFor();
   if ((await admin.locator(".solo-team").count()) !== 2) throw new Error("expected 2 drawn teams");
   for (let i = 0; i < 2; i++) {
@@ -1160,6 +1165,24 @@ if (!(await page.locator(".btn-discord").count())) {
   await rAdmin.reload();
   await rAdmin.locator(`tr:has-text('UID 77${uniq}'):has-text('All Around'):has-text('แรงค์ ${firstRank}')`).waitFor();
   await rAdmin.screenshot({ path: OUT + "/reserve-admin.png", fullPage: true });
+  // Random draw by rank and position: an All Around player counts for any position.
+  const drawBox = rAdmin.locator("#draw");
+  await drawBox.locator(`label.check:has-text('${firstRank}') input`).check();
+  await drawBox.locator('select[name="drawPosition"]').selectOption("GUARD");
+  const fitting = Number((await drawBox.locator("text=/ตรงเงื่อนไข \\d+ คน/").textContent()).match(/\d+/)[0]);
+  if (fitting < 1) throw new Error("the All Around player with this rank should fit a Guard draw");
+  await drawBox.locator('input[name="drawCount"]').fill(String(fitting + 1));
+  await drawBox.locator("button:has-text('🎲 สุ่ม')").first().click();
+  await drawBox.locator(".error:has-text('ต้องการ')").waitFor();
+  await drawBox.locator('input[name="drawCount"]').fill(String(fitting));
+  await drawBox.locator("button:has-text('🎲 สุ่ม')").first().click();
+  if ((await drawBox.locator("[data-draw-pick]").count()) !== fitting) throw new Error("draw did not pick everyone asked for");
+  await drawBox.locator(`[data-draw-pick]:has-text('UID 77${uniq}')`).waitFor();
+  await rAdmin.setViewportSize({ width: 390, height: 844 });
+  if (await rAdmin.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)) throw new Error("reserve draw overflows on a phone");
+  await rAdmin.screenshot({ path: OUT + "/reserve-draw-phone.png", fullPage: true });
+  await rAdmin.setViewportSize({ width: 1280, height: 900 });
+  step("organizer drew substitutes by rank and position on /admin/reserve (too many asked is refused); fits a phone");
   await rAdmin.goto(base + "/admin/tournaments/new");
   await rAdmin.locator('input[name="special"]').waitFor();
   step("organizer sees Facebook and phone on /admin/reserve and fixed the position and rank; the tournament form has the special tick box");
@@ -1201,6 +1224,7 @@ if (!(await page.locator(".btn-discord").count())) {
   if (await rAdmin.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error("the team picker is wider than a phone screen");
   await rAdmin.screenshot({ path: OUT + "/pick-team-mobile.png", fullPage: true });
   // ต้นเรื่อง: the organizer pastes Facebook posts in order; a non-Facebook link is refused.
+  await rAdmin.click('[data-topic="story"]');
   const storyBox = rAdmin.locator("#story + .card");
   await storyBox.locator('input[placeholder="https://www.facebook.com/…"]').first().fill("https://example.com/not-facebook");
   await storyBox.locator("button:has-text('บันทึกต้นเรื่อง')").click();

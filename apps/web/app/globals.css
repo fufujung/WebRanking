@@ -952,3 +952,33 @@ label.pick-row { display: flex; flex-direction: row; align-items: center; text-a
 .draw-place { font-weight: 700; color: var(--accent); min-width: 32px; }
 .draw-list { display: flex; flex-direction: column; gap: 6px; max-height: 480px; overflow-y: auto; }
 .draw-entry { padding: 6px 10px; }
+
+/* Random draw from the เล่นเก่งปากเก่ง substitutes (admin) */
+.reserve-draw { margin-bottom: 16px; }
+.reserve-draw-ranks { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.reserve-draw-ranks .check { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.reserve-draw-opts { flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.reserve-draw-opts label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
+.reserve-draw-opts input[type="number"] { width: 90px; }
+.reserve-draw-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.reserve-draw-side { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.reserve-draw-side ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+.reserve-draw-side li > * { vertical-align: middle; }
+.reserve-draw-side li { display: list-item; }
+.reserve-draw-side li .btn { margin-left: 8px; }
+
+/* Topic tiles on long admin pages (one topic shown at a time) */
+.admin-topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin: 8px 0 20px; }
+.admin-topic { display: flex; gap: 10px; align-items: flex-start; text-align: left; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font: inherit; }
+.admin-topic:hover { border-color: var(--text); }
+.admin-topic-active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.admin-topic-icon { font-size: 22px; line-height: 1.2; }
+.admin-topic-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.admin-topic-text strong { display: inline-flex; gap: 6px; align-items: center; }
+.admin-topic-text span { color: var(--muted); font-size: 12.5px; }
+.admin-topic-panel > h2:first-child { margin-top: 0; }
+@media (max-width: 600px) {
+  .admin-topics { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .admin-topic { padding: 10px; }
+  .admin-topic-text span { display: none; }
+}

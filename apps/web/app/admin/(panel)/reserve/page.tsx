@@ -9,6 +9,7 @@ import { facebookHref } from "@/lib/special";
 import { Avatar, Empty } from "@/components/ui";
 import { FilterTabs, ListHead, ListSearch, href } from "@/components/admin/ListParts";
 import { ReserveActions } from "@/components/admin/ReserveAdmin";
+import { ReserveDraw } from "@/components/admin/ReserveDraw";
 import { requireAdmin } from "@/lib/auth";
 
 export const metadata = { title: "ตัวสำรอง เล่นเก่งปากเก่ง" };
@@ -36,6 +37,12 @@ export default async function AdminReserve({ searchParams }: { searchParams: Pro
         action={{ href: "/special", label: "ดูหน้าเว็บ" }}
       />
       <GameTabs games={games} active={game?.id ?? null} />
+      {data.length > 0 && (
+        <ReserveDraw
+          ranks={ranks}
+          people={data.map((r) => ({ id: r.playerId, name: r.player.nickname || r.player.name, uid: r.player.uid, rank: r.rank, position: r.position }))}
+        />
+      )}
       <div className="list-bar">
         <FilterTabs
           label="กรองตามตำแหน่ง"
