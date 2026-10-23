@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { api } from "@/lib/api";
+import { api, PUBLIC } from "@/lib/api";
 import type { GuildListItem, Overview, Page } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
 import { Avatar, Empty, MatchCard, PlayerLink, StatTile, StatusBadge, TeamLink } from "@/components/ui";
@@ -7,7 +7,7 @@ import { RankMove, TierBadge, TierEmblem } from "@/components/Tier";
 import { AdCards } from "@/components/ads/Ads";
 
 export default async function Home() {
-  const [o, guilds] = await Promise.all([api<Overview>("/stats/overview"), api<Page<GuildListItem>>("/guilds?limit=1")]);
+  const [o, guilds] = await Promise.all([api<Overview>("/stats/overview", PUBLIC), api<Page<GuildListItem>>("/guilds?limit=1", PUBLIC)]);
   const topGuild = guilds.data[0]?.rank === 1 ? guilds.data[0] : null;
   return (
     <>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { api, qs } from "@/lib/api";
+import { api, PUBLIC, qs } from "@/lib/api";
 import type { PredictTournament, SeasonView, SpecialBoard, SpecialSeason } from "@/lib/types";
 import { CheerSection } from "@/components/predict/Cheer";
 import { fmtDate, fmtRating, signed } from "@/lib/format";
@@ -24,14 +24,14 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
   const { discordInvite } = await siteSettings();
   const { games, game } = await currentGame(sp.game);
   // ?season=all shows every event; no season picked shows the season running now (if there is one).
-  const seasons = (await api<{ data: SpecialSeason[] }>(`/special/seasons${qs({ gameId: game?.id })}`)).data;
+  const seasons = (await api<{ data: SpecialSeason[] }>(`/special/seasons${qs({ gameId: game?.id })}`, PUBLIC)).data;
   const current = seasons.find((x) => new Date(x.startDate) <= new Date()) ?? null;
   const seasonId = sp.season === "all" ? null : (seasons.find((x) => x.id === sp.season) ?? current)?.id ?? null;
   const [board, me, season, predicting] = await Promise.all([
-    api<SpecialBoard>(`/special${qs({ gameId: game?.id, seasonId })}`),
+    api<SpecialBoard>(`/special${qs({ gameId: game?.id, seasonId })}`, PUBLIC),
     getMember(),
-    seasonId ? api<SeasonView>(`/special/seasons/${encodeURIComponent(seasonId)}`) : null,
-    api<{ data: PredictTournament[] }>("/predict/tournaments").then((r) => r.data).catch(() => [] as PredictTournament[]),
+    seasonId ? api<SeasonView>(`/special/seasons/${encodeURIComponent(seasonId)}`, PUBLIC) : null,
+    api<{ data: PredictTournament[] }>("/predict/tournaments", PUBLIC).then((r) => r.data).catch(() => [] as PredictTournament[]),
   ]);
   // Special events open for picks right now (this season's, when one is picked): cheer buttons at the top.
   const cheering = predicting.filter((t) => t.special && t.open > 0 && (!seasonId || t.season?.id === seasonId)).slice(0, 3);

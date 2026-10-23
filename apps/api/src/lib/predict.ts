@@ -259,9 +259,21 @@ export function syncPredictions(tournamentId: string) {
  * which a stream overlay polling every few seconds turned into constant load.
  */
 function syncForRead(tournamentId: string) {
-  const fresh = (at = lastSync.get(tournamentId)) => at !== undefined && Date.now() - at < READ_SYNC_MS;
+  const at = lastSync.get(tournamentId);
+  const fresh = () => { const t = lastSync.get(tournamentId); return t !== undefined && Date.now() - t < READ_SYNC_MS; };
   if (fresh()) return Promise.resolve();
-  return serial(() => (fresh() ? Promise.resolve() : runSync(tournamentId)));
+  const run = serial(() => (fresh() ? Promise.resolve() : runSync(tournamentId)));
+  // Synced before: answer straight away and catch up in the background, so a crowd opening the page during
+  // a stream never waits behind the sync. Only the first read after a restart waits for it.
+  if (at !== undefined) {
+    lastSync.set(tournamentId, Date.now());
+    run.catch((e) => {
+      lastSync.set(tournamentId, at);
+      console.error("Background prediction sync failed:", e);
+    });
+    return Promise.resolve();
+  }
+  return run;
 }
 
 /** A market's name for people: the champion, "คู่ที่ 3 · เกม 2", or a hand-made pair's name. */

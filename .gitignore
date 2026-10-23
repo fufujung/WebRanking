@@ -3,6 +3,8 @@ dist
 .next
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 .env
 .env.local
 next-env.d.ts

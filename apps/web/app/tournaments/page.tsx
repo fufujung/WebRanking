@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { api, qs } from "@/lib/api";
+import { api, PUBLIC, qs } from "@/lib/api";
 import type { Page, Tournament } from "@/lib/types";
 import { fmtDate, statusLabel } from "@/lib/format";
 import { Empty, Pager, StatusBadge, pageOffset } from "@/components/ui";
@@ -11,7 +11,7 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
   const sp = await searchParams;
   const status = sp.status && sp.status in statusLabel ? sp.status : undefined;
   const offset = pageOffset(sp.page, LIMIT);
-  const page = await api<Page<Tournament>>(`/tournaments${qs({ search: sp.q, status, limit: LIMIT, offset })}`);
+  const page = await api<Page<Tournament>>(`/tournaments${qs({ search: sp.q, status, limit: LIMIT, offset })}`, PUBLIC);
   return (
     <>
       <div className="page-head"><h1>ทัวร์นาเมนต์</h1><span className="muted">{page.total} รายการ</span></div>

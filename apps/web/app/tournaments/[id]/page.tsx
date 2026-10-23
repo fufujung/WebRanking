@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { api, apiOrNull } from "@/lib/api";
+import { api, apiOrNull, PUBLIC } from "@/lib/api";
 import type { Bracket, Story, TournamentDetail } from "@/lib/types";
 import { fmtDate, fmtThaiTime, formatLabel } from "@/lib/format";
 import { BracketView, Rosters } from "@/components/Bracket";
@@ -10,12 +10,12 @@ import { CheerSection } from "@/components/predict/Cheer";
 import { StoryList } from "@/components/Stories";
 
 export default async function TournamentPage({ params }: { params: Promise<{ id: string }> }) {
-  const t = await apiOrNull<TournamentDetail>(`/tournaments/${encodeURIComponent((await params).id)}`);
+  const t = await apiOrNull<TournamentDetail>(`/tournaments/${encodeURIComponent((await params).id)}`, PUBLIC);
   if (!t) notFound();
   // Only a started bracket is public; a draft can still change.
-  const bracket = t.format && (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") ? await apiOrNull<Bracket>(`/tournaments/${t.id}/bracket`) : null;
+  const bracket = t.format && (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") ? await apiOrNull<Bracket>(`/tournaments/${t.id}/bracket`, PUBLIC) : null;
   const podium = t.teams.filter((x) => x.placement && x.placement <= 3);
-  const stories = (await api<{ data: Story[] }>(`/tournaments/${t.id}/stories`).catch(() => ({ data: [] as Story[] }))).data;
+  const stories = (await api<{ data: Story[] }>(`/tournaments/${t.id}/stories`, PUBLIC).catch(() => ({ data: [] as Story[] }))).data;
   return (
     <>
       <div className="page-head">

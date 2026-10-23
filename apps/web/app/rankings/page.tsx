@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { api, qs } from "@/lib/api";
+import { api, PUBLIC, qs } from "@/lib/api";
 import type { Movement, Page, Team, TeamStats } from "@/lib/types";
 import { signed } from "@/lib/format";
 import { Avatar, Empty, TeamLink } from "@/components/ui";
@@ -17,7 +17,7 @@ export default async function TeamRankings({ searchParams }: { searchParams: Pro
   const min = sp.min === "1" ? 1 : 0;
   const q = (sp.q ?? "").trim().toLowerCase();
   const { games, game } = await currentGame(sp.game);
-  const page = await api<Page<Row>>(`/rankings/teams${qs({ limit: 200, minMatches: min, gameId: game?.id })}`);
+  const page = await api<Page<Row>>(`/rankings/teams${qs({ limit: 200, minMatches: min, gameId: game?.id })}`, PUBLIC);
   const rows = q ? page.data.filter((t) => t.name.toLowerCase().includes(q) || t.tag?.toLowerCase().includes(q)) : page.data;
   const podium = q ? [] : rows.filter((t) => t.stats.matches > 0).slice(0, 3);
   const rest = rows.filter((t) => !podium.includes(t));
