@@ -1,11 +1,11 @@
 import "server-only";
-import { api } from "@/lib/api";
+import { api, PUBLIC } from "@/lib/api";
 
 export interface SiteSettings {
   discordInvite: string | null;
 }
 
-/** Site settings for every page; a down API just hides what depends on them. */
-export async function siteSettings(): Promise<SiteSettings> {
-  return api<SiteSettings>("/settings").catch(() => ({ discordInvite: null }));
+/** Site settings for every page (kept 10 s; the admin settings page asks for them fresh). A down API just hides what depends on them. */
+export async function siteSettings(fresh = false): Promise<SiteSettings> {
+  return api<SiteSettings>("/settings", fresh ? {} : PUBLIC).catch(() => ({ discordInvite: null }));
 }
