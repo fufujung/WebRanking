@@ -1,0 +1,63 @@
+name: Deploy build
+
+# After CI passes on main, build the site once more on Windows (like the server) and publish it on the
+# "live-build" release. The server (deploy/auto-deploy.mjs, every 5 minutes) picks it up from there,
+# outside Bank's stream hours. Nothing here can reach the server: it only publishes a file.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: windows-latest
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 0
+      - name: Skip if main has moved on
+        id: latest
+        shell: bash
+        run: |
+          if [ "$(git rev-parse origin/main)" = "$SHA" ]; then echo "go=yes" >> "$GITHUB_OUTPUT"; else echo "main moved past $SHA, a newer run publishes"; fi
+      - uses: actions/setup-node@v4
+        if: steps.latest.outputs.go == 'yes'
+        with:
+          node-version: 24
+          cache: npm
+      - if: steps.latest.outputs.go == 'yes'
+        run: npm ci
+      - if: steps.latest.outputs.go == 'yes'
+        run: npm run build
+      - if: steps.latest.outputs.go == 'yes'
+        run: node deploy/pack.mjs out
+      - name: Publish on the live-build release
+        if: steps.latest.outputs.go == 'yes'
+        shell: bash
+        run: |
+          git fetch -q origin main
+          if [ "$(git rev-parse origin/main)" != "$SHA" ]; then echo "main moved on while building; not publishing"; exit 0; fi
+          gh release view live-build >/dev/null 2>&1 || gh release create live-build --prerelease --target main \
+            --title "Live build" --notes "Built by GitHub Actions after CI passes on main. The server installs it automatically."
+          bundle=$(node -p "require('./out/manifest.json').bundle")
+          # The build first, then the manifest that points at it, so the server never sees one without the other.
+          gh release upload live-build "out/$bundle" --clobber
+          gh release upload live-build out/manifest.json --clobber
+          # Keep the three newest builds.
+          gh release view live-build --json assets --jq '[.assets[] | select(.name | startswith("theranking-"))] | sort_by(.createdAt) | reverse | .[3:] | .[].name' |
+            while read -r old; do gh release delete-asset live-build "$old" -y; done
+          echo "Published $bundle" >> "$GITHUB_STEP_SUMMARY"
