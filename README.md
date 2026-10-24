@@ -314,14 +314,14 @@ endpoint หลัก: `/api/v1/games`, `/api/v1/rankings/mmr` (ใส่ `?game
 ## ทดสอบ
 
 ```bash
-npm test            # เทส API 196 เคส และบอท Discord 102 เคส (ใช้ Discord และ AI แบบจำลอง)
+npm test            # เทส API 196 เคส บอท Discord 102 เคส (ใช้ Discord และ AI แบบจำลอง) และระบบอัปเดตอัตโนมัติ 11 เคส
 npm run typecheck   # ตรวจ TypeScript ทั้ง API เว็บ และบอท
 npm run test:e2e    # เปิดเบราว์เซอร์จริงทดสอบทุกหน้าและทุกฟอร์ม (ต้องรัน npm run dev ไว้ก่อน)
 ```
 
 ครั้งแรกที่รัน e2e ให้ติดตั้งเบราว์เซอร์: `npx playwright install chromium`
 
-GitHub Actions (`.github/workflows/ci.yml`) รันทั้งหมดนี้ทุกครั้งที่ push
+GitHub Actions (`.github/workflows/ci.yml`) รันทั้งหมดนี้ทุกครั้งที่ push และทุก PR ทั้งบน Linux และ Windows
 
 ## ระบบป้องกัน
 
@@ -344,3 +344,41 @@ npm start
 - SQLite เหมาะกับเริ่มต้นและเครื่องเดียว ถ้าจะขยายให้เปลี่ยน `provider` ใน `apps/api/prisma/schema.prisma` เป็น `postgresql` แล้วตั้ง `DATABASE_URL`
 - สำรองไฟล์ฐานข้อมูล (`apps/api/prisma/dev.db` พร้อม `dev.db-wal` และ `dev.db-shm` ถ้ามี เพราะฐานข้อมูลใช้โหมด WAL งานที่เพิ่งบันทึกอาจยังอยู่ในไฟล์ `-wal`) และโฟลเดอร์ `apps/api/uploads`
 - เปลี่ยน `ADMIN_PASSWORD` และ `SESSION_SECRET` เป็นค่าของคุณเอง
+
+## อัปเดตเว็บอัตโนมัติ (CI/CD)
+
+ขั้นตอนตั้งแต่รวมโค้ดจนขึ้นเว็บจริง ไม่ต้องทำมือ:
+
+1. **CI** (`.github/workflows/ci.yml`): ทุก PR และทุกครั้งที่รวมเข้า `main` ตรวจ TypeScript รันเทสทั้งหมด build และเปิดเบราว์เซอร์ทดสอบทุกหน้า ทั้งบน Linux และ Windows
+2. **สร้างไฟล์ขึ้นเว็บ** (`.github/workflows/deploy.yml`): เมื่อ CI ผ่านบน `main` จะ build อีกรอบบน Windows (เหมือนเซิร์ฟเวอร์) แล้วแพ็กเป็นไฟล์เดียว (`deploy/pack.mjs`) วางไว้ที่ release ชื่อ `live-build` บน GitHub ไม่มีรหัสลับใด ๆ ในไฟล์นี้ และ GitHub เข้าเซิร์ฟเวอร์ไม่ได้ (ไม่ต้องใส่กุญแจเซิร์ฟเวอร์ไว้ใน GitHub)
+3. **เซิร์ฟเวอร์ดึงไปติดตั้งเอง** (`deploy/auto-deploy.mjs` ทุก 5 นาที): เจอเวอร์ชันใหม่ก็
+   - ดาวน์โหลดและตรวจว่าไฟล์ครบไม่เสีย (SHA-256) และต้องเป็นไฟล์ที่ GitHub Actions อัปโหลดเท่านั้น
+   - สำรองโค้ดและฐานข้อมูลไว้ที่ `C:\theranking-backup\auto-...` (เก็บ 5 ชุดล่าสุด)
+   - หยุดเว็บ แทนที่โค้ด (ไม่แตะ `.env` ฐานข้อมูล รูปที่อัปโหลด และข้อมูลบอท) ติดตั้งแพ็กเกจใหม่เฉพาะเมื่อ `package-lock.json` เปลี่ยน อัปเดตฐานข้อมูล (`setup --no-demo`) เฉพาะเมื่อ schema เปลี่ยน
+   - เปิดเว็บแล้วเช็กว่า API, หน้าเว็บ และบอทใช้งานได้ ถ้าไม่ได้จะ**ย้อนกลับเป็นเวอร์ชันเดิมเอง** (รวมฐานข้อมูลถ้ารอบนั้นแก้) และไม่ลองเวอร์ชันที่พังซ้ำ
+   - ไม่อัปเดตช่วง 18:00–24:00 (เวลาไลฟ์) จะรอจนพ้นช่วงนั้น
+   - ถ้าตั้ง `discordWebhook` ไว้ จะแจ้งผลในห้อง Discord ทุกครั้ง
+
+แต่ละแอป (api, web, bot) รันผ่าน `deploy/run.mjs` ที่คอยเปิดใหม่เมื่อหยุด และรอระหว่างอัปเดต log อยู่ที่ `C:\theranking\logs`
+
+สั่งเองบนเซิร์ฟเวอร์:
+
+```bat
+node C:\theranking\deploy\auto-deploy.mjs --check   :: ดูว่ามีเวอร์ชันใหม่ไหม
+node C:\theranking\deploy\auto-deploy.mjs --now     :: อัปเดตทันที (แม้ช่วงไลฟ์ หรือเวอร์ชันที่เคยพัง)
+echo.> C:\theranking-deploy\PAUSE                    :: หยุดอัปเดตอัตโนมัติชั่วคราว (ลบไฟล์นี้เพื่อเปิดต่อ)
+```
+
+บันทึกการอัปเดตอยู่ที่ `C:\theranking-deploy\deploy.log` ตั้งค่าเพิ่มได้ใน `C:\theranking-deploy\config.json` เช่น `{"discordWebhook": "...", "quietHours": [18, 24]}` (ไฟล์นี้อยู่บนเซิร์ฟเวอร์เท่านั้น อย่าใส่ใน repo)
+
+ติดตั้งครั้งแรกบนเซิร์ฟเวอร์ (ทำครั้งเดียว ใน Command Prompt แบบ Administrator หลังมีโฟลเดอร์ `C:\theranking\deploy`):
+
+```bat
+set NODE="C:\Program Files\nodejs\node.exe"
+schtasks /Create /F /TN TheRanking-api /SC ONSTART /RU SYSTEM /TR "%NODE% C:\theranking\deploy\run.mjs api"
+schtasks /Create /F /TN TheRanking-web /SC ONSTART /RU SYSTEM /TR "%NODE% C:\theranking\deploy\run.mjs web"
+schtasks /Create /F /TN TheRanking-bot /SC ONSTART /RU SYSTEM /TR "%NODE% C:\theranking\deploy\run.mjs bot"
+schtasks /Create /F /TN TheRanking-deploy /SC MINUTE /MO 5 /RU SYSTEM /TR "%NODE% C:\theranking\deploy\auto-deploy.mjs"
+```
+
+ก่อนสร้างงานใหม่ ให้ปิดตัวเดิม (`run-*.cmd` และ node ของมัน) ก่อน แล้วสั่ง `schtasks /Run` ทั้งสามงาน
