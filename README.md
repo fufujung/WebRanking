@@ -371,14 +371,13 @@ echo.> C:\theranking-deploy\PAUSE                    :: หยุดอัปเ
 
 บันทึกการอัปเดตอยู่ที่ `C:\theranking-deploy\deploy.log` ตั้งค่าเพิ่มได้ใน `C:\theranking-deploy\config.json` เช่น `{"discordWebhook": "...", "quietHours": [18, 24]}` (ไฟล์นี้อยู่บนเซิร์ฟเวอร์เท่านั้น อย่าใส่ใน repo)
 
-ติดตั้งครั้งแรกบนเซิร์ฟเวอร์ (ทำครั้งเดียว ใน Command Prompt แบบ Administrator หลังมีโฟลเดอร์ `C:\theranking\deploy`):
+ติดตั้งครั้งแรกบนเซิร์ฟเวอร์ (ทำครั้งเดียว ใน Command Prompt หรือ PowerShell แบบ Administrator หลังมีโฟลเดอร์ `C:\theranking\deploy`) ใช้ `C:\PROGRA~1` แทน `C:\Program Files` เพราะ `schtasks /TR` ตีความเครื่องหมายคำพูดซ้อนผิด:
 
 ```bat
-set NODE="C:\Program Files\nodejs\node.exe"
-schtasks /Create /F /TN TheRanking-api /SC ONSTART /RU SYSTEM /TR "%NODE% C:\theranking\deploy\run.mjs api"
-schtasks /Create /F /TN TheRanking-web /SC ONSTART /RU SYSTEM /TR "%NODE% C:\theranking\deploy\run.mjs web"
-schtasks /Create /F /TN TheRanking-bot /SC ONSTART /RU SYSTEM /TR "%NODE% C:\theranking\deploy\run.mjs bot"
-schtasks /Create /F /TN TheRanking-deploy /SC MINUTE /MO 5 /RU SYSTEM /TR "%NODE% C:\theranking\deploy\auto-deploy.mjs"
+schtasks /Create /F /TN TheRanking-api /SC ONSTART /RU SYSTEM /TR "C:\PROGRA~1\nodejs\node.exe C:\theranking\deploy\run.mjs api"
+schtasks /Create /F /TN TheRanking-web /SC ONSTART /RU SYSTEM /TR "C:\PROGRA~1\nodejs\node.exe C:\theranking\deploy\run.mjs web"
+schtasks /Create /F /TN TheRanking-bot /SC ONSTART /RU SYSTEM /TR "C:\PROGRA~1\nodejs\node.exe C:\theranking\deploy\run.mjs bot"
+schtasks /Create /F /TN TheRanking-deploy /SC MINUTE /MO 5 /RU SYSTEM /TR "C:\PROGRA~1\nodejs\node.exe C:\theranking\deploy\auto-deploy.mjs"
 ```
 
 ก่อนสร้างงานใหม่ ให้ปิดตัวเดิม (`run-*.cmd` และ node ของมัน) ก่อน แล้วสั่ง `schtasks /Run` ทั้งสามงาน
