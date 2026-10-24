@@ -173,8 +173,15 @@ async function clearBets(tx: Tx, marketId: string) {
 
 const sameTeams = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
 
-async function syncTournament(tx: Tx, tournamentId: string) {
-  const t = await tx.tournament.findUnique({
+/**
+ * Each match, game and the champion pick are brought up to date in their own short transaction. The work is
+ * safe to repeat, and one long transaction over the whole bracket held the database for minutes on the VPS
+ * (and was cut off at its timeout, so nothing was saved).
+ */
+const step = <T>(fn: (tx: Tx) => Promise<T>) => prisma.$transaction(fn, { timeout: 15_000 });
+
+async function syncTournament(tournamentId: string) {
+  const t = await prisma.tournament.findUnique({
     where: { id: tournamentId },
     select: { id: true, format: true, bestOf: true, finalBestOf: true, bracketStatus: true, entries: { select: { teamId: true, placement: true } }, bracketMatches: true, markets: true },
   });
@@ -182,7 +189,7 @@ async function syncTournament(tx: Tx, tournamentId: string) {
   const markets = new Map(t.markets.map((m) => [m.key, m]));
   const live = new Set<string>();
   /** The market of a match (or of one game in it), made or brought up to date with its teams and start time. */
-  const ensure = async (kind: "MATCH" | "GAME", key: string, teams: string[], locksAt: Date | null) => {
+  const ensure = async (tx: Tx, kind: "MATCH" | "GAME", key: string, teams: string[], locksAt: Date | null) => {
     live.add(key);
     let m = markets.get(key);
     if (!m) return tx.market.create({ data: { tournamentId, kind, key, teamIds: JSON.stringify(teams), locksAt } });
@@ -196,47 +203,49 @@ async function syncTournament(tx: Tx, tournamentId: string) {
   for (const slot of t.bracketMatches) {
     if (!slot.teamAId || !slot.teamBId) continue;
     const teams = [slot.teamAId, slot.teamBId];
-    const m = await ensure("MATCH", slot.code, teams, slot.scheduledAt);
     const played = slot.status === "DONE" && slot.outcome === "PLAYED";
     const outcome: Outcome = slot.status !== "DONE" ? { kind: "none" } : played && slot.winnerId && teams.includes(slot.winnerId) ? { kind: "winner", teamId: slot.winnerId } : { kind: "refund" };
-    await applyOutcome(tx, m.id, outcome);
+    await step(async (tx) => applyOutcome(tx, (await ensure(tx, "MATCH", slot.code, teams, slot.scheduledAt)).id, outcome));
 
     // Each game of a series (BO3 = 3 games, BO5 = 5) is predicted on its own. Games that were not
     // played (a 3-0 in a BO5) or a series recorded without game scores give the coins back.
     const bestOf = bestOfFor(t, slot as Pick<Slot, "stage" | "round">, t.bracketMatches as Pick<Slot, "stage" | "round">[]);
     if (bestOf < 3) continue;
-    const match = played && slot.matchId ? await tx.match.findUnique({ where: { id: slot.matchId }, select: { teamAId: true, teamBId: true, games: { select: { number: true, scoreA: true, scoreB: true } } } }) : null;
+    const match = played && slot.matchId ? await prisma.match.findUnique({ where: { id: slot.matchId }, select: { teamAId: true, teamBId: true, games: { select: { number: true, scoreA: true, scoreB: true } } } }) : null;
     for (let n = 1; n <= bestOf; n++) {
-      const g = await ensure("GAME", `${slot.code}#${n}`, teams, slot.scheduledAt);
       const game = match?.games.find((x) => x.number === n);
       const winner = game && game.scoreA !== game.scoreB ? (game.scoreA > game.scoreB ? match!.teamAId : match!.teamBId) : null;
-      await applyOutcome(tx, g.id, slot.status !== "DONE" ? { kind: "none" } : winner && teams.includes(winner) ? { kind: "winner", teamId: winner } : { kind: "refund" });
+      const result: Outcome = slot.status !== "DONE" ? { kind: "none" } : winner && teams.includes(winner) ? { kind: "winner", teamId: winner } : { kind: "refund" };
+      await step(async (tx) => applyOutcome(tx, (await ensure(tx, "GAME", `${slot.code}#${n}`, teams, slot.scheduledAt)).id, result));
     }
   }
   // Matches and games gone from the bracket (reset, a team moved out, fewer games): everyone gets their coins back.
-  for (const m of t.markets) if ((m.kind === "MATCH" || m.kind === "GAME") && !live.has(m.key) && m.status !== "REFUNDED") await applyOutcome(tx, m.id, { kind: "refund" });
+  for (const m of t.markets) if ((m.kind === "MATCH" || m.kind === "GAME") && !live.has(m.key) && m.status !== "REFUNDED") await step((tx) => applyOutcome(tx, m.id, { kind: "refund" }));
 
   // The champion: open while teams sign up and the bracket is drafted, closed once play starts.
   const teams = t.entries.map((e) => e.teamId);
-  let champ = markets.get("CHAMPION");
-  if (t.format && teams.length >= 2) {
-    const first = t.bracketMatches.map((s) => s.scheduledAt?.getTime()).filter((x): x is number => x !== undefined).sort((a, b) => a - b)[0];
-    const locksAt = first !== undefined ? new Date(first) : null;
-    if (!champ) champ = await tx.market.create({ data: { tournamentId, kind: "CHAMPION", key: "CHAMPION", teamIds: JSON.stringify(teams), locksAt } });
-    else {
-      const was = parseIds(champ.teamIds);
-      if (!sameTeams(was, teams)) {
-        // Picks of a team that left get their coins back; the rest stay.
-        const gone = await tx.bet.findMany({ where: { marketId: champ.id, teamId: { notIn: teams } } });
-        for (const b of gone) await addCoins(tx, b.discordId, b.amount - (b.payout ?? 0), "REFUND", { marketId: champ.id, note: "ทีมที่ทายถอนตัว" });
-        await tx.bet.deleteMany({ where: { id: { in: gone.map((b) => b.id) } } });
-        champ = await tx.market.update({ where: { id: champ.id }, data: { teamIds: JSON.stringify(teams) } });
+  const champMarket = markets.get("CHAMPION");
+  await step(async (tx) => {
+    let champ = champMarket;
+    if (t.format && teams.length >= 2) {
+      const first = t.bracketMatches.map((s) => s.scheduledAt?.getTime()).filter((x): x is number => x !== undefined).sort((a, b) => a - b)[0];
+      const locksAt = first !== undefined ? new Date(first) : null;
+      if (!champ) champ = await tx.market.create({ data: { tournamentId, kind: "CHAMPION", key: "CHAMPION", teamIds: JSON.stringify(teams), locksAt } });
+      else {
+        const was = parseIds(champ.teamIds);
+        if (!sameTeams(was, teams)) {
+          // Picks of a team that left get their coins back; the rest stay.
+          const gone = await tx.bet.findMany({ where: { marketId: champ.id, teamId: { notIn: teams } } });
+          for (const b of gone) await addCoins(tx, b.discordId, b.amount - (b.payout ?? 0), "REFUND", { marketId: champ.id, note: "ทีมที่ทายถอนตัว" });
+          await tx.bet.deleteMany({ where: { id: { in: gone.map((b) => b.id) } } });
+          champ = await tx.market.update({ where: { id: champ.id }, data: { teamIds: JSON.stringify(teams) } });
+        }
+        if ((champ.locksAt?.getTime() ?? null) !== (locksAt?.getTime() ?? null)) champ = await tx.market.update({ where: { id: champ.id }, data: { locksAt } });
       }
-      if ((champ.locksAt?.getTime() ?? null) !== (locksAt?.getTime() ?? null)) champ = await tx.market.update({ where: { id: champ.id }, data: { locksAt } });
-    }
-    const winner = t.bracketStatus === "DONE" ? t.entries.find((e) => e.placement === 1)?.teamId : undefined;
-    await applyOutcome(tx, champ.id, t.bracketStatus !== "DONE" ? { kind: "none" } : winner ? { kind: "winner", teamId: winner } : { kind: "refund" });
-  } else if (champ && champ.status !== "REFUNDED") await applyOutcome(tx, champ.id, { kind: "refund" });
+      const winner = t.bracketStatus === "DONE" ? t.entries.find((e) => e.placement === 1)?.teamId : undefined;
+      await applyOutcome(tx, champ.id, t.bracketStatus !== "DONE" ? { kind: "none" } : winner ? { kind: "winner", teamId: winner } : { kind: "refund" });
+    } else if (champ && champ.status !== "REFUNDED") await applyOutcome(tx, champ.id, { kind: "refund" });
+  });
 }
 
 const lastSync = new Map<string, number>();
@@ -244,7 +253,9 @@ const lastSync = new Map<string, number>();
 const READ_SYNC_MS = 30_000;
 
 async function runSync(tournamentId: string) {
-  await prisma.$transaction((tx) => syncTournament(tx, tournamentId), { timeout: 30_000 });
+  const started = Date.now();
+  await syncTournament(tournamentId);
+  if (Date.now() - started > 5_000) console.warn(`Prediction sync of ${tournamentId} took ${Date.now() - started} ms`);
   lastSync.set(tournamentId, Date.now());
 }
 
