@@ -1,14 +1,14 @@
 import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
-import { api } from "./api";
+import { api, PUBLIC } from "./api";
 import type { Game } from "./types";
 
 export const GAME_COOKIE = "game";
 
 export const allGames = cache(async (): Promise<Game[]> => {
   try {
-    return (await api<{ data: Game[] }>("/games")).data;
+    return (await api<{ data: Game[] }>("/games", PUBLIC)).data;
   } catch {
     return [];
   }

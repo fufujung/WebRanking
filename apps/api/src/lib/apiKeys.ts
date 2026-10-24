@@ -55,12 +55,25 @@ export const requireApiKey: RequestHandler = async (req, res, next) => {
     throw new HttpError(403, "This API key is read-only");
   }
   res.locals.apiKey = record;
-  // Fire-and-forget usage tracking; never block the request on it.
-  prisma.apiKey
-    .update({ where: { id: record.id }, data: { lastUsedAt: new Date() } })
-    .catch(() => {});
+  noteUse(record.id);
   next();
 };
+
+/**
+ * "Last used" is written at most once a minute per key. Writing it on every request made each page
+ * view a database write, and under a crowd those writes queued behind each other on the one SQLite file.
+ */
+const USE_EVERY_MS = 60_000;
+const lastNoted = new Map<string, number>();
+export function noteUse(id: string, now = Date.now()) {
+  if (now - (lastNoted.get(id) ?? 0) < USE_EVERY_MS) return false;
+  lastNoted.set(id, now);
+  // Fire-and-forget usage tracking; never block the request on it.
+  prisma.apiKey
+    .update({ where: { id }, data: { lastUsedAt: new Date(now) } })
+    .catch(() => {});
+  return true;
+}
 
 export const requireAdmin: RequestHandler = (_req, res, next) => {
   if (res.locals.apiKey?.scope !== "admin") throw new HttpError(403, "Admin API key required");

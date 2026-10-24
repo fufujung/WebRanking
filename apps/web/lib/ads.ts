@@ -1,12 +1,12 @@
 import "server-only";
 import { cache } from "react";
-import { api } from "./api";
+import { api, PUBLIC } from "./api";
 import type { Ad, AdPlacement } from "./types";
 
 /** The ads that are on right now, fetched once per page. An API problem never breaks the page: it just shows no ads. */
 export const liveAds = cache(async (): Promise<Ad[]> => {
   try {
-    return (await api<{ data: Ad[] }>("/ads?live=1")).data;
+    return (await api<{ data: Ad[] }>("/ads?live=1", PUBLIC)).data;
   } catch {
     return [];
   }

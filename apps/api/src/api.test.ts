@@ -16,7 +16,7 @@ delete process.env.ANTHROPIC_API_KEY;
 execSync("npx prisma db push --skip-generate", { stdio: "ignore", env: process.env });
 
 const { createApp } = await import("./app.js");
-const { createApiKey } = await import("./lib/apiKeys.js");
+const { createApiKey, noteUse } = await import("./lib/apiKeys.js");
 const { prisma } = await import("./lib/db.js");
 const { eloDelta } = await import("./lib/elo.js");
 const { imageReader } = await import("./lib/extract.js");
@@ -78,6 +78,13 @@ describe("elo", () => {
 });
 
 describe("auth", () => {
+  test("a key's last-used time is written at most once a minute, not on every request", () => {
+    const t = 1_000_000_000_000;
+    assert.equal(noteUse("throttle-test", t), true);
+    assert.equal(noteUse("throttle-test", t + 59_000), false);
+    assert.equal(noteUse("throttle-test", t + 60_000), true);
+    assert.equal(noteUse("another-key", t + 1), true);
+  });
   test("public endpoints need no key", async () => {
     assert.equal((await call("GET", "/health", undefined, null)).status, 200);
     assert.equal((await call("GET", "/openapi.json", undefined, null)).status, 200);

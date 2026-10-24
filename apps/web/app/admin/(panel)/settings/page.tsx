@@ -7,7 +7,7 @@ export const metadata = { title: "ตั้งค่าเว็บ" };
 
 export default async function SettingsPage() {
   await requireAdmin();
-  const settings = await siteSettings();
+  const settings = await siteSettings(true);
   return (
     <>
       <h1>ตั้งค่าเว็บ</h1>
