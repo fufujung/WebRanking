@@ -4,6 +4,18 @@
 
 A website for tournament results, team and player rankings, with an API-key–protected REST API so other websites can use the data.
 
+## เอกสารสำหรับทีมพัฒนาและ UI sprint
+
+เริ่มอ่านที่ **[Documentation index](docs/README.md)** สำหรับสถานะโปรเจกต์ แผนปรับ UI และข้อสังเกตจากการตรวจโค้ด
+
+- [Tech stack และโครงสร้างปัจจุบัน](docs/current-state.md)
+- [ข้อสังเกตทางเทคนิคและลำดับงาน](docs/technical-review.md)
+- [แนวทาง architecture และ foundation](docs/architecture.md)
+- [แผน Public UI sprint](docs/public-ui-sprint.md)
+- [Figma handoff และวิธีรีวิวแบบ](docs/figma-review.md)
+
+เอกสารชุดนี้แยกสิ่งที่มีอยู่ในโค้ดออกจากสิ่งที่เสนอให้ทำ: UI ใหม่ยังไม่ได้ implement และฟอนต์ **IBM Plex Sans Thai** ที่เลือกใน Figma ยังไม่ได้เปลี่ยน dependency หรือฟอนต์ของเว็บเดิม
+
 | ส่วน | เทคโนโลยี | ที่อยู่ตอนรันในเครื่อง |
 | --- | --- | --- |
 | Frontend (`apps/web`) | Next.js 16, React 19, TypeScript, ฟอนต์ IBM Plex Sans Thai Looped, ธีมขาว แดง ดำ | http://localhost:3000 |
@@ -314,14 +326,14 @@ endpoint หลัก: `/api/v1/games`, `/api/v1/rankings/mmr` (ใส่ `?game
 ## ทดสอบ
 
 ```bash
-npm test            # เทส API 196 เคส และบอท Discord 102 เคส (ใช้ Discord และ AI แบบจำลอง)
+npm test            # ทดสอบ API และบอท Discord (ใช้ Discord และ AI แบบจำลอง)
 npm run typecheck   # ตรวจ TypeScript ทั้ง API เว็บ และบอท
 npm run test:e2e    # เปิดเบราว์เซอร์จริงทดสอบทุกหน้าและทุกฟอร์ม (ต้องรัน npm run dev ไว้ก่อน)
 ```
 
 ครั้งแรกที่รัน e2e ให้ติดตั้งเบราว์เซอร์: `npx playwright install chromium`
 
-GitHub Actions (`.github/workflows/ci.yml`) รันทั้งหมดนี้ทุกครั้งที่ push
+GitHub Actions (`.github/workflows/ci.yml`) ทำงานเมื่อ push ไป `main` และเมื่อเปิดหรืออัปเดต pull request โดยงาน Linux รัน typecheck, tests, build และ E2E ส่วนงาน Windows รัน setup, tests และ build การ push branch อื่นเพียงอย่างเดียวไม่ได้เริ่ม workflow นี้
 
 ## ระบบป้องกัน
 
@@ -341,6 +353,6 @@ npm run build
 npm start
 ```
 
-- SQLite เหมาะกับเริ่มต้นและเครื่องเดียว ถ้าจะขยายให้เปลี่ยน `provider` ใน `apps/api/prisma/schema.prisma` เป็น `postgresql` แล้วตั้ง `DATABASE_URL`
-- สำรองไฟล์ฐานข้อมูล (`apps/api/prisma/dev.db` พร้อม `dev.db-wal` และ `dev.db-shm` ถ้ามี เพราะฐานข้อมูลใช้โหมด WAL งานที่เพิ่งบันทึกอาจยังอยู่ในไฟล์ `-wal`) และโฟลเดอร์ `apps/api/uploads`
+- การย้ายจาก SQLite ไป PostgreSQL ต้องวางแผน schema, migration และย้ายข้อมูลพร้อมทดสอบความถูกต้อง การแก้ `provider` และ `DATABASE_URL` อย่างเดียวไม่ได้ย้ายข้อมูลเดิม ดู [แนวทาง architecture](docs/architecture.md)
+- สำรองฐานข้อมูลด้วยวิธีที่ได้ snapshot สอดคล้องกัน เช่น SQLite backup API หรือหยุดทุก process ที่เข้าถึงฐานข้อมูลก่อนสำรองตามขั้นตอนที่ทดสอบแล้ว อย่าคัดลอกไฟล์ `.db`, `-wal`, `-shm` ทีละไฟล์ขณะมีการเขียนแล้วถือว่าเป็น backup ที่สมบูรณ์ ต้องสำรอง uploads และข้อมูลใน `apps/bot/data` ด้วย และทดลอง restore ก่อนใช้งานจริง
 - เปลี่ยน `ADMIN_PASSWORD` และ `SESSION_SECRET` เป็นค่าของคุณเอง
