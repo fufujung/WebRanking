@@ -15,6 +15,7 @@ import { prisma } from "./db.js";
 import { fail, notFound } from "./errors.js";
 import { bestOfFor } from "./competition.js";
 import type { Slot } from "./bracket.js";
+import { makeReadRefresh } from "./readRefresh.js";
 
 type Tx = Prisma.TransactionClient;
 
@@ -248,44 +249,34 @@ async function syncTournament(tournamentId: string) {
   });
 }
 
-const lastSync = new Map<string, number>();
 /** How stale a tournament's markets may be when a page or the stream overlay reads them. */
 const READ_SYNC_MS = 30_000;
 
-async function runSync(tournamentId: string) {
+async function timedSync(tournamentId: string) {
   const started = Date.now();
   await syncTournament(tournamentId);
   if (Date.now() - started > 5_000) console.warn(`Prediction sync of ${tournamentId} took ${Date.now() - started} ms`);
-  lastSync.set(tournamentId, Date.now());
-}
-
-/** Opens, settles, refunds or reopens a tournament's markets to match its bracket. Safe to call any time. */
-export function syncPredictions(tournamentId: string) {
-  return serial(() => runSync(tournamentId));
 }
 
 /**
- * For reads (pages, the stream overlay, the bot's cards): every change to a bracket already syncs on the spot,
- * so a read only re-checks now and then. Syncing on every read queued all requests behind a write transaction,
- * which a stream overlay polling every few seconds turned into constant load.
+ * Every change to a bracket syncs on the spot (syncPredictions). Reads (pages, the stream overlay, the bot's
+ * cards) only re-check now and then: syncing on every read queued all requests behind a write transaction,
+ * which a stream overlay polling every few seconds turned into constant load. A read after a restart waits
+ * for the first sync; later stale reads answer straight away and one background sync catches up.
  */
-function syncForRead(tournamentId: string) {
-  const at = lastSync.get(tournamentId);
-  const fresh = () => { const t = lastSync.get(tournamentId); return t !== undefined && Date.now() - t < READ_SYNC_MS; };
-  if (fresh()) return Promise.resolve();
-  const run = serial(() => (fresh() ? Promise.resolve() : runSync(tournamentId)));
-  // Synced before: answer straight away and catch up in the background, so a crowd opening the page during
-  // a stream never waits behind the sync. Only the first read after a restart waits for it.
-  if (at !== undefined) {
-    lastSync.set(tournamentId, Date.now());
-    run.catch((e) => {
-      lastSync.set(tournamentId, at);
-      console.error("Background prediction sync failed:", e);
-    });
-    return Promise.resolve();
-  }
-  return run;
+const marketSync = makeReadRefresh({
+  refresh: timedSync,
+  schedule: serial,
+  maxAgeMs: READ_SYNC_MS,
+  onBackgroundError: (_id, e) => console.error("Background prediction sync failed:", e),
+});
+
+/** Opens, settles, refunds or reopens a tournament's markets to match its bracket. Safe to call any time. */
+export function syncPredictions(tournamentId: string) {
+  return marketSync.now(tournamentId);
 }
+
+const syncForRead = (tournamentId: string) => marketSync.forRead(tournamentId);
 
 /** A market's name for people: the champion, "คู่ที่ 3 · เกม 2", or a hand-made pair's name. */
 export function marketTitle(m: { kind: string; key: string; label?: string | null; teamIds: string }, number: number | null, teamName: (id: string) => string) {
