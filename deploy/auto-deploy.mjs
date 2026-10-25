@@ -132,21 +132,32 @@ async function stopAll() {
 
 const release = () => fs.rmSync(holdPath, { force: true });
 
-async function ok(url) {
+async function status(url) {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(10_000), redirect: "manual" });
-    return res.status === 200;
+    return res.status;
   } catch {
-    return false;
+    return 0;
   }
+}
+const ok = async (url) => (await status(url)) === 200;
+
+/**
+ * The API is ready when /health/ready says so: start-up finished and the database answers with the
+ * schema this code expects. A version from before that address existed (404) is checked with /health.
+ */
+async function apiReady() {
+  const ready = cfg.apiReady ?? cfg.apiHealth.replace(/\/health$/, "/health/ready");
+  const code = await status(ready);
+  return code === 200 || (code === 404 && (await ok(cfg.apiHealth)));
 }
 
 async function waitHealthy(since) {
   const deadline = Date.now() + cfg.healthTimeoutMs;
   for (;;) {
     const bot = readPid("bot");
-    if ((await ok(cfg.apiHealth)) && (await ok(cfg.webHealth)) && bot && bot.startedAt >= since && alive(bot.pid)) break;
-    if (Date.now() > deadline) throw new Error("the site did not come back (API /health or the home page or the bot)");
+    if ((await apiReady()) && (await ok(cfg.webHealth)) && bot && bot.startedAt >= since && alive(bot.pid)) break;
+    if (Date.now() > deadline) throw new Error("the site did not come back (API not ready, or the home page or the bot)");
     await sleep(2000);
   }
   // The bot has no web address: it counts as working when it is still the same process a while later.
@@ -154,8 +165,33 @@ async function waitHealthy(since) {
   await sleep(cfg.botSteadyMs);
   const later = readPid("bot");
   if (!alive(bot.pid) || later?.pid !== bot.pid) throw new Error("the bot keeps crashing");
-  if (!(await ok(cfg.apiHealth)) || !(await ok(cfg.webHealth))) throw new Error("the site stopped answering");
+  if (!(await apiReady()) || !(await ok(cfg.webHealth))) throw new Error("the site stopped answering");
 }
+
+// ---- holding writes while a new version is checked ----
+// The apps start (so they can be checked) but the API refuses anything that saves (lib/lifecycle.ts)
+// until the version is accepted. A rollback that puts the old database back therefore loses nothing
+// anyone saved. Older versions without the gate simply ignore the file.
+
+const gatePath = path.join(cfg.stateDir, "WRITE_GATE");
+const holdWrites = () => fs.writeFileSync(gatePath, new Date().toISOString());
+const allowWrites = () => fs.rmSync(gatePath, { force: true });
+
+// ---- what an unfinished deploy left behind ----
+// progress.json is written before the first change and updated at every step, so a deploy that was
+// killed half way (power cut, reboot) is finished or undone by the next run instead of leaving the
+// site stopped or half copied.
+
+const progressPath = path.join(cfg.stateDir, "progress.json");
+const saveProgress = (p) => fs.writeFileSync(progressPath, JSON.stringify(p));
+function readProgress() {
+  try {
+    return JSON.parse(fs.readFileSync(progressPath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+const clearProgress = () => fs.rmSync(progressPath, { force: true });
 
 // ---- code on disk ----
 
@@ -193,13 +229,41 @@ function run(command, what) {
   execSync(command, { cwd: cfg.appDir, stdio: "inherit", env, timeout: 900_000 });
 }
 
-function copyDb(from, to) {
-  const dir = "apps/api/prisma";
-  for (const name of ["dev.db", "dev.db-wal", "dev.db-shm"]) {
-    const src = path.join(from, dir, name);
-    const dst = path.join(to, dir, name);
-    if (fs.existsSync(src)) writeFile(dst, fs.readFileSync(src));
-    else fs.rmSync(dst, { force: true });
+/**
+ * The SQLite file the API really uses, from DATABASE_URL in apps/api/.env (Prisma resolves a relative
+ * path against apps/api/prisma), with its -wal and -shm files. Anything that is not a SQLite file is
+ * refused before the deploy changes anything: this script cannot back it up.
+ */
+function databaseFiles() {
+  let url = "file:./dev.db";
+  try {
+    const line = fs
+      .readFileSync(inApp("apps/api/.env"), "utf8")
+      .split(/\r?\n/)
+      .find((l) => /^\s*DATABASE_URL\s*=/.test(l));
+    if (line) url = line.slice(line.indexOf("=") + 1).trim().replace(/^["']|["']$/g, "");
+  } catch {}
+  if (!url.startsWith("file:")) throw new Error("DATABASE_URL is not a SQLite file; the auto-deploy cannot back it up");
+  const file = path.resolve(inApp("apps/api/prisma"), url.slice(5).split("?")[0]);
+  return [file, `${file}-wal`, `${file}-shm`];
+}
+
+/** Copies the database files into a backup folder (by file name). */
+function backupDb(to) {
+  const [db] = databaseFiles();
+  if (!fs.existsSync(db)) throw new Error(`the database ${path.basename(db)} is missing`);
+  for (const file of databaseFiles()) {
+    const dst = path.join(to, path.basename(file));
+    if (fs.existsSync(file)) writeFile(dst, fs.readFileSync(file));
+  }
+}
+
+/** Puts a backed-up database back (and removes -wal/-shm the backup did not have). */
+function restoreDb(from) {
+  for (const file of databaseFiles()) {
+    const src = path.join(from, path.basename(file));
+    if (fs.existsSync(src)) writeFile(file, fs.readFileSync(src));
+    else fs.rmSync(file, { force: true });
   }
 }
 
@@ -235,20 +299,38 @@ async function deploy(manifest, zipAsset, state) {
   log(
     `deploying ${short} "${manifest.title ?? ""}" (packages ${lockChanged ? "change" : "same"}, database ${schemaChanged ? "changes" : "same"}); backup ${backup}`,
   );
+  databaseFiles(); // a database this script cannot back up stops the deploy before anything changes
   const oldFiles = snapshotCode(path.join(backup, "code"));
+  const progress = { sha: manifest.sha, stage: "backup", backup, oldFiles, newFiles: entries.map((e) => e.name), movedModules: [], ranSetup: false };
+  saveProgress(progress);
+  const step = (stage) => saveProgress(Object.assign(progress, { stage }));
 
-  await stopAll();
-  copyDb(cfg.appDir, path.join(backup, "db"));
-  const movedModules = [];
-  let ranSetup = false;
+  // Nothing has changed yet: if stopping or the database backup fails, the old version starts again.
   try {
+    await stopAll();
+    backupDb(path.join(backup, "db"));
+  } catch (err) {
+    log(`backup before the update failed, nothing was changed: ${err.stack ?? err}`);
+    clearProgress();
+    const since = Date.now();
+    release();
+    const back = await waitHealthy(since).then(
+      () => "the previous version is running",
+      (e) => `the previous version did not come back either: ${e.message}`,
+    );
+    log(back);
+    throw new Error(`backup before the update failed, nothing was changed (${back}): ${err.message}`);
+  }
+  try {
+    step("applying");
     if (lockChanged) {
       for (const rel of NODE_MODULES) {
         if (!fs.existsSync(inApp(rel))) continue;
         const to = path.join(backup, "modules", rel);
         fs.mkdirSync(path.dirname(to), { recursive: true });
         fs.renameSync(inApp(rel), to);
-        movedModules.push(rel);
+        progress.movedModules.push(rel);
+        step("applying");
       }
     }
     // Files an earlier auto-deploy put here and this build no longer has are removed. On the first
@@ -256,57 +338,90 @@ async function deploy(manifest, zipAsset, state) {
     applyFiles(entries, state.files ?? []);
     if (lockChanged) run(cfg.installCommand ?? "npm ci --no-audit --no-fund", "installing packages");
     if (schemaChanged || lockChanged) {
-      ranSetup = true;
+      progress.ranSetup = true;
+      step("applying");
       run(cfg.setupCommand ?? `"${process.execPath}" scripts/setup.mjs --no-demo`, "updating the database");
     }
+    step("checking");
+    holdWrites();
     const since = Date.now();
     release();
     await waitHealthy(since);
   } catch (err) {
     log(`deploy of ${short} failed: ${err.stack ?? err}`);
-    await rollBack({ backup, entries, oldFiles, movedModules, ranSetup });
+    await rollBack(progress);
     throw err;
   }
 
-  for (const rel of movedModules) fs.rmSync(path.join(backup, "modules", rel), { recursive: true, force: true });
+  // Accepted: from here on what people save stays.
+  allowWrites();
+  for (const rel of progress.movedModules) fs.rmSync(path.join(backup, "modules", rel), { recursive: true, force: true });
   saveState({
     sha: manifest.sha,
     title: manifest.title,
     deployedAt: new Date().toISOString(),
     files: entries.map((e) => e.name),
   });
+  clearProgress();
   pruneBackups();
   const secs = Math.round((Date.now() - started) / 1000);
   log(`deployed ${short} in ${secs}s`);
   await notify(`✅ อัปเดตเว็บ The Ranking แล้ว: ${manifest.title ?? short} (\`${short}\`) ใช้เวลา ${secs} วินาที`);
 }
 
-async function rollBack({ backup, entries, oldFiles, movedModules, ranSetup }) {
+async function rollBack({ backup, oldFiles, newFiles, movedModules, ranSetup }) {
   log("putting the previous version back");
   try {
     await stopAll();
     const code = path.join(backup, "code");
     const restore = oldFiles.map((rel) => ({ name: rel, data: fs.readFileSync(path.join(code, rel)) }));
-    applyFiles(
-      restore,
-      entries.map((e) => e.name),
-    );
+    applyFiles(restore, newFiles);
     for (const rel of movedModules) {
       fs.rmSync(inApp(rel), { recursive: true, force: true });
       fs.renameSync(path.join(backup, "modules", rel), inApp(rel));
     }
-    // The database is put back only when this deploy changed it; otherwise it keeps every write.
-    if (ranSetup) copyDb(path.join(backup, "db"), cfg.appDir);
+    if (ranSetup) {
+      // The database is put back only when this deploy changed it. Writes were held while the new
+      // version was checked, so only data the new version derived itself is dropped; it is still kept.
+      const failed = path.join(backup, "db-after-failed-deploy");
+      backupDb(failed);
+      restoreDb(path.join(backup, "db"));
+      log(`database put back; the failed version's copy is kept in ${failed}`);
+      // The database step also regenerated the Prisma client for the new schema. Packages that were
+      // moved aside come back with their own client; otherwise build it again for the old schema.
+      // /health/ready then runs real queries against the restored database before anything is accepted.
+      if (!movedModules.length) run(cfg.generateCommand ?? "npm exec --workspace apps/api -- prisma generate", "rebuilding the database client");
+    }
     const since = Date.now();
     release();
     await waitHealthy(since);
+    allowWrites();
+    clearProgress();
     log("previous version is running again");
   } catch (err) {
+    // Leave nothing that keeps the site down or read-only; a person has to look at it now.
     release();
+    allowWrites();
+    clearProgress();
     log(`ROLLBACK FAILED: ${err.stack ?? err}`);
     await notify(`🚨 อัปเดตเว็บ The Ranking ไม่ผ่าน และย้อนกลับเองไม่สำเร็จ ต้องดูเครื่องด่วน (ไฟล์สำรองอยู่ที่ ${backup})`);
     throw err;
   }
+}
+
+/** A deploy was killed half way: undo what it changed (or just restart the untouched old version). */
+async function recover(progress) {
+  log(`finishing a deploy of ${progress.sha.slice(0, 7)} that stopped at "${progress.stage}"`);
+  if (progress.stage === "backup") {
+    clearProgress();
+    allowWrites();
+    const since = Date.now();
+    release();
+    await waitHealthy(since);
+    log("nothing had changed; the previous version is running");
+    return;
+  }
+  await rollBack(progress);
 }
 
 // ---- main ----
@@ -323,9 +438,19 @@ function takeLock() {
 
 async function main() {
   if (fs.existsSync(path.join(cfg.stateDir, "PAUSE"))) return;
-  if (!now && !checkOnly && inQuietHours(cfg)) return; // stream hours: try again later, quietly
+  // A deploy that was killed half way is undone straight away, even in stream hours: the site is down.
+  const unfinished = !checkOnly && readProgress();
+  if (!unfinished && !now && !checkOnly && inQuietHours(cfg)) return; // stream hours: try again later, quietly
   if (!takeLock()) return log("another deploy is running");
   try {
+    if (unfinished) {
+      try {
+        await recover(unfinished);
+      } finally {
+        saveState({ ...readState(), failedSha: unfinished.sha, failedAt: new Date().toISOString() });
+      }
+      return;
+    }
     const rel = await getJson(`${cfg.githubApi}/repos/${cfg.repo}/releases/tags/${cfg.release}`);
     const manifestAsset = rel.assets?.find((a) => a.name === "manifest.json");
     if (!manifestAsset) throw new Error("the release has no manifest.json");

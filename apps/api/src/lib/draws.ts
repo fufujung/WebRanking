@@ -6,6 +6,7 @@
  */
 import { randomInt } from "node:crypto";
 import { z } from "zod";
+import { writesHeld } from "./lifecycle.js";
 import { prisma } from "./db.js";
 import { fail, notFound } from "./errors.js";
 import { discordId } from "./members.js";
@@ -354,7 +355,8 @@ export async function pollDraws(now = new Date()) {
 export function startDrawPoller() {
   let busy = false;
   return setInterval(async () => {
-    if (busy) return;
+    // While the auto-deploy checks a new version nothing is saved (see lib/lifecycle.ts); chat is read after.
+    if (busy || writesHeld()) return;
     busy = true;
     try {
       await pollDraws();

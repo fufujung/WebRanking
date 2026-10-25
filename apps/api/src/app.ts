@@ -8,6 +8,7 @@ import swaggerUi from "swagger-ui-express";
 import YAML from "yaml";
 import { requireApiKey } from "./lib/apiKeys.js";
 import { errorHandler, HttpError } from "./lib/errors.js";
+import { readiness, writeGate } from "./lib/lifecycle.js";
 import { UPLOAD_DIR } from "./lib/uploads.js";
 import { ads } from "./routes/ads.js";
 import { keys } from "./routes/keys.js";
@@ -56,6 +57,8 @@ export function createApp() {
   app.get("/health", (_req, res) => {
     res.json({ ok: true });
   });
+  app.get("/health/ready", readiness);
+  app.use(writeGate);
   app.get("/openapi.json", (_req, res) => {
     res.json(openapi);
   });
