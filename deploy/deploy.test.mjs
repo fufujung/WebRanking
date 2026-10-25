@@ -86,21 +86,27 @@ const freePort = () =>
     });
   });
 
-// One version of the fake site. `broken` makes the API crash on start.
-function site(version, { broken = false, schema = "v1" } = {}) {
+// One version of the fake site. `broken` makes the API crash on start, `botCrash` the bot a moment
+// after start. The fake API saves a POST into the database file, except while the deploy holds writes.
+function site(version, { broken = false, botCrash = false, schema = "v1" } = {}) {
   const server = (portVar) =>
-    `const http = require("http");\n` +
+    `const http = require("http");\nconst fs = require("fs");\n` +
     (broken ? `process.exit(1);\n` : "") +
-    `http.createServer((q, r) => r.end("${version}")).listen(Number(process.env.${portVar}), "127.0.0.1");\n`;
+    `http.createServer((q, r) => {\n` +
+    `  if (q.method !== "POST") return r.end("${version}");\n` +
+    `  if (fs.existsSync(process.env.THERANKING_WRITE_GATE)) { r.statusCode = 503; return r.end("held"); }\n` +
+    `  fs.appendFileSync(require("path").join(__dirname, "../prisma/dev.db"), "+saved");\n` +
+    `  r.end("saved");\n` +
+    `}).listen(Number(process.env.${portVar}), "127.0.0.1");\n`;
   return {
     "package.json": `{"name":"fake","version":"${version}"}`,
     "package-lock.json": `{"lockfileVersion":3}`,
     "apps/api/prisma/schema.prisma": `// schema ${schema}`,
     "apps/api/dist/index.js": server("API_PORT"),
     "apps/api/package.json": `{"type":"commonjs"}`,
-    "apps/bot/dist/index.js": `setInterval(() => {}, 1000);\n`,
+    "apps/bot/dist/index.js": botCrash ? `setTimeout(() => process.exit(1), 300);\n` : `setInterval(() => {}, 1000);\n`,
     "apps/bot/package.json": `{"type":"commonjs"}`,
-    "apps/web/balance.mjs": server("WEB_PORT").replace('const http = require("http");', 'import http from "node:http";'),
+    "apps/web/balance.mjs": `import http from "node:http";\nhttp.createServer((q, r) => r.end("${version}")).listen(Number(process.env.WEB_PORT), "127.0.0.1");\n`,
     "apps/web/.next/BUILD_ID": version,
     [`apps/web/.next/static/${version}.js`]: version,
     [`only-in-${version}.txt`]: version,
@@ -204,6 +210,7 @@ before(async () => {
     healthTimeoutMs: 15_000,
     installCommand: `node -e "require('fs').writeFileSync('installed.txt', 'yes')"`,
     setupCommand: `node -e "const f=require('fs'); f.writeFileSync('apps/api/prisma/dev.db', 'db-migrated'); f.appendFileSync('setup-runs.txt', 'x')"`,
+    generateCommand: `node -e "require('fs').appendFileSync('generate-runs.txt', 'x')"`,
     quietHours: [0, 24],
   };
   writeTree(stateDir, { "config.json": JSON.stringify(config) });
@@ -272,6 +279,9 @@ test("deploy: a broken build is rolled back and not retried", async () => {
     "database put back after a failed change",
   );
   assert.equal(fs.readFileSync(path.join(appDir, "apps/api/prisma/schema.prisma"), "utf8"), "// schema v1");
+  const kept = fs.readdirSync(config.backupDir).map((d) => path.join(config.backupDir, d, "db-after-failed-deploy/dev.db")).find((f) => fs.existsSync(f));
+  assert.equal(kept && fs.readFileSync(kept, "utf8"), "db-migrated", "what the failed version wrote is kept aside");
+  assert.equal(fs.readFileSync(path.join(appDir, "generate-runs.txt"), "utf8"), "x", "database client rebuilt for the old schema");
   assert.equal(state().sha, good);
   assert.equal(state().failedSha, m.sha);
   // Without --now the failed build is not tried again.
@@ -318,4 +328,113 @@ test("deploy: apps not kept running by run.mjs are never touched", async () => {
   } finally {
     fs.renameSync(`${pid}.away`, pid);
   }
+});
+
+test("deploy: a failed backup changes nothing and never leaves the site held", async () => {
+  const before = state().sha;
+  const db = path.join(appDir, "apps/api/prisma/dev.db");
+  fs.renameSync(db, `${db}.away`);
+  fs.mkdirSync(db); // reading it fails, like a locked or unreadable database file
+  try {
+    publish(site("v7"));
+    const r = await deployNow();
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /backup before the update failed/);
+    assert.equal(fs.existsSync(path.join(stateDir, "HOLD")), false);
+    await waitFor(async () => (await get(apiPort)) === "v4" && (await get(webPort)) === "v4");
+    assert.equal(state().sha, before);
+  } finally {
+    fs.rmSync(db, { recursive: true, force: true });
+    fs.renameSync(`${db}.away`, db);
+  }
+});
+
+// ---- writes held during the check, interrupted deploys, the real database path, failed rollbacks ----
+
+const appFile = (rel) => path.join(appDir, rel);
+const read = (rel) => fs.readFileSync(appFile(rel), "utf8");
+const post = async (port) => {
+  const res = await fetch(`http://127.0.0.1:${port}/`, { method: "POST" });
+  return res.status;
+};
+const setConfig = (extra) => fs.writeFileSync(path.join(stateDir, "config.json"), JSON.stringify({ ...config, quietHours: [], ...extra }));
+const leftovers = () => ["HOLD", "WRITE_GATE", "progress.json"].filter((f) => fs.existsSync(path.join(stateDir, f)));
+
+test("deploy: nothing saved while a new version is checked is lost when it is rolled back", async () => {
+  setConfig();
+  const live = await get(apiPort);
+  assert.equal(await post(apiPort), 200, "writes work before the deploy");
+  const before = read("apps/api/prisma/dev.db");
+  publish(site("v8", { botCrash: true, schema: "v8" }));
+  const running = deployNow();
+  // While the new version is up and being checked, someone tries to save.
+  await waitFor(async () => fs.existsSync(path.join(stateDir, "WRITE_GATE")) && (await get(apiPort)) === "v8");
+  assert.equal(await post(apiPort), 503, "held, not acknowledged");
+  const r = await running;
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /previous version is running again/);
+  assert.equal(await get(apiPort), live);
+  assert.equal(read("apps/api/prisma/dev.db"), before, "the database is the one from before, and nobody's save was in between");
+  assert.deepEqual(leftovers(), []);
+  assert.equal(await post(apiPort), 200, "writes work again");
+});
+
+test("deploy: a deploy killed half way is undone by the next run, even in stream hours", async () => {
+  const live = await get(apiPort);
+  const before = read("apps/api/prisma/dev.db");
+  // The database step kills the deploy itself, like a power cut in the middle.
+  setConfig({ setupCommand: `node -e "const f=require('fs'),p=require('path');process.kill(JSON.parse(f.readFileSync(p.join(process.env.THERANKING_DEPLOY_DIR,'deploy.lock'))).pid,'SIGKILL')"` });
+  const m = publish(site("v9", { schema: "v9" }));
+  const killed = await deployNow();
+  assert.notEqual(killed.code, 0);
+  assert.ok(fs.existsSync(path.join(stateDir, "progress.json")), "the unfinished deploy is on record");
+  assert.ok(fs.existsSync(path.join(stateDir, "HOLD")), "the site is down until someone fixes it");
+  setConfig({ quietHours: [0, 24] });
+  const r = await deploy();
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /finishing a deploy of .* that stopped at "applying"/);
+  assert.match(r.out, /previous version is running again/);
+  await waitFor(async () => (await get(apiPort)) === live);
+  assert.equal(fs.existsSync(appFile("only-in-v9.txt")), false);
+  assert.equal(read("apps/api/prisma/dev.db"), before);
+  assert.equal(state().failedSha, m.sha);
+  assert.deepEqual(leftovers(), []);
+});
+
+test("deploy: the database named in DATABASE_URL is the one backed up; a non-SQLite one stops the deploy first", async () => {
+  setConfig();
+  fs.mkdirSync(appFile("apps/api/data"), { recursive: true });
+  fs.writeFileSync(appFile("apps/api/data/live.db"), "live-data");
+  fs.writeFileSync(appFile("apps/api/.env"), 'SECRET=keep\nDATABASE_URL="file:../data/live.db?socket_timeout=20"\n');
+  try {
+    const m = publish(site("v10"));
+    const r = await deployNow();
+    assert.equal(r.code, 0, r.out);
+    // The newest backup is this deploy's (the fake builds' short ids all look alike).
+    const backup = fs.readdirSync(config.backupDir).sort().at(-1);
+    assert.ok(backup.endsWith(m.sha.slice(0, 7)));
+    assert.equal(fs.readFileSync(path.join(config.backupDir, backup, "db", "live.db"), "utf8"), "live-data");
+
+    fs.writeFileSync(appFile("apps/api/.env"), 'SECRET=keep\nDATABASE_URL="postgresql://db.example/ranking"\n');
+    const pid = JSON.parse(fs.readFileSync(path.join(stateDir, "api.pid"), "utf8")).pid;
+    publish(site("v11"));
+    const refused = await deployNow();
+    assert.equal(refused.code, 1);
+    assert.match(refused.out, /not a SQLite file/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(stateDir, "api.pid"), "utf8")).pid, pid, "the site was never stopped");
+    assert.equal(await get(apiPort), "v10");
+  } finally {
+    fs.writeFileSync(appFile("apps/api/.env"), "SECRET=keep");
+  }
+});
+
+test("deploy: a rollback that fails still leaves the site running and writable", async () => {
+  setConfig({ generateCommand: `node -e "process.exit(3)"` });
+  publish(site("v12", { botCrash: true, schema: "v12" }));
+  const r = await deployNow();
+  assert.equal(r.code, 1);
+  assert.match(r.out, /ROLLBACK FAILED/);
+  assert.deepEqual(leftovers(), []);
+  await waitFor(async () => (await get(apiPort)) === "v10");
+  setConfig();
 });

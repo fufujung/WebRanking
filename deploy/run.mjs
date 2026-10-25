@@ -47,7 +47,8 @@ for (;;) {
   note(`starting ${name}`);
   const child = spawn(process.execPath, [app.entry], {
     cwd: path.join(cfg.appDir, app.dir),
-    env: { ...process.env, NODE_ENV: "production" },
+    // THERANKING_WRITE_GATE: the file the deploy creates while it checks a new version (lib/lifecycle.ts).
+    env: { ...process.env, NODE_ENV: "production", THERANKING_WRITE_GATE: path.join(cfg.stateDir, "WRITE_GATE") },
     stdio: ["ignore", out, out],
     // On Linux (tests) the app gets its own process group so the deploy can stop it with its children.
     detached: !isWindows,

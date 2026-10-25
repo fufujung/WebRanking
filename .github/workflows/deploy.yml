@@ -33,7 +33,13 @@ jobs:
         id: latest
         shell: bash
         run: |
-          if [ "$(git rev-parse origin/main)" = "$SHA" ]; then echo "go=yes" >> "$GITHUB_OUTPUT"; else echo "main moved past $SHA, a newer run publishes"; fi
+          if [ "$(git rev-parse origin/main)" != "$SHA" ]; then echo "main moved past $SHA, a newer run publishes"; exit 0; fi
+          # A manual run gets no CI result with it: publish only a commit that CI passed on main.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SHA&branch=main&event=push&status=success" --jq .total_count)
+            if [ "$passed" = "0" ]; then echo "::error::CI has not passed on main for $SHA; not publishing"; exit 1; fi
+          fi
+          echo "go=yes" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         if: steps.latest.outputs.go == 'yes'
         with:
