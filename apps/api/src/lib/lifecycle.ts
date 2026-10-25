@@ -50,7 +50,9 @@ let gateUp = false;
 
 /** Is the deploy holding writes right now? A gate older than 30 minutes is a leftover and is ignored. */
 export function writesHeld(now = Date.now()) {
-  const file = process.env.THERANKING_WRITE_GATE;
+  // deploy/run.mjs passes the path; app processes started before it did (the server's first update with
+  // this code) use the server's default deploy folder.
+  const file = process.env.THERANKING_WRITE_GATE ?? (process.platform === "win32" && process.env.NODE_ENV === "production" ? "C:\\theranking-deploy\\WRITE_GATE" : undefined);
   if (!file) return false;
   if (now - checkedAt < 500) return gateUp;
   checkedAt = now;
