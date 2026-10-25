@@ -1,63 +1,11 @@
 /**
- * Player MMR: every player has a personal rating that moves after each series they play in.
- *
- * How a series changes it (the same Elo idea as team ratings, so it is easy to explain):
- * - Each side's strength is the average MMR of the players who appeared for it in the series
- *   (a side without a scoreboard falls back to its team rating at that time).
- * - Win = 1, draw = 0.5, loss = 0. Change = K × (result − expected), K = 32,
- *   or 48 during a player's first PLACEMENT_SERIES series so new players find their level faster.
- * - Bonus for standing out: +2 per MVP and +1 per SVP the player earned in the series.
+ * Player MMR scoring of one series. The rules (K, placement, MVP/SVP bonus) and the tiers live in the
+ * rankings module (modules/rankings/domain); they are re-exported here for the code that imports them from lib.
  */
 import type { Prisma } from "@prisma/client";
+import { MMR_K, MVP_BONUS, PLACEMENT_K, PLACEMENT_SERIES, START_MMR, SVP_BONUS, type SeriesResult } from "../modules/rankings/index.js";
 
-export const START_MMR = 1000;
-export const MMR_K = 32;
-export const PLACEMENT_K = 48;
-/** Series a player needs before they get a tier and a place in the MMR ranking. */
-export const PLACEMENT_SERIES = 3;
-export const MVP_BONUS = 2;
-export const SVP_BONUS = 1;
-
-export interface Tier {
-  key: string;
-  name: string;
-  nameTh: string;
-  color: string;
-  /** Lowest MMR in this tier. */
-  min: number;
-  /** Lowest MMR of the next tier, null for the top tier. */
-  next: number | null;
-}
-
-/** Lowest tier first. */
-export const TIERS: Tier[] = (
-  [
-    ["bronze", "Bronze", "บรอนซ์", "#cd7f32", 0],
-    ["silver", "Silver", "ซิลเวอร์", "#b8c2cc", 900],
-    ["gold", "Gold", "โกลด์", "#f5b400", 975],
-    ["platinum", "Platinum", "แพลทินัม", "#35d0c0", 1050],
-    ["diamond", "Diamond", "ไดมอนด์", "#4da3ff", 1125],
-    ["master", "Master", "มาสเตอร์", "#b26bff", 1200],
-    ["legend", "Legend", "เลเจนด์", "#ff2d3d", 1300],
-  ] as const
-).map(([key, name, nameTh, color, min], i, all) => ({ key, name, nameTh, color, min, next: all[i + 1]?.[4] ?? null }));
-
-export function tierOf(mmr: number): Tier {
-  let tier = TIERS[0];
-  for (const t of TIERS) if (mmr >= t.min) tier = t;
-  return tier;
-}
-
-/** Where a rating sits in its tier: 0-100 % of the way to the next tier (100 in the top tier). */
-export function tierProgress(mmr: number) {
-  const t = tierOf(mmr);
-  if (t.next === null) return { tier: t, progress: 100, toNext: 0 };
-  const floor = t.key === "bronze" ? Math.min(mmr, t.next - 100) : t.min;
-  const progress = Math.round(((mmr - floor) / (t.next - floor)) * 100);
-  return { tier: t, progress: Math.max(0, Math.min(100, progress)), toNext: t.next - mmr };
-}
-
-export type SeriesResult = "W" | "L" | "D";
+export { MMR_K, MVP_BONUS, PLACEMENT_K, PLACEMENT_SERIES, START_MMR, SVP_BONUS, TIERS, tierOf, tierProgress, type SeriesResult, type Tier } from "../modules/rankings/index.js";
 
 export interface SeriesPlayer {
   playerId: string;
