@@ -1,7 +1,7 @@
 /**
  * The trash bin (ถังขยะ). Deleting a tournament keeps a copy of it and everything that belonged to it
  * (teams in it, rosters, solo sign-ups, matches with their games and player stats, the bracket, blacklist
- * entries, story links) for 30 days, so a mistake can be undone. After that it is gone for good.
+ * entries, story links, pick/ban drafts) for 30 days, so a mistake can be undone. After that it is gone for good.
  * Prediction picks are refunded at deletion and do not come back.
  */
 import { prisma } from "./db.js";
@@ -19,6 +19,7 @@ const snapshotInclude = {
   bracketMatches: true,
   blacklist: true,
   stories: true,
+  drafts: true,
 } as const;
 
 type Snapshot = NonNullable<Awaited<ReturnType<typeof loadTournament>>>;
@@ -71,10 +72,10 @@ export async function restoreTrash(id: string) {
   if (!item) throw notFound("Trash item");
   if (await prisma.tournament.findUnique({ where: { id: item.refId }, select: { id: true } })) throw fail(409, "Already restored", "ทัวร์นี้กู้คืนไปแล้ว");
   const t = JSON.parse(item.data) as Snapshot;
-  const { entries, soloSignups, matches, bracketMatches, blacklist, stories, ...tournament } = t;
+  const { entries, soloSignups, matches, bracketMatches, blacklist, stories, drafts = [], ...tournament } = t;
 
   const teamIds = new Set(
-    (await prisma.team.findMany({ where: { id: { in: [...entries.map((e) => e.teamId), ...matches.flatMap((m) => [m.teamAId, m.teamBId])] } }, select: { id: true } })).map((r) => r.id),
+    (await prisma.team.findMany({ where: { id: { in: [...entries.map((e) => e.teamId), ...matches.flatMap((m) => [m.teamAId, m.teamBId]), ...drafts.flatMap((d) => [d.teamAId, d.teamBId]).filter((x): x is string => Boolean(x))] } }, select: { id: true } })).map((r) => r.id),
   );
   const playerIds = new Set(
     (
@@ -128,6 +129,7 @@ export async function restoreTrash(id: string) {
     const bans = blacklist.filter((b) => playerIds.has(b.playerId));
     if (bans.length) await tx.blacklistEntry.createMany({ data: bans });
     if (stories.length) await tx.tournamentStory.createMany({ data: stories });
+    if (drafts.length) await tx.draft.createMany({ data: drafts.map((d) => ({ ...d, teamAId: d.teamAId && teamIds.has(d.teamAId) ? d.teamAId : null, teamBId: d.teamBId && teamIds.has(d.teamBId) ? d.teamBId : null })) });
     await tx.trashItem.delete({ where: { id } });
   });
   await recomputeRatings();

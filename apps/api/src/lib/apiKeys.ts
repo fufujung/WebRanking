@@ -4,7 +4,10 @@ import { prisma } from "./db.js";
 import { HttpError } from "./errors.js";
 import { clientIp, fromInternet, Limiter } from "./rateLimit.js";
 
-export type Scope = "read" | "admin";
+export type Scope = "read" | "admin" | "draft";
+
+/** What a "draft" key may change besides reading: a tournament's pick/ban drafts, and nothing else. */
+export const DRAFT_WRITE = /^\/tournaments\/[^/]+\/drafts\/[^/]+\/?$/;
 
 export const hashKey = (key: string) => createHash("sha256").update(key).digest("hex");
 
@@ -24,7 +27,7 @@ function extractKey(header: string | undefined, auth: string | undefined) {
 
 /**
  * Requires a valid API key in `X-API-Key` or `Authorization: Bearer`.
- * Read-only keys may only use GET; writes need an admin key.
+ * Read-only keys may only use GET; writes need an admin key, except that a "draft" key may send drafts.
  */
 /** Wrong keys from one address: 20 per 10 minutes, then that address waits. */
 export const badKeys = new Limiter(20, 10 * 60_000);
@@ -51,7 +54,7 @@ export const requireApiKey: RequestHandler = async (req, res, next) => {
     throw new HttpError(401, "Invalid or revoked API key");
   }
   const isRead = req.method === "GET" || req.method === "HEAD";
-  if (!isRead && record.scope !== "admin") {
+  if (!isRead && record.scope !== "admin" && !(record.scope === "draft" && DRAFT_WRITE.test(req.path))) {
     throw new HttpError(403, "This API key is read-only");
   }
   res.locals.apiKey = record;

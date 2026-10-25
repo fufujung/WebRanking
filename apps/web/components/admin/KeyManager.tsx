@@ -18,6 +18,7 @@ export function KeyManager({ keys }: { keys: ApiKeyInfo[] }) {
             สิทธิ์
             <select name="scope" defaultValue="read">
               <option value="read">อ่านอย่างเดียว (แนะนำสำหรับเว็บอื่น)</option>
+              <option value="draft">ส่งแบน/พิคจากบอท vMix (อ่าน + ส่งดราฟเท่านั้น)</option>
               <option value="admin">แก้ไขได้ทั้งหมด</option>
             </select>
           </label>
@@ -39,7 +40,7 @@ export function KeyManager({ keys }: { keys: ApiKeyInfo[] }) {
               <tr key={k.id}>
                 <td>{k.name}</td>
                 <td className="muted" style={{ fontFamily: "monospace" }}>{k.prefix}…</td>
-                <td>{k.scope === "admin" ? "แก้ไขได้" : "อ่านอย่างเดียว"}</td>
+                <td>{k.scope === "admin" ? "แก้ไขได้" : k.scope === "draft" ? "ส่งแบน/พิค" : "อ่านอย่างเดียว"}</td>
                 <td className="muted">{fmtDateTime(k.lastUsedAt)}</td>
                 <td>{k.revokedAt ? <span className="badge">ยกเลิกแล้ว</span> : <span className="badge badge-ONGOING">ใช้งานได้</span>}</td>
                 <td className="right">

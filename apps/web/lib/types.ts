@@ -369,7 +369,7 @@ export interface ApiKeyInfo {
   id: string;
   name: string;
   prefix: string;
-  scope: "read" | "admin";
+  scope: "read" | "admin" | "draft";
   createdAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
@@ -815,4 +815,47 @@ export interface PendingLink {
   id: string;
   createdAt: string;
   player: { id: string; name: string; uid: string | null };
+}
+
+/** One slot of a pick/ban draft: side A is blue, B is red. */
+export interface DraftSlot {
+  side: "A" | "B";
+  kind: "ban" | "pick";
+  char: string;
+  name: string | null;
+}
+
+/** The pick/ban draft of one game, sent live by the broadcast bot. */
+export interface Draft {
+  id: string;
+  ref: string;
+  teamA: string;
+  teamB: string;
+  teamAId: string | null;
+  teamBId: string | null;
+  gameNo: number;
+  slots: DraftSlot[];
+  winner: "A" | "B" | null;
+  playedAt: string;
+  updatedAt: string;
+}
+
+export interface DraftCharStat {
+  char: string;
+  name: string;
+  picks: number;
+  bans: number;
+  wins: number;
+  losses: number;
+  pickRate: number;
+  banRate: number;
+  presence: number;
+  winRate: number | null;
+}
+
+export interface TournamentDrafts {
+  data: Draft[];
+  games: number;
+  decided: number;
+  characters: DraftCharStat[];
 }

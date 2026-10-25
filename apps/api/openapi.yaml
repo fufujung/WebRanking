@@ -9,7 +9,8 @@ info:
     **Authentication:** every `/api/v1` request needs an API key in the `X-API-Key`
     header (or `Authorization: Bearer <key>`). Keys with scope `read` can only call
     `GET` endpoints, so they are safe for a public website's server. Keys with scope
-    `admin` can also create, edit and delete. Create keys with `POST /api/v1/keys`
+    `admin` can also create, edit and delete. Keys with scope `draft` can read, and send
+    pick/ban drafts (`PUT`/`DELETE /api/v1/tournaments/{id}/drafts/{ref}`) for a broadcast bot. Create keys with `POST /api/v1/keys`
     or `npm run key:create -- "Name" read`.
 
     **Browser calls:** add your site's origin to `CORS_ORIGINS` on the API server.
@@ -1507,6 +1508,56 @@ paths:
         "200": { description: "{ data: [{ id, title, url, position }] }" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/tournaments/{id}/drafts:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Tournaments]
+      summary: Pick/ban drafts sent by the broadcast bot, newest first, with per-character stats
+      responses:
+        "200": { description: "{ data: [{ id, ref, teamA, teamB, teamAId, teamBId, gameNo, slots: [{ side, kind, char, name }], winner, playedAt, updatedAt }], games, decided, characters: [{ char, name, picks, bans, wins, losses, pickRate, banRate, presence, winRate }] } (rates are % of games; winRate is null with no decided games)" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/tournaments/{id}/drafts/{ref}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: ref, in: path, required: true, description: "The bot's id of the game (1-80 letters, digits, . _ : -). Sending the same ref again replaces that draft.", schema: { type: string } }
+    put:
+      tags: [Tournaments]
+      summary: Create or replace one game's draft (admin or draft key). Team names link to the site's teams when they match.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [teamA, teamB, slots]
+              properties:
+                teamA: { type: string, maxLength: 100, description: Blue side }
+                teamB: { type: string, maxLength: 100, description: Red side }
+                gameNo: { type: integer, minimum: 1, maximum: 15, default: 1 }
+                slots:
+                  type: array
+                  maxItems: 30
+                  items:
+                    type: object
+                    required: [side, kind, char]
+                    properties:
+                      side: { type: string, enum: [A, B] }
+                      kind: { type: string, enum: [ban, pick] }
+                      char: { type: string, maxLength: 60, description: "The bot's key of the character, e.g. kise" }
+                      name: { type: string, maxLength: 80, nullable: true, description: How the character is shown }
+                winner: { type: string, enum: [A, B], nullable: true }
+                playedAt: { type: string, format: date-time }
+      responses:
+        "200": { description: The saved draft }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Tournaments]
+      summary: Remove one game's draft (admin or draft key)
+      responses:
+        "204": { description: Removed }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/tournaments/{id}/bracket:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:
@@ -1787,7 +1838,7 @@ paths:
               required: [name]
               properties:
                 name: { type: string, example: My main website }
-                scope: { type: string, enum: [read, admin], default: read }
+                scope: { type: string, enum: [read, admin, draft], default: read, description: "draft = read, plus sending pick/ban drafts" }
       responses:
         "201": { description: Created }
   /api/v1/keys/{id}:

@@ -982,3 +982,20 @@ label.pick-row { display: flex; flex-direction: row; align-items: center; text-a
   .admin-topic { padding: 10px; }
   .admin-topic-text span { display: none; }
 }
+
+/* Pick/ban stats of a tournament (sent live by the broadcast bot) */
+.pb-lead-title { margin: 0 0 10px; font-size: 15px; color: var(--muted); }
+.pb-leaders { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.pb-leaders li { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-width: 0; }
+.pb-bar { height: 5px; border-radius: 3px; background: var(--bg-soft); margin-top: 4px; min-width: 80px; }
+.pb-bar span { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.pb-blue { color: var(--pos-guard); font-weight: 700; }
+.pb-red { color: var(--loss); font-weight: 700; }
+.pb-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.pb-side { display: grid; gap: 8px; padding: 10px; border-radius: 10px; background: var(--bg-soft); border-left: 4px solid var(--pos-guard); min-width: 0; }
+.pb-side-red { border-left-color: var(--loss); }
+.pb-chars { display: flex; flex-wrap: wrap; gap: 6px; }
+.pb-char { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 3px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); font-size: 13px; }
+.pb-char .avatar { width: 24px; height: 24px; font-size: 10px; border-radius: 50%; }
+.pb-ban { opacity: 0.6; text-decoration: line-through; filter: grayscale(1); }
+@media (max-width: 640px) { .pb-sides { grid-template-columns: 1fr; } }
