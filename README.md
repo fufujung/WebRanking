@@ -314,7 +314,7 @@ endpoint หลัก: `/api/v1/games`, `/api/v1/rankings/mmr` (ใส่ `?game
 ## ทดสอบ
 
 ```bash
-npm test            # เทส API 230 เคส บอท Discord 102 เคส (ใช้ Discord และ AI แบบจำลอง) และระบบอัปเดตอัตโนมัติ 16 เคส
+npm test            # เทส API 237 เคส บอท Discord 102 เคส (ใช้ Discord และ AI แบบจำลอง) และระบบอัปเดตอัตโนมัติ 16 เคส
 npm run typecheck   # ตรวจ TypeScript ทั้ง API เว็บ และบอท
 npm run test:e2e    # เปิดเบราว์เซอร์จริงทดสอบทุกหน้าและทุกฟอร์ม (ต้องรัน npm run dev ไว้ก่อน)
 ```
