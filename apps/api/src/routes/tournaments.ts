@@ -15,6 +15,7 @@ import { trashTournament } from "../lib/trash.js";
 import { confirmTeams, drawTeams, removeSignup, soloView } from "../lib/solo.js";
 import { tournamentSeason } from "../lib/seasons.js";
 import { setStories, tournamentStories } from "../lib/stories.js";
+import { deleteDraft, draftRef, saveDraft, tournamentDrafts } from "../lib/drafts.js";
 
 export const tournaments = Router();
 
@@ -215,6 +216,21 @@ tournaments.get("/:id/stories", async (req, res) => {
 /** Saves the whole list (add, remove and reorder in one go). */
 tournaments.put("/:id/stories", requireAdmin, async (req, res) => {
   res.json({ data: await setStories({ tournamentId: String(req.params.id) }, req.body) });
+});
+
+/** Pick/ban drafts sent live by the broadcast bot, with the character stats they add up to. */
+tournaments.get("/:id/drafts", async (req, res) => {
+  res.json(await tournamentDrafts(String(req.params.id)));
+});
+
+/** Creates or replaces one game's draft. Admin keys and "draft" keys (the broadcast bot's) may send these. */
+tournaments.put("/:id/drafts/:ref", async (req, res) => {
+  res.json(await saveDraft(String(req.params.id), draftRef.parse(req.params.ref), req.body));
+});
+
+tournaments.delete("/:id/drafts/:ref", async (req, res) => {
+  await deleteDraft(String(req.params.id), draftRef.parse(req.params.ref));
+  res.status(204).end();
 });
 
 tournaments.get("/:id/bracket", async (req, res) => {

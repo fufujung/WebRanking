@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { api, apiOrNull, PUBLIC } from "@/lib/api";
-import type { Bracket, Story, TournamentDetail } from "@/lib/types";
+import type { Bracket, Story, TournamentDetail, TournamentDrafts } from "@/lib/types";
 import { fmtDate, fmtThaiTime, formatLabel } from "@/lib/format";
 import { BracketView, Rosters } from "@/components/Bracket";
 import { Empty, MatchCard, StatusBadge, TeamLink } from "@/components/ui";
@@ -16,6 +16,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
   const bracket = t.format && (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") ? await apiOrNull<Bracket>(`/tournaments/${t.id}/bracket`, PUBLIC) : null;
   const podium = t.teams.filter((x) => x.placement && x.placement <= 3);
   const stories = (await api<{ data: Story[] }>(`/tournaments/${t.id}/stories`, PUBLIC).catch(() => ({ data: [] as Story[] }))).data;
+  const drafts = await api<TournamentDrafts>(`/tournaments/${t.id}/drafts`, PUBLIC).catch(() => null);
   return (
     <>
       <div className="page-head">
@@ -28,6 +29,11 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
           <span className="muted">
             {[t.game, t.location, `${t.format ? fmtThaiTime(t.startDate) : fmtDate(t.startDate)}${t.endDate ? ` – ${fmtDate(t.endDate)}` : ""}`].filter(Boolean).join(" · ")}
           </span>
+          {!t.format && drafts && drafts.games > 0 && (
+            <div className="row small" style={{ marginTop: 8 }}>
+              <Link href={`/tournaments/${t.id}/picks`} className="badge badge-accent">🎯 สถิติแบน/พิค ({drafts.games} เกม)</Link>
+            </div>
+          )}
           {t.format && (
             <div className="row small" style={{ marginTop: 8 }}>
               <span className="badge">{formatLabel[t.format]}</span>
@@ -38,6 +44,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
               {t.registrationOpen && t.entryMode !== "SOLO" && <span className="badge badge-accent">เปิดรับสมัครทาง Discord</span>}
               {t.teams.length >= 2 && <Link href={`/predict?t=${t.id}`} className="badge badge-accent">🔮 ทายผลรายการนี้</Link>}
               {stories.length > 0 && <a href="#story" className="badge">📖 ต้นเรื่อง ({stories.length})</a>}
+              {drafts && drafts.games > 0 && <Link href={`/tournaments/${t.id}/picks`} className="badge badge-accent">🎯 สถิติแบน/พิค ({drafts.games} เกม)</Link>}
             </div>
           )}
         </div>

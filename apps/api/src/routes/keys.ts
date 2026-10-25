@@ -15,7 +15,7 @@ keys.get("/", async (_req, res) => {
 
 keys.post("/", async (req, res) => {
   const input = z
-    .object({ name: z.string().trim().min(1).max(100), scope: z.enum(["read", "admin"]).default("read") })
+    .object({ name: z.string().trim().min(1).max(100), scope: z.enum(["read", "admin", "draft"]).default("read") })
     .parse(req.body);
   const { key, record } = await createApiKey(input.name, input.scope);
   res.status(201).json({ key, id: record.id, name: record.name, scope: record.scope, prefix: record.prefix });

@@ -516,6 +516,45 @@ const after = await fetch(`${API}/api/v1/rankings/teams?limit=1`, { headers: { "
 if (after.status !== 401) throw new Error("revoked key still works");
 step("API key created, works with the API, then revoked");
 
+// Pick/ban drafts: the broadcast bot sends each game's draft live with a "draft" key; the public page adds them up.
+await page.fill('input[name="name"]', `vMix ${uniq}`);
+await page.selectOption('select[name="scope"]', "draft");
+await page.click("button:has-text('สร้าง API key')");
+await page.waitForFunction((old) => { const v = document.querySelector(".success input")?.value; return v && v !== old; }, key);
+const draftKey = await page.inputValue(".success input");
+await page.locator("tr", { hasText: `vMix ${uniq}` }).locator("td:has-text('ส่งแบน/พิค')").waitFor();
+const live = await (await fetch(`${API}/api/v1/tournaments`, { method: "POST", headers: { "X-API-Key": WEB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ name: `Draft Cup ${uniq}`, startDate: new Date().toISOString(), status: "ONGOING" }) })).json();
+const sendDraft = (ref, body) =>
+  fetch(`${API}/api/v1/tournaments/${live.id}/drafts/${ref}`, { method: "PUT", headers: { "X-API-Key": draftKey, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const draftSlots = (bans, a, b) => [
+  { side: "A", kind: "ban", char: bans[0], name: `${bans[0]}-th` },
+  { side: "B", kind: "ban", char: bans[1], name: `${bans[1]}-th` },
+  ...a.map((c) => ({ side: "A", kind: "pick", char: c, name: `${c}-th` })),
+  ...b.map((c) => ({ side: "B", kind: "pick", char: c, name: `${c}-th` })),
+];
+const g1 = await sendDraft("e2e_g1", { teamA: `Blue ${uniq}`, teamB: `Red ${uniq}`, gameNo: 1, winner: "A", slots: draftSlots(["Kise", "Akashi"], ["Kagami", "Hyuga", "Kobori"], ["Midorima", "Aomine", "Murasakibara"]) });
+if (g1.status !== 200) throw new Error(`the draft key cannot send a draft: ${g1.status} ${await g1.text()}`);
+const sneaky = await fetch(`${API}/api/v1/teams`, { method: "POST", headers: { "X-API-Key": draftKey, "Content-Type": "application/json" }, body: JSON.stringify({ name: `Sneaky ${uniq}` }) });
+if (sneaky.status !== 403) throw new Error(`a draft key can change other data: ${sneaky.status}`);
+await page.goto(base + `/tournaments/${live.id}`);
+await reloadUntil(page, `a[href='/tournaments/${live.id}/picks']`);
+await page.click(`a[href='/tournaments/${live.id}/picks']`);
+await page.waitForURL(`**/tournaments/${live.id}/picks`);
+await page.locator(".card:has-text('แบนบ่อยสุด'):has-text('Kise-th')").waitFor();
+await page.locator(".pb-game:has-text('Blue " + uniq + "') .pb-ban:has-text('Kise-th')").waitFor();
+// A second game arrives during the stream: the open page shows it without a reload.
+const g2 = await sendDraft("e2e_g2", { teamA: `Blue ${uniq}`, teamB: `Red ${uniq}`, gameNo: 2, slots: draftSlots(["Kagami", "Kise"], ["Akashi", "Hyuga", "Kobori"], ["Midorima", "Aomine", "Takao"]) });
+if (g2.status !== 200) throw new Error(`second draft refused: ${g2.status}`);
+await page.locator(".page-head:has-text('2 เกม')").waitFor({ timeout: 40000 });
+await page.locator("tr:has-text('Kobori-th') td.num:has-text('100%')").first().waitFor();
+await page.screenshot({ path: OUT + "/draft-stats.png", fullPage: true });
+await page.setViewportSize({ width: 390, height: 844 });
+await page.reload();
+if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error("the pick/ban page is wider than a phone screen");
+await page.screenshot({ path: OUT + "/draft-stats-mobile.png", fullPage: true });
+await page.setViewportSize({ width: 1280, height: 900 });
+step("broadcast bot key (send pick/ban only) sent two drafts; the tournament links to its pick/ban stats, which update live and fit a phone");
+
 // Delete the match
 await page.goto(matchUrl.replace("/matches/", "/admin/matches/"));
 page.once("dialog", (d) => d.accept());

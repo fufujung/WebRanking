@@ -172,6 +172,7 @@ model Tournament {
   blacklist      BlacklistEntry[]
   markets        Market[]
   stories        TournamentStory[]
+  drafts         Draft[]
   gameRef        Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
   season         SpecialSeason?    @relation(fields: [seasonId], references: [id], onDelete: SetNull)
 
@@ -393,12 +394,35 @@ model MatchPlayerStat {
   @@index([matchId])
 }
 
+/// The pick/ban draft of one game, sent live by the broadcast bot (vMix). Teams are kept by name as the bot
+/// shows them, with a link to the site's team when the name matches one.
+model Draft {
+  id           String   @id @default(cuid())
+  tournamentId String
+  ref          String // the bot's own id of the game, so sending the same draft again updates it
+  teamA        String // blue side
+  teamB        String // red side
+  teamAId      String?
+  teamBId      String?
+  gameNo       Int      @default(1)
+  /// JSON [{ side: "A" | "B", kind: "ban" | "pick", char, name }]: char is the bot's key, name is how it is shown.
+  slots        String   @default("[]")
+  winner       String? // A | B, null = no result yet
+  playedAt     DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@unique([tournamentId, ref])
+  @@index([tournamentId, playedAt])
+}
+
 model ApiKey {
   id         String    @id @default(cuid())
   name       String
   prefix     String
   keyHash    String    @unique
-  scope      String    @default("read") // read | admin
+  scope      String    @default("read") // read | admin | draft (read, plus sending pick/ban drafts)
   createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
   revokedAt  DateTime?
