@@ -3,6 +3,6 @@
  * Code still in routes/ and lib/ reaches a module through the objects created here.
  */
 import { prisma } from "../lib/db.js";
-import { createRankingsModule } from "../modules/rankings/index.js";
+import { createRankingsModule } from "../modules/rankings/wiring.js";
 
 export const rankingsModule = createRankingsModule({ prisma });

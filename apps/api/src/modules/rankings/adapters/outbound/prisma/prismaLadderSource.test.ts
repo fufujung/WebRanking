@@ -32,6 +32,9 @@ test("players: every game, or one game; team card has only the public team field
   assert.deepEqual(g2.players.map((p) => p.id), [f.ids.g]);
   const ace = all.players.find((p) => p.id === f.ids.a)!;
   assert.deepEqual(Object.keys(ace.team!).sort(), ["id", "logoUrl", "name", "rating", "tag"]);
+  // Exactly the fields the ladder has always returned, named one by one: a new Player column stays private.
+  const fields = ["avatarUrl", "country", "createdAt", "discordId", "gameId", "guildId", "id", "mmr", "name", "nickname", "peakMmr", "role", "server", "specialMmr", "specialPeakMmr", "team", "teamId", "uid", "updatedAt"];
+  assert.deepEqual(Object.keys(ace).sort(), fields);
   assert.equal(all.players.find((p) => p.id === f.ids.h)!.team, null);
 });
 

@@ -112,6 +112,7 @@ routes/rankings.ts
 - `lib/leaderboard.ts` `teamMovement()` ยังเรียก Prisma เอง (ยังไม่ย้าย)
 - HTTP adapter ใช้ `pagination` จาก `lib/validate.ts` ซึ่งเป็นของเดิมที่ใช้ทั้งระบบ เมื่อโมดูลที่สองต้องใช้จะย้ายไป `shared/`
 - `bootstrap/container.ts` ใช้ Prisma client ตัวเดียวของ `lib/db.ts`
+- Prisma adapter เลือกฟิลด์ผู้เล่นทีละชื่อ (ชุดเดิมที่เคยส่ง รวม `uid` และ `discordId`) คอลัมน์ใหม่ใน Player จะไม่หลุดออก API เอง ส่วนการตัดฟิลด์เป็นการเปลี่ยน contract แยกต่างหาก (R4)
 - domain และ application **ไม่** import อะไรจาก `lib/` เลย (เทสบังคับ)
 
 **เทสที่มี:**
@@ -122,14 +123,17 @@ routes/rankings.ts
 | application (source จำลอง) | `application/use-cases/playerLadder.test.ts` | 3 เคส: กรองทีม, แบ่งหน้า, special board |
 | Prisma adapter (DB แยกของตัวเอง) | `adapters/outbound/prisma/prismaLadderSource.test.ts` | 4 เคส: กรองเกม, team card, board main/special, ลำดับ, blacklist ซ้ำ/ยกเลิก, DB ว่าง |
 | HTTP contract | `mmrLadder.contract.test.ts` | 7 เคส |
-| dependency | `architecture.test.ts` | 6 เคส |
+| dependency | `architecture.test.ts` | 8 เคส |
 
 - **HTTP contract:**
   - เทียบคำตอบของทางใหม่กับ handler เดิมที่แช่แข็งไว้ใน `contract/legacyMmrLadder.ts` (คัดจาก `9b0ac22`) บนฐานข้อมูลเดียวกัน
   - ครอบ 14 แบบ query, query ผิด 8 แบบ, กรณีไม่ใส่ key, กรณีไม่มีข้อมูล และการไล่ทุกหน้า
   - fixtures (`contract/fixtures.ts`): เสมอ 3 คน, placing, คนที่ยังไม่เคยเล่น, 2 เกม, movement, เสมอ/ซีรีส์วันเดียวกัน, blacklist ซ้ำและที่ยกเลิกแล้ว, คนที่เล่นเฉพาะรายการพิเศษ
-- **dependency:**
-  - จับ import ทุกแบบ: type-only, side-effect, `import()` (รวมแบบ type), `require`
+- **dependency (แบบ allowlist ไม่ใช่รายชื่อห้าม):**
+  - domain ใช้ได้เฉพาะ domain, application ใช้ได้เฉพาะ domain และ application ห้ามทุก package รวมถึง `index.ts`, `wiring.ts`, adapters และ `contract/` ของโมดูลเอง
+  - มี fixture ด้านลบ 11 แบบ (เช่น `@prisma/client`, `better-sqlite3`, `../../index.js`) และด้านบวก
+  - จับ import ทุกแบบ: type-only, side-effect, `import()` (รวมแบบ type), `require` และห้าม `import()`/`require()` ที่ชื่อคำนวณตอนรัน
+  - `index.ts` (public API) ต้องไม่ลากโค้ด adapter/Prisma/Express มาด้วย การประกอบกับ adapter จริงอยู่ที่ `wiring.ts` ซึ่ง `bootstrap/` เท่านั้นที่ import ได้
   - ห้าม deep import เข้าโมดูลจากข้างนอก
   - ห้ามโค้ดจริงใช้ `contract/`
   - ห้ามโค้ดจริงของ web/bot import API หรือ Prisma

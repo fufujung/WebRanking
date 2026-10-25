@@ -75,3 +75,23 @@ test("withRanks gives competition ranks and tierCounts counts per tier", () => {
   const counts = tierCounts([{ tier: { key: "gold" } }, { tier: { key: "gold" } }, { tier: { key: "legend" } }]);
   assert.deepEqual(counts.filter((t) => t.players).map((t) => [t.key, t.players]), [["gold", 2], ["legend", 1]]);
 });
+
+test("movement: a series played exactly 7 days ago counts as this week, one millisecond older does not", () => {
+  const week = 7 * 86400_000;
+  const at = (ms: number) => new Date(now.getTime() - ms);
+  const old3 = (id: string) => series(id, [["W", 1], ["W", 1], ["W", 1]], daysAgo(30));
+  const board = buildLadder({
+    players: [player("edge", 1000), player("late", 990)],
+    changes: [
+      { playerId: "edge", result: "W", delta: 50, playedAt: at(week) },
+      ...old3("edge"),
+      { playerId: "late", result: "W", delta: 50, playedAt: at(week + 1) },
+      ...old3("late"),
+    ],
+    blacklisted: [],
+    now,
+  });
+  const by = Object.fromEntries(board.ranked.map((p) => [p.id, p.rankChange]));
+  // A week ago: late 990 (its +50 is older than the week), edge 950 (its +50 is inside it) → edge 2nd, now 1st.
+  assert.deepEqual(by, { edge: 1, late: -1 });
+});

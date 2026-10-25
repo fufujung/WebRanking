@@ -50,38 +50,94 @@ test("the import scanner sees every import form", () => {
   assert.deepEqual(specifiers(sample).sort(), ["../../lib/x.js", "../adapters/y.js", "@prisma/client", "@prisma/client", "discord.js", "express", "node:process", "zod"].sort());
 });
 
-// Domain and application know nothing of HTTP, the database, Discord, validation, the environment or code outside the module.
-const forbidden = [/^express/, /^@prisma\//, /^prisma$/, /^discord/, /^zod$/, /^node:/, /^(fs|path|http|https|child_process|os|net)$/, /\/lib\//, /\/adapters\//, /\/bootstrap\//, /\/contract\//];
+/**
+ * Allowed dependencies of the module's core, as an allowlist: domain may use only domain; application
+ * only domain and application (ports, use cases). No packages at all (Express, Prisma, zod, node:*,
+ * another database client...), and not the module's own index.ts, wiring.ts, adapters or test contract.
+ * `from` and the paths in the message are relative to the module folder. Returns why an import is refused.
+ */
+export function coreViolation(from: string, spec: string): string | null {
+  const layer = from.split(/[\\/]/)[0];
+  if (!spec.startsWith(".")) return `${from} imports the package ${spec}`;
+  const target = path.relative(here, path.resolve(here, path.dirname(from), spec)).split(path.sep).join("/");
+  if (target.startsWith("..")) return `${from} imports ${spec} from outside the module`;
+  const allowed = layer === "domain" ? ["domain/"] : ["domain/", "application/"];
+  if (!allowed.some((dir) => target.startsWith(dir))) return `${from} (${layer}) imports ${target}`;
+  return null;
+}
+
+/** import()/require() whose target is not a plain string cannot be checked, so core code may not use them. */
+const nonLiteral = (source: string) => /\b(?:import|require)\s*\(\s*(?!["'])[^)\s]/.test(source.replace(/\/\/.*$/gm, ""));
+
+test("the core rule rejects every way of reaching outside, and accepts the real shape", () => {
+  const bad: [string, string][] = [
+    ["application/use-cases/x.ts", "@prisma/client"],
+    ["application/use-cases/x.ts", "better-sqlite3"],
+    ["application/use-cases/x.ts", "express"],
+    ["application/use-cases/x.ts", "../../index.js"],
+    ["application/use-cases/x.ts", "../../wiring.js"],
+    ["application/use-cases/x.ts", "../../adapters/outbound/prisma/prismaLadderSource.js"],
+    ["application/use-cases/x.ts", "../../contract/fixtures.js"],
+    ["application/use-cases/x.ts", "../../../../lib/db.js"],
+    ["domain/x.ts", "../application/ports/ladderSource.js"],
+    ["domain/x.ts", "node:fs"],
+    ["domain/x.ts", "fs"],
+  ];
+  for (const [from, spec] of bad) assert.ok(coreViolation(from, spec), `${from} → ${spec} must be refused`);
+  const good: [string, string][] = [
+    ["domain/ladder.ts", "./rules.js"],
+    ["application/use-cases/playerLadder.ts", "../../domain/ladder.js"],
+    ["application/use-cases/playerLadder.ts", "../ports/ladderSource.js"],
+  ];
+  for (const [from, spec] of good) assert.equal(coreViolation(from, spec), null, `${from} → ${spec}`);
+  assert.ok(nonLiteral("const m = await import(name);"));
+  assert.ok(nonLiteral("require(`./${x}`)"));
+  assert.ok(!nonLiteral('const m = await import("./a.js");'));
+});
 
 for (const layer of ["domain", "application"]) {
-  test(`${layer} imports only its own module's domain and ports`, () => {
+  test(`${layer} code follows the core rule`, () => {
     const files = walk(path.join(here, layer));
     assert.ok(files.length >= 2, `${layer} has code to check`);
     for (const file of files) {
       const rel = path.relative(here, file);
       const source = fs.readFileSync(file, "utf8");
-      for (const spec of specifiers(source)) {
-        assert.ok(!forbidden.some((re) => re.test(spec)), `${rel} imports ${spec}`);
-        assert.ok(spec.startsWith("."), `${rel} imports package ${spec}`);
-        const target = resolveFrom(file, spec);
-        assert.ok(inside(here, target), `${rel} imports ${spec} from outside the module`);
-        if (layer === "domain") assert.ok(inside(path.join(here, "domain"), target), `${rel} (domain) imports ${spec}`);
-      }
+      for (const spec of specifiers(source)) assert.equal(coreViolation(rel, spec), null);
+      assert.ok(!nonLiteral(source), `${rel} uses import()/require() with a computed name`);
       assert.ok(!/process\.env|globalThis\.process/.test(source), `${rel} reads the environment`);
     }
   });
 }
 
-test("code outside the module uses only its index.ts, and never the test contract", () => {
+test("code outside the module uses only its index.ts (bootstrap/ also wiring.ts), never the test contract", () => {
   const entry = path.join(here, "index.ts");
+  const wiring = path.join(here, "wiring.ts");
+  const bootstrap = path.join(apiSrc, "bootstrap");
   for (const file of walk(apiSrc)) {
     if (inside(here, file)) continue;
     for (const spec of specifiers(fs.readFileSync(file, "utf8"))) {
       if (!spec.startsWith(".")) continue;
       const target = resolveFrom(file, spec).replace(/\.js$/, ".ts");
-      if (inside(here, target)) assert.equal(target, entry, `${path.relative(apiSrc, file)} deep-imports ${spec}`);
+      if (!inside(here, target)) continue;
+      const ok = target === entry || (target === wiring && inside(bootstrap, file));
+      assert.ok(ok, `${path.relative(apiSrc, file)} imports ${spec}`);
     }
   }
+});
+
+test("the public index.ts carries no database or HTTP code", () => {
+  const seen = new Set<string>();
+  const visit = (file: string) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    for (const spec of specifiers(fs.readFileSync(file, "utf8"))) {
+      assert.ok(spec.startsWith("."), `index.ts reaches the package ${spec} through ${path.relative(here, file)}`);
+      const target = resolveFrom(file, spec).replace(/\.js$/, ".ts");
+      assert.ok(!inside(path.join(here, "adapters"), target), `index.ts reaches ${path.relative(here, target)}`);
+      visit(target);
+    }
+  };
+  visit(path.join(here, "index.ts"));
 });
 
 test("the module's own production code never uses the test contract", () => {
