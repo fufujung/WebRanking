@@ -4,8 +4,9 @@ import { prisma } from "../lib/db.js";
 import { emptyPlayerStats, emptyTeamStats, statLineSelect, statsByPlayer, statsByTeam, type PlayerStats } from "../lib/stats.js";
 import { pagination } from "../lib/validate.js";
 import { teamSummary } from "../lib/selects.js";
-import { MOVEMENT_DAYS, playerBoard, teamMovement, tierCounts, tierInfo, withRanks } from "../lib/leaderboard.js";
-import { MMR_K, MVP_BONUS, PLACEMENT_K, PLACEMENT_SERIES, START_MMR, SVP_BONUS, TIERS } from "../lib/mmr.js";
+import { rankingsModule } from "../bootstrap/container.js";
+import { teamMovement, tierInfo, withRanks } from "../lib/leaderboard.js";
+import { TIERS } from "../lib/mmr.js";
 
 export const rankings = Router();
 
@@ -56,25 +57,8 @@ rankings.get("/players", async (req, res) => {
   res.json({ data: data.slice(q.offset, q.offset + q.limit), total: data.length, limit: q.limit, offset: q.offset, sort: q.sort });
 });
 
-/**
- * The MMR ladder: ranked players (PLACEMENT_SERIES series or more) by MMR with tier, form and
- * rank movement; players still placing; tier list and how many players are in each tier.
- */
-rankings.get("/mmr", async (req, res) => {
-  const q = pagination.extend({ teamId: z.string().optional(), gameId }).parse(req.query);
-  const board = await playerBoard(q.gameId);
-  const ranked = q.teamId ? board.ranked.filter((p) => p.teamId === q.teamId) : board.ranked;
-  const placing = q.teamId ? board.placing.filter((p) => p.teamId === q.teamId) : board.placing;
-  res.json({
-    data: ranked.slice(q.offset, q.offset + q.limit),
-    total: ranked.length,
-    limit: q.limit,
-    offset: q.offset,
-    placing,
-    tiers: tierCounts(ranked),
-    rules: { start: START_MMR, k: MMR_K, placementK: PLACEMENT_K, placementSeries: PLACEMENT_SERIES, mvpBonus: MVP_BONUS, svpBonus: SVP_BONUS, movementDays: MOVEMENT_DAYS },
-  });
-});
+/** The MMR ladder: built by the rankings module (modules/rankings). */
+rankings.get("/mmr", rankingsModule.http.mmrLadder);
 
 /** The tier list on its own, lowest first: name, colour and MMR range. */
 rankings.get("/tiers", (_req, res) => {

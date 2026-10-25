@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "db:setup": "prisma db push && tsx prisma/seed.ts",
     "key:create": "tsx src/scripts/create-key.ts",
-    "test": "tsx --test src/*.test.ts",
+    "test": "tsx --test \"src/*.test.ts\" \"src/modules/**/*.test.ts\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "postinstall": "prisma generate"
   },
