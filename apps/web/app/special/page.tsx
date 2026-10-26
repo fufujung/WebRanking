@@ -13,6 +13,7 @@ import { Avatar, Empty, PlayerLink, StatusBadge } from "@/components/ui";
 import { Form, RankMove, TierBadge, TierProgress } from "@/components/Tier";
 import { GameTabs } from "@/components/GameTabs";
 import { RankBadge } from "@/components/RankBadge";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export const metadata = { title: "เล่นเก่งปากเก่ง · ตัวสำรองและอันดับ MMR แยก" };
 
@@ -40,6 +41,7 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
+      <LiveRefresh />
       <GameTabs games={games} active={game?.id ?? null} />
       {seasons.length > 0 && (
         <nav className="tabs filter-tabs season-tabs" aria-label="เลือกซีซั่น">

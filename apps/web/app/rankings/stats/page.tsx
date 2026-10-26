@@ -7,6 +7,7 @@ import { TeamFilter } from "@/components/TeamFilter";
 import { RankingTabs } from "@/components/RankingTabs";
 import { GameTabs } from "@/components/GameTabs";
 import { currentGame } from "@/lib/games";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export const metadata = { title: "สถิติผู้เล่น" };
 
@@ -36,6 +37,7 @@ export default async function PlayerRankings({ searchParams }: { searchParams: P
   const link = (s: string) => `/rankings/stats${qs({ sort: s, teamId: sp.teamId })}`;
   return (
     <>
+      <LiveRefresh />
       <RankingTabs active="stats" />
       <GameTabs games={games} active={game?.id ?? null} />
       <div className="page-head">

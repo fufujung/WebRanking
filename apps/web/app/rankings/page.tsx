@@ -7,6 +7,7 @@ import { Form, RankMove, TierBadge, TierEmblem, TierProgress } from "@/component
 import { RankingTabs } from "@/components/RankingTabs";
 import { GameTabs } from "@/components/GameTabs";
 import { currentGame } from "@/lib/games";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export const metadata = { title: "Ranking ทีม" };
 
@@ -23,6 +24,7 @@ export default async function TeamRankings({ searchParams }: { searchParams: Pro
   const rest = rows.filter((t) => !podium.includes(t));
   return (
     <>
+      <LiveRefresh />
       <RankingTabs active="teams" />
       <GameTabs games={games} active={game?.id ?? null} />
       <div className="page-head">
