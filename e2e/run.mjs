@@ -130,12 +130,12 @@ console.log("filtered rows:", await page.locator("tbody tr").count(), page.url()
 await page.screenshot({ path: OUT + "/players-filter.png", fullPage: true });
 
 // The header search opens from its icon on desktop and mobile.
-await page.locator("header").getByRole("button", { name: "ค้นหา", exact: true }).click();
+await page.locator('header button[aria-controls="header-search"]').click();
 await page.locator(".tr-search-backdrop").waitFor();
 await page.waitForFunction(() => document.activeElement === document.querySelector(".header-search input"));
 await page.keyboard.press("Escape");
 await page.locator(".tr-search-backdrop").waitFor({ state: "detached" });
-await page.locator("header").getByRole("button", { name: "ค้นหา", exact: true }).click();
+await page.locator('header button[aria-controls="header-search"]').click();
 // header search with button
 await page.locator('header input[name="q"]').fill("Ace");
 await page.locator("header button", { hasText: "ค้นหา" }).click();
@@ -160,7 +160,7 @@ await page.locator('.tr-nav a[href="/tournaments"]').click();
 await page.waitForURL(base + "/tournaments");
 await page.locator('.tr-nav a[href="/tournaments"][aria-current="page"]').waitFor();
 await page.goto(base + "/rankings");
-await page.click('button[aria-label="ค้นหา"]');
+await page.locator('header button[aria-controls="header-search"]').click();
 if (!(await page.locator(".header-search input").isVisible())) throw new Error("search box did not open on a phone");
 for (const href of ["/", "/teams", "/matches", "/special", "/blacklist", "/predict"]) {
   await page.goto(base + href);
