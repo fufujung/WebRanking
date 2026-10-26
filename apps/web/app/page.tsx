@@ -12,6 +12,7 @@ import type {
 import { fmtDate, fmtDateTime } from "@/lib/format";
 import { Avatar, Empty, StatusBadge, TeamLink } from "@/components/ui";
 import { HomeFilters } from "@/components/public/HomeFilters";
+import { AdCards } from "@/components/ads/Ads";
 import { allGames } from "@/lib/games";
 
 type RankedTeam = Team & { rank: number; stats: TeamStats };
@@ -272,6 +273,7 @@ export default async function Home() {
           </div>
         )}
       </section>
+      <AdCards />
     </div>
   );
 }
