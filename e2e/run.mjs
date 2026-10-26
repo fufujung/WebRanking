@@ -183,7 +183,7 @@ step("theme toggle: dark by default, light kept after reload, back to dark");
 console.log("— Admin flows");
 await page.setViewportSize({ width: 1280, height: 900 });
 // Logged-out protection
-if (await page.locator('.nav a[href="/admin"]').count()) throw new Error("public menu shows the admin link to visitors");
+if (await page.locator('.tr-footer-more a[href="/admin"]').count()) throw new Error("public menu shows the admin link to visitors");
 if (ADMIN_PATH) {
   // Without the secret address the back office looks like it does not exist.
   for (const p of ["/admin", "/admin/login", "/admin/teams", "/admin-wrong-guess"]) {
@@ -207,7 +207,7 @@ step("wrong password rejected: " + (await page.textContent(".error")));
 await page.fill('input[name="password"]', PASSWORD);
 await page.click("button:has-text('เข้าสู่ระบบ')");
 await page.waitForURL(base + "/admin");
-if (!(await page.locator('.nav a[href="/admin"]').count())) throw new Error("admin link missing from the menu after login");
+if (!(await page.locator('.tr-footer-more a[href="/admin"]').count())) throw new Error("admin link missing from the menu after login");
 if (!(await page.locator('footer a[href$="/docs"]').count())) throw new Error("API docs link missing for the organizer");
 step("logged in; the API docs link shows only to organizers");
 
@@ -949,7 +949,7 @@ step("SOLO tournament created with in-game ranks; 5 players signed up");
 // Logout
 await page.click("button:has-text('ออกจากระบบ')");
 await page.waitForURL(base + "/");
-if (await page.locator('.nav a[href="/admin"]').count()) throw new Error("admin link still in the menu after logout");
+if (await page.locator('.tr-footer-more a[href="/admin"]').count()) throw new Error("admin link still in the menu after logout");
 if (ADMIN_PATH) {
   if ((await page.request.get(base + "/admin/matches/new", { maxRedirects: 0 })).status() !== 404) throw new Error("still logged in");
 } else {
@@ -1617,7 +1617,7 @@ if (!(await page.locator(".tr-auth a.btn-discord").count())) {
   await page.locator(".me-player:has-text('Ace')").waitFor({ state: "detached" });
   await page.click("button:has-text('ออกจากระบบ')");
   await page.waitForURL(base + "/");
-  await page.locator('.nav a[href="/me"]:has-text("เข้าสู่ระบบ")').waitFor();
+  await page.locator('.tr-login-link[href="/me"]:has-text("เข้าสู่ระบบ")').waitFor();
   if ((await page.request.post(base + "/api/upload", { multipart: { image: { name: "a.png", mimeType: "image/png", buffer: fs.readFileSync(LOGO) } } })).status() !== 401) throw new Error("upload open after player logout");
   step("player unlinked a profile and logged out");
 }
