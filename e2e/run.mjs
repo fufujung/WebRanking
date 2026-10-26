@@ -536,6 +536,21 @@ const g1 = await sendDraft("e2e_g1", { teamA: `Blue ${uniq}`, teamB: `Red ${uniq
 if (g1.status !== 200) throw new Error(`the draft key cannot send a draft: ${g1.status} ${await g1.text()}`);
 const sneaky = await fetch(`${API}/api/v1/teams`, { method: "POST", headers: { "X-API-Key": draftKey, "Content-Type": "application/json" }, body: JSON.stringify({ name: `Sneaky ${uniq}` }) });
 if (sneaky.status !== 403) throw new Error(`a draft key can change other data: ${sneaky.status}`);
+{
+  // An open tournament page follows saved changes by itself: no reload, the page stays the same document.
+  const watcher = await ctx.newPage();
+  await watcher.goto(base + `/tournaments/${live.id}`);
+  await watcher.locator(`h1:has-text('Draft Cup ${uniq}')`).waitFor();
+  await watcher.evaluate(() => { window.__stayed = true; });
+  await new Promise((r) => setTimeout(r, 1500));
+  const renamed = await fetch(`${API}/api/v1/tournaments/${live.id}`, { method: "PATCH", headers: { "X-API-Key": WEB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ name: `Live Cup ${uniq}` }) });
+  if (!renamed.ok) throw new Error(`rename failed: ${renamed.status}`);
+  await watcher.locator(`h1:has-text('Live Cup ${uniq}')`).waitFor({ timeout: 30000 });
+  if (!(await watcher.evaluate(() => window.__stayed === true))) throw new Error("the tournament page reloaded instead of updating in place");
+  await watcher.close();
+  await fetch(`${API}/api/v1/tournaments/${live.id}`, { method: "PATCH", headers: { "X-API-Key": WEB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ name: `Draft Cup ${uniq}` }) });
+  step("an open tournament page showed a saved change by itself, without a reload");
+}
 await page.goto(base + `/tournaments/${live.id}`);
 await reloadUntil(page, `a[href='/tournaments/${live.id}/picks']`);
 await page.click(`a[href='/tournaments/${live.id}/picks']`);

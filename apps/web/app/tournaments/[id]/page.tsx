@@ -8,6 +8,7 @@ import { Empty, MatchCard, StatusBadge, TeamLink } from "@/components/ui";
 import { SoloSection } from "./SoloSection";
 import { CheerSection } from "@/components/predict/Cheer";
 import { StoryList } from "@/components/Stories";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export default async function TournamentPage({ params }: { params: Promise<{ id: string }> }) {
   const t = await apiOrNull<TournamentDetail>(`/tournaments/${encodeURIComponent((await params).id)}`, PUBLIC);
@@ -19,6 +20,7 @@ export default async function TournamentPage({ params }: { params: Promise<{ id:
   const drafts = await api<TournamentDrafts>(`/tournaments/${t.id}/drafts`, PUBLIC).catch(() => null);
   return (
     <>
+      <LiveRefresh />
       <div className="page-head">
         <div>
           <div className="row" style={{ marginBottom: 8 }}>

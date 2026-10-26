@@ -5,12 +5,14 @@ import { fmtDate } from "@/lib/format";
 import { Avatar, Empty, MatchCard, PlayerLink, StatTile, StatusBadge, TeamLink } from "@/components/ui";
 import { RankMove, TierBadge, TierEmblem } from "@/components/Tier";
 import { AdCards } from "@/components/ads/Ads";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export default async function Home() {
   const [o, guilds] = await Promise.all([api<Overview>("/stats/overview", PUBLIC), api<Page<GuildListItem>>("/guilds?limit=1", PUBLIC)]);
   const topGuild = guilds.data[0]?.rank === 1 ? guilds.data[0] : null;
   return (
     <>
+      <LiveRefresh />
       <section className="hero">
         <h1>สถิติและ Ranking ทัวร์นาเมนต์</h1>
         <p className="muted">ติดตามอันดับทีม ผลการแข่ง และสถิติผู้เล่นทุกรายการในที่เดียว</p>

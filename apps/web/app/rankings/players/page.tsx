@@ -9,6 +9,7 @@ import { TeamFilter } from "@/components/TeamFilter";
 import { RankingTabs } from "@/components/RankingTabs";
 import { GameTabs } from "@/components/GameTabs";
 import { currentGame } from "@/lib/games";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 export const metadata = { title: "Ranking ผู้เล่น (MMR)" };
 
@@ -35,6 +36,7 @@ export default async function MmrRanking({ searchParams }: { searchParams: Promi
 
   return (
     <>
+      <LiveRefresh />
       <RankingTabs active="players" />
       <GameTabs games={games} active={game?.id ?? null} />
       <section className="ladder-hero">
