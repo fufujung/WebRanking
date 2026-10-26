@@ -164,7 +164,7 @@ main.container {
 .tr-login-link {
   background: var(--card);
   font-size: 14px;
-  min-height: 44px;
+  min-height: 38px;
   max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -304,8 +304,9 @@ main.container {
   gap: 12px;
 }
 .tr-hero-actions .btn {
-  min-width: 180px;
-  min-height: 48px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px 16px;
   background: #14151d;
   color: #fff;
   border-color: #41404b;
@@ -862,10 +863,10 @@ main.container {
   }
   .tr-hero-actions .btn {
     min-width: 0;
-    min-height: 44px;
-    padding: 8px 12px;
+    min-height: 40px;
+    padding: 6px 12px;
     font-size: 12px;
-    flex: 1;
+    flex: 0 1 auto;
   }
   .tr-hero-caption {
     display: none;
@@ -1083,7 +1084,8 @@ main.container {
   background: #5865f2;
   border-color: #5865f2;
   color: #fff;
-  gap: 10px;
+  gap: 8px;
+  padding: 6px 12px;
   font-size: 14px;
 }
 .tr-auth .btn-discord:hover,
@@ -1095,6 +1097,10 @@ main.container {
 .tr-auth .btn-discord svg,
 .tr-login-link.btn-discord svg {
   flex-shrink: 0;
+}
+.tr-header .tr-login-link.btn-discord svg {
+  width: 18px;
+  height: 18px;
 }
 .tr-auth-hint {
   text-align: center;
