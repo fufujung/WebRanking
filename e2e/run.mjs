@@ -58,6 +58,7 @@ const DISCORD_USER = { id: "424242424242424242", username: "e2e_discord", global
 // A teammate who joins through an invite link; the stand-in answers as whoever is set here.
 const TEAMMATE = { id: "434343434343434343", username: "e2e_mate", global_name: "E2E Mate", avatar: null };
 let discordUser = DISCORD_USER;
+let membershipState = "member";
 const discordMock = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   let body = "";
@@ -74,6 +75,12 @@ const discordMock = http.createServer(async (req, res) => {
     const form = new URLSearchParams(body);
     if (form.get("code") !== "e2e-code" || form.get("client_secret") !== "e2e-secret" || !form.get("redirect_uri")?.endsWith("/api/auth/discord/callback")) return json(401, { error: "invalid_grant" });
     return json(200, { access_token: "e2e-token", token_type: "Bearer" });
+  }
+  if (/^\/api\/guilds\/[^/]+\/members\/\d+$/.test(url.pathname)) {
+    if (req.headers.authorization !== "Bot e2e-membership-token") return json(401, {});
+    if (membershipState === "outage") return json(503, {});
+    if (membershipState === "outsider") return json(404, { code: 10007 });
+    return json(200, { user: { id: url.pathname.split("/").at(-1) }, pending: false });
   }
   if (url.pathname === "/api/users/@me") {
     return req.headers.authorization === "Bearer e2e-token" ? json(200, discordUser) : json(401, { message: "401: Unauthorized" });
@@ -93,7 +100,7 @@ for (const p of paths) {
 }
 await page.goto(base + "/");
 if (await page.locator('footer a[href$="/docs"]').count()) throw new Error("visitors see the API docs link");
-await page.locator("h2:has-text('กิลด์อันดับ 1')").waitFor();
+await page.locator("h2:has-text('อันดับทีม')").waitFor();
 await page.screenshot({ path: OUT + "/home.png", fullPage: true });
 // follow a team, player, tournament, match link
 for (const sel of ['a[href^="/teams/"]', 'a[href^="/tournaments/"]', 'a[href^="/matches/"]']) {
@@ -122,6 +129,13 @@ await page.waitForLoadState("networkidle");
 console.log("filtered rows:", await page.locator("tbody tr").count(), page.url());
 await page.screenshot({ path: OUT + "/players-filter.png", fullPage: true });
 
+// The header search opens from its icon on desktop and mobile.
+await page.locator('header button[aria-controls="header-search"]').click();
+await page.locator(".tr-search-backdrop").waitFor();
+await page.waitForFunction(() => document.activeElement === document.querySelector(".header-search input"));
+await page.keyboard.press("Escape");
+await page.locator(".tr-search-backdrop").waitFor({ state: "detached" });
+await page.locator('header button[aria-controls="header-search"]').click();
 // header search with button
 await page.locator('header input[name="q"]').fill("Ace");
 await page.locator("header button", { hasText: "ค้นหา" }).click();
@@ -138,37 +152,38 @@ const overflow = await page.evaluate(() => document.documentElement.scrollWidth 
 console.log("mobile horizontal overflow:", overflow);
 if (overflow) throw new Error("/rankings is wider than a phone screen");
 
-// Phone header: the menu folds behind ☰ and closes after moving to another page; no page is wider than the screen.
-if (await page.locator(".header .nav").isVisible()) throw new Error("menu should be folded away on a phone");
-await page.click('button[aria-label="เปิดเมนู"]');
-await page.locator('.header .nav a[href="/tournaments"]').click();
-await page.waitForURL(/\/tournaments$/);
-await page.waitForFunction(() => !document.querySelector(".header")?.dataset.open);
-if (await page.locator(".header .nav").isVisible()) throw new Error("menu stayed open after navigating");
-await page.click('button[aria-label="ค้นหา"]');
+// Sticky navigation keeps its horizontal strip and follows the normal routes.
+await page.goto(base + "/");
+if ((await page.locator(".tr-header").evaluate(el => getComputedStyle(el).position)) !== "sticky") throw new Error("navbar is not sticky");
+if (!(await page.locator(".tr-nav").evaluate(el => el.scrollWidth > el.clientWidth))) throw new Error("mobile navbar should scroll horizontally");
+await page.locator('.tr-nav a[href="/tournaments"]').click();
+await page.waitForURL(base + "/tournaments");
+await page.locator('.tr-nav a[href="/tournaments"][aria-current="page"]').waitFor();
+await page.goto(base + "/rankings");
+await page.locator('header button[aria-controls="header-search"]').click();
 if (!(await page.locator(".header-search input").isVisible())) throw new Error("search box did not open on a phone");
 for (const href of ["/", "/teams", "/matches", "/special", "/blacklist", "/predict"]) {
   await page.goto(base + href);
   if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error(`${href} is wider than a phone screen`);
 }
-step("phone: menu and search fold behind buttons, menu closes after navigating, pages fit the screen");
+step("phone: sticky navbar scrolls horizontally and follows routes; search and pages fit");
 
 // Dark is the default; the toggle switches to light and the choice survives a reload.
 const bodyBg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-if ((await bodyBg()) !== "rgb(13, 13, 15)") throw new Error("dark theme is not the default");
-await page.click(".theme-toggle");
+if ((await bodyBg()) !== "rgb(9, 11, 15)") throw new Error("dark theme is not the default");
+await page.locator("footer .theme-toggle").click();
 await page.reload();
-if ((await bodyBg()) !== "rgb(255, 255, 255)") throw new Error("light theme not kept after reload");
-await page.click(".theme-toggle");
+if ((await bodyBg()) !== "rgb(247, 248, 250)") throw new Error("light theme not kept after reload");
+await page.locator("footer .theme-toggle").click();
 await page.reload();
-if ((await bodyBg()) !== "rgb(13, 13, 15)") throw new Error("could not switch back to dark");
+if ((await bodyBg()) !== "rgb(9, 11, 15)") throw new Error("could not switch back to dark");
 step("theme toggle: dark by default, light kept after reload, back to dark");
 
 
 console.log("— Admin flows");
 await page.setViewportSize({ width: 1280, height: 900 });
 // Logged-out protection
-if (await page.locator('.nav a[href="/admin"]').count()) throw new Error("public menu shows the admin link to visitors");
+if (await page.locator('.tr-footer-more a[href="/admin"]').count()) throw new Error("public menu shows the admin link to visitors");
 if (ADMIN_PATH) {
   // Without the secret address the back office looks like it does not exist.
   for (const p of ["/admin", "/admin/login", "/admin/teams", "/admin-wrong-guess"]) {
@@ -192,7 +207,7 @@ step("wrong password rejected: " + (await page.textContent(".error")));
 await page.fill('input[name="password"]', PASSWORD);
 await page.click("button:has-text('เข้าสู่ระบบ')");
 await page.waitForURL(base + "/admin");
-if (!(await page.locator('.nav a[href="/admin"]').count())) throw new Error("admin link missing from the menu after login");
+if (!(await page.locator('.tr-footer-more a[href="/admin"]').count())) throw new Error("admin link missing from the menu after login");
 if (!(await page.locator('footer a[href$="/docs"]').count())) throw new Error("API docs link missing for the organizer");
 step("logged in; the API docs link shows only to organizers");
 
@@ -934,7 +949,7 @@ step("SOLO tournament created with in-game ranks; 5 players signed up");
 // Logout
 await page.click("button:has-text('ออกจากระบบ')");
 await page.waitForURL(base + "/");
-if (await page.locator('.nav a[href="/admin"]').count()) throw new Error("admin link still in the menu after logout");
+if (await page.locator('.tr-footer-more a[href="/admin"]').count()) throw new Error("admin link still in the menu after logout");
 if (ADMIN_PATH) {
   if ((await page.request.get(base + "/admin/matches/new", { maxRedirects: 0 })).status() !== 404) throw new Error("still logged in");
 } else {
@@ -945,17 +960,28 @@ step("logged out");
 
 console.log("— Players log in with Discord");
 await page.goto(base + "/me");
-if (!(await page.locator(".btn-discord").count())) {
+if (!(await page.locator(".tr-auth a.btn-discord").count())) {
   step("Discord login is not configured on this website: skipped");
 } else {
-  if (!(await page.locator('.nav a[href="/me"]').count())) throw new Error("menu has no player login link");
+  if (!(await page.locator('.tr-login-link[href="/me"]').count())) throw new Error("menu has no player login link");
   // A forged return from Discord is refused.
   await page.goto(base + "/api/auth/discord/callback?code=e2e-code&state=forged");
   await page.locator(".error:has-text('หมดอายุ')").waitFor();
-  await page.click(".btn-discord");
+  membershipState = "outsider";
+  await page.click(".tr-auth a.btn-discord");
+  await page.getByRole("heading", { name: "เข้าร่วม Overtime ก่อน", exact: true }).waitFor();
+  if ((await ctx.cookies()).some(c => c.name === "tr_member" && c.value)) throw new Error("nonmember received an application session");
+  await page.goto(base + "/me");
+  await page.getByRole("heading", { name: "เข้าร่วม Overtime ก่อน", exact: true }).waitFor();
+  membershipState = "outage";
+  await page.getByRole("button", { name: "เข้าร่วมแล้ว ตรวจสอบอีกครั้ง", exact: true }).click();
+  await page.getByRole("heading", { name: "ตรวจสอบสมาชิกไม่สำเร็จ", exact: true }).waitFor();
+  membershipState = "member";
+  await page.getByRole("button", { name: "ลองตรวจสอบอีกครั้ง", exact: true }).click();
+  await page.getByRole("link", { name: "เข้าสู่หน้าของฉัน", exact: true }).click();
   await page.waitForURL(base + "/me");
   await page.locator("h1:has-text('E2E Discord')").waitFor();
-  await page.locator(".nav-me:has-text('E2E Discord')").waitFor();
+  await page.locator(".tr-login-link:has-text('E2E Discord')").waitFor();
   // A new UID needs a name first.
   const newUid = `77${uniq}`;
   await page.fill('.claim-form input[name="uid"]', newUid);
@@ -1014,7 +1040,8 @@ if (!(await page.locator(".btn-discord").count())) {
   await mate.goto(base + invite);
   await mate.locator(`.join-card:has-text('Squad ${uniq}')`).waitFor();
   await mate.screenshot({ path: OUT + "/join-invite.png" });
-  await mate.click(".btn-discord");
+  await mate.click(".join-card .btn-discord");
+  await mate.getByRole("link", { name: "เข้าสู่หน้าของฉัน", exact: true }).click();
   await mate.waitForURL(base + invite);
   await mate.locator(".join-card a[href='/me']").click();
   await mate.fill('.claim-form input[name="uid"]', `78${uniq}`);
@@ -1342,13 +1369,14 @@ if (!(await page.locator(".btn-discord").count())) {
   await rAdmin.click("form button:has-text('บันทึก')");
   await rAdmin.locator(".success:has-text('บันทึกแล้ว')").waitFor();
   await rAdmin.goto(base + "/special");
-  await rAdmin.locator('.header a.nav-discord[href="https://discord.gg/e2eJoin"][target="_blank"]').waitFor();
+  await rAdmin.locator('.header .tr-login-link').waitFor();
   await rAdmin.locator('.footer a.discord-join[href="https://discord.gg/e2eJoin"]').waitFor();
   await rAdmin.locator('.special-cta a.discord-join[href="https://discord.gg/e2eJoin"]').waitFor();
   await rAdmin.screenshot({ path: OUT + "/discord-join.png" });
   await rAdmin.setViewportSize({ width: 375, height: 812 });
   await rAdmin.reload();
-  await rAdmin.locator('.header a.header-discord[href="https://discord.gg/e2eJoin"]').waitFor({ state: "visible" });
+  await rAdmin.getByRole('button', { name: 'เปิดเมนู', exact: true }).click();
+  await rAdmin.locator('.header .tr-login-link').waitFor({ state: 'visible' });
   await rAdmin.screenshot({ path: OUT + "/discord-join-mobile.png" });
   step("organizer set the Discord invite on /admin/settings (another site is refused); the เข้าร่วม Discord button shows in the header, footer, /special and on phones");
   await rAdminCtx.close();
@@ -1589,7 +1617,7 @@ if (!(await page.locator(".btn-discord").count())) {
   await page.locator(".me-player:has-text('Ace')").waitFor({ state: "detached" });
   await page.click("button:has-text('ออกจากระบบ')");
   await page.waitForURL(base + "/");
-  await page.locator('.nav a[href="/me"]:has-text("เข้าสู่ระบบ")').waitFor();
+  await page.locator('.tr-login-link[href="/me"]:has-text("เข้าสู่ระบบ")').waitFor();
   if ((await page.request.post(base + "/api/upload", { multipart: { image: { name: "a.png", mimeType: "image/png", buffer: fs.readFileSync(LOGO) } } })).status() !== 401) throw new Error("upload open after player logout");
   step("player unlinked a profile and logged out");
 }
