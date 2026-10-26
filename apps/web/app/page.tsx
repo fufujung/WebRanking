@@ -1,159 +1,277 @@
 import Link from "next/link";
-import { api, PUBLIC } from "@/lib/api";
-import type { GuildListItem, Overview, Page } from "@/lib/types";
-import { fmtDate } from "@/lib/format";
-import { Avatar, Empty, MatchCard, PlayerLink, StatTile, StatusBadge, TeamLink } from "@/components/ui";
-import { RankMove, TierBadge, TierEmblem } from "@/components/Tier";
-import { AdCards } from "@/components/ads/Ads";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import Image from "next/image";
+import { api, PUBLIC } from "@/lib/api";
+import type {
+  Overview,
+  Page,
+  Team,
+  TeamStats,
+  SpecialSeason,
+} from "@/lib/types";
+import { fmtDate, fmtDateTime } from "@/lib/format";
+import { Avatar, Empty, StatusBadge, TeamLink } from "@/components/ui";
+import { HomeFilters } from "@/components/public/HomeFilters";
+import { allGames } from "@/lib/games";
+
+type RankedTeam = Team & { rank: number; stats: TeamStats };
+const number = (value: number) => value.toLocaleString("en-US");
 
 export default async function Home() {
-  const [o, guilds] = await Promise.all([api<Overview>("/stats/overview", PUBLIC), api<Page<GuildListItem>>("/guilds?limit=1", PUBLIC)]);
-  const topGuild = guilds.data[0]?.rank === 1 ? guilds.data[0] : null;
+  const [overviewResult, rankingsResult, games, seasonsResult] =
+    await Promise.allSettled([
+      api<Overview>("/stats/overview", PUBLIC),
+      api<Page<RankedTeam>>("/rankings/teams?limit=5", PUBLIC),
+      allGames(),
+      api<{ data: SpecialSeason[] }>("/special/seasons", PUBLIC),
+    ]);
+  const o = overviewResult.status === "fulfilled" ? overviewResult.value : null;
+  const teams =
+    rankingsResult.status === "fulfilled" ? rankingsResult.value.data : null;
+  const seasons =
+    seasonsResult.status === "fulfilled" ? seasonsResult.value.data : [];
   return (
-    <>
+    <div className="tr-home">
       <LiveRefresh />
-      <section className="hero">
-        <h1>สถิติและ Ranking ทัวร์นาเมนต์</h1>
-        <p className="muted">ติดตามอันดับทีม ผลการแข่ง และสถิติผู้เล่นทุกรายการในที่เดียว</p>
-        <form action="/search" className="row" role="search" style={{ maxWidth: 560 }}>
-          <input name="q" placeholder="ค้นหาทีม ผู้เล่น หรือทัวร์นาเมนต์" aria-label="ค้นหา" style={{ flex: 1 }} />
-          <button className="btn btn-primary" type="submit">ค้นหา</button>
-        </form>
+      <section id="home" className="tr-hero" aria-labelledby="home-title">
+        <Image
+          src="/images/hero-kagami.png"
+          alt=""
+          fill
+          preload
+          sizes="(max-width: 760px) 1200px, 1264px"
+          className="tr-hero-art"
+        />
+        <div className="tr-hero-shade" />
+        <div className="tr-hero-copy">
+          <p className="tr-eyebrow">YOUR GAME. YOUR LEGACY.</p>
+          <h1 id="home-title">
+            THE GAME.
+            <br />
+            <span>THE RANKING.</span>
+          </h1>
+          <p className="tr-hero-description">
+            เช็คอันดับ ติดตามทัวร์นาเมนต์ <strong>powered by OVERTIME</strong>
+          </p>
+          <div className="tr-hero-actions">
+            <Link href="/rankings" className="btn btn-primary">
+              สำรวจอันดับ <span aria-hidden="true">→</span>
+            </Link>
+            <Link href="/tournaments" className="btn">
+              ดูทัวร์นาเมนต์
+            </Link>
+          </div>
+        </div>
+        <span className="tr-hero-caption">
+          THE RANKING · OVERTIME COMMUNITY
+        </span>
       </section>
-
-      <div className="grid grid-4">
-        <StatTile label="ทีม" value={o.totals.teams} />
-        <StatTile label="ผู้เล่น" value={o.totals.players} />
-        <StatTile label="ทัวร์นาเมนต์" value={o.totals.tournaments} />
-        <StatTile label="แมตช์" value={o.totals.matches} />
+      <HomeFilters
+        games={games.status === "fulfilled" ? games.value : []}
+        seasons={seasons}
+      />
+      {!o && (
+        <div className="notice tr-data-error" role="status">
+          ยังโหลดข้อมูลการแข่งขันไม่ได้ กรุณาลองใหม่อีกครั้ง{" "}
+          <Link href="/">โหลดใหม่ →</Link>
+        </div>
+      )}
+      <div id="overview" className="tr-metrics">
+        {(
+          [
+            ["ทีมทั้งหมด", o?.totals.teams, "ทีม", "users"],
+            ["ผู้เล่นทั้งหมด", o?.totals.players, "คน", "user"],
+            ["แมตช์ที่แข่งขัน", o?.totals.matches, "แมตช์", "ball"],
+            ["ทัวร์นาเมนต์", o?.totals.tournaments, "รายการ", "trophy"],
+          ] as const
+        ).map(([label, value, unit, icon]) => (
+          <div className="tr-metric" key={label}>
+            <span className="tr-metric-icon">
+              <img
+                src={`/images/icons/${icon}.svg`}
+                width="24"
+                height="24"
+                alt=""
+              />
+            </span>
+            <div>
+              <span className="muted">{label}</span>
+              <p>
+                <strong>{value === undefined ? "—" : number(value)}</strong>
+                <span>{unit}</span>
+              </p>
+            </div>
+          </div>
+        ))}
       </div>
-
-      <TopGuild guild={topGuild} />
-
-      <AdCards />
-
-      <div className="grid grid-2 mt">
-        <section>
-          <div className="row between">
-            <h2>อันดับทีมสูงสุด</h2>
-            <Link href="/rankings" className="small muted">ดูทั้งหมด →</Link>
+      <div className="tr-home-columns">
+        <section id="rankings" aria-labelledby="ranking-title">
+          <div className="tr-section-head">
+            <div>
+              <h2 id="ranking-title">อันดับทีม</h2>
+              <p>TEAM RANKING</p>
+            </div>
+            <div className="tr-ranking-tabs">
+              <span aria-current="true">ทั้งหมด</span>
+              <Link href="/rankings/players">อันดับผู้เล่น</Link>
+            </div>
           </div>
-          {o.topTeams.length === 0 ? (
-            <Empty>ยังไม่มีทีม</Empty>
+          {!teams ? (
+            <Empty>ยังโหลดอันดับทีมไม่ได้</Empty>
+          ) : teams.length === 0 ? (
+            <Empty>ยังไม่มีทีมติดอันดับ</Empty>
           ) : (
-            <div className="table-wrap">
+            <div className="table-wrap tr-ranking-table">
               <table>
+                <caption className="sr-only">อันดับทีมตามคะแนน MMR</caption>
                 <thead>
-                  <tr><th>#</th><th>ทีม</th><th className="num">MMR</th></tr>
+                  <tr>
+                    <th>อันดับ</th>
+                    <th>ทีม</th>
+                    <th className="num">MMR</th>
+                    <th className="num tr-hide-phone">ชนะ</th>
+                    <th className="num tr-hide-phone">แพ้</th>
+                  </tr>
                 </thead>
                 <tbody>
-                  {o.topTeams.map((t, i) => (
+                  {teams.map((t) => (
                     <tr key={t.id}>
-                      <td className={`rank rank-${i + 1}`}>{i + 1}</td>
-                      <td><TeamLink team={t} /></td>
-                      <td className="num"><strong>{t.rating}</strong></td>
+                      <td className="tr-rank-number">
+                        {String(t.rank).padStart(2, "0")}
+                      </td>
+                      <td>
+                        <TeamLink team={t} />
+                      </td>
+                      <td className="num tr-rating">{number(t.rating)}</td>
+                      <td className="num tr-hide-phone">{t.stats.wins}</td>
+                      <td className="num tr-hide-phone">{t.stats.losses}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <Link className="tr-panel-link" href="/rankings">
+                ดูอันดับทีมทั้งหมด <span aria-hidden="true">→</span>
+              </Link>
             </div>
           )}
-
-          <div className="row between mt">
-            <h2>ผู้เล่น MMR สูงสุด</h2>
-            <Link href="/rankings/players" className="small muted">ดูทั้งหมด →</Link>
-          </div>
-          {o.topPlayers.length === 0 ? (
-            <Empty>ยังไม่มีผู้เล่นติดอันดับ</Empty>
-          ) : (
-            <div className="table-wrap ladder-table">
-              <table>
-                <thead>
-                  <tr><th>#</th><th>ผู้เล่น</th><th>แรงค์</th><th className="num">MMR</th></tr>
-                </thead>
-                <tbody>
-                  {o.topPlayers.map((p) => (
-                    <tr key={p.id} style={{ ["--tier" as string]: p.tier.color }}>
-                      <td><span className={`rank rank-${p.rank}`}>{p.rank}</span> <RankMove change={p.rankChange} isNew /></td>
-                      <td><PlayerLink player={p} /></td>
-                      <td><TierBadge tier={p.tier} size={20} /></td>
-                      <td className="num"><strong>{p.mmr}</strong></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        </section>
+        <section id="results" aria-labelledby="results-title">
+          <div className="tr-section-head">
+            <div>
+              <h2 id="results-title">ผลการแข่งขันล่าสุด</h2>
+              <p>LATEST RESULTS</p>
             </div>
-          )}
-
-          <div className="row between mt">
-            <h2>ทัวร์นาเมนต์ที่กำลังแข่งและกำลังจะมา</h2>
-            <Link href="/tournaments" className="small muted">ดูทั้งหมด →</Link>
+            <Link href="/matches">
+              ดูทั้งหมด <span aria-hidden="true">→</span>
+            </Link>
           </div>
-          <div className="stack">
-            {o.upcomingTournaments.length === 0 && <Empty>ยังไม่มีรายการ</Empty>}
-            {o.upcomingTournaments.map((t) => (
-              <Link key={t.id} href={`/tournaments/${t.id}`} className="card card-link row between">
-                <span>
-                  <strong>{t.name}</strong>
-                  <br />
-                  <span className="muted small">{[t.game, t.location, fmtDate(t.startDate)].filter(Boolean).join(" · ")}</span>
+          <div className="tr-results">
+            {!o ? (
+              <Empty>ยังโหลดผลการแข่งขันไม่ได้</Empty>
+            ) : o.recentMatches.length === 0 ? (
+              <Empty>ยังไม่มีผลการแข่งขัน</Empty>
+            ) : (
+              o.recentMatches.slice(0, 3).map((m) => (
+                <Link href={`/matches/${m.id}`} key={m.id} className="tr-match">
+                  <div className="tr-match-meta">
+                    <span>
+                      {m.tournament.name}
+                      {m.round ? ` · ${m.round}` : ""}
+                    </span>
+                    <time dateTime={m.playedAt}>{fmtDateTime(m.playedAt)}</time>
+                  </div>
+                  <div className="tr-match-score">
+                    <span>
+                      <Avatar
+                        src={m.teamA.logoUrl}
+                        name={m.teamA.tag || m.teamA.name}
+                      />
+                      <span>{m.teamA.name}</span>
+                    </span>
+                    <strong>
+                      {m.scoreA} : {m.scoreB}
+                    </strong>
+                    <span>
+                      <span>{m.teamB.name}</span>
+                      <Avatar
+                        src={m.teamB.logoUrl}
+                        name={m.teamB.tag || m.teamB.name}
+                      />
+                    </span>
+                  </div>
+                  <span className="tr-completed">จบการแข่งขัน</span>
+                </Link>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+      <section
+        id="tournaments"
+        className="tr-tournaments"
+        aria-labelledby="tournaments-title"
+      >
+        <div className="tr-section-head">
+          <div>
+            <h2 id="tournaments-title">ลงสนามครั้งต่อไป</h2>
+            <p className="tr-section-description">
+              ทัวร์ที่กำลังแข่งขันและเปิดรับสมัคร
+            </p>
+          </div>
+          <Link href="/tournaments">
+            ดูทัวร์นาเมนต์ทั้งหมด <span aria-hidden="true">→</span>
+          </Link>
+        </div>
+        {!o ? (
+          <Empty>ยังโหลดทัวร์นาเมนต์ไม่ได้</Empty>
+        ) : o.upcomingTournaments.length === 0 ? (
+          <Empty>
+            ยังไม่มีรายการที่กำลังจะมาถึง{" "}
+            <Link href="/tournaments">ดูรายการทั้งหมด →</Link>
+          </Empty>
+        ) : (
+          <div className="tr-tournament-grid">
+            {o.upcomingTournaments.slice(0, 2).map((t, i) => (
+              <Link
+                href={`/tournaments/${t.id}`}
+                className="tr-tournament"
+                key={t.id}
+              >
+                <div className="tr-tournament-cover">
+                  <img
+                    src="/images/icons/trophy.svg"
+                    width="56"
+                    height="56"
+                    alt=""
+                  />
+                  <strong>{String(i + 1).padStart(2, "0")}</strong>
+                </div>
+                <div className="tr-tournament-info">
+                  <StatusBadge status={t.status} />
+                  <h3>{t.name}</h3>
+                  <p>
+                    {[t.season?.name, t.game].filter(Boolean).join(" · ") ||
+                      "การแข่งขันของชุมชน"}
+                  </p>
+                  <time dateTime={t.startDate}>
+                    {fmtDate(t.startDate)}
+                    {t.endDate ? ` – ${fmtDate(t.endDate)}` : ""}
+                  </time>
+                  <p>
+                    {t.registrationOpen
+                      ? "เปิดรับสมัคร"
+                      : "ดูรายละเอียดการแข่งขัน"}
+                    {t.maxTeams ? ` · สูงสุด ${t.maxTeams} ทีม` : ""}
+                  </p>
+                </div>
+                <span className="tr-tournament-arrow" aria-hidden="true">
+                  →
                 </span>
-                <StatusBadge status={t.status} />
               </Link>
             ))}
           </div>
-        </section>
-
-        <section>
-          <div className="row between">
-            <h2>ผลการแข่งล่าสุด</h2>
-            <Link href="/matches" className="small muted">ดูทั้งหมด →</Link>
-          </div>
-          <div className="stack">
-            {o.recentMatches.length === 0 && <Empty>ยังไม่มีผลการแข่ง</Empty>}
-            {o.recentMatches.map((m) => <MatchCard key={m.id} match={m} />)}
-          </div>
-        </section>
-      </div>
-    </>
-  );
-}
-
-/** The number 1 guild, always on the home page, with the best player inside it. */
-function TopGuild({ guild: g }: { guild: GuildListItem | null }) {
-  return (
-    <section className="mt">
-      <div className="row between">
-        <h2>🏆 กิลด์อันดับ 1</h2>
-        <Link href="/guilds" className="small muted">ดูอันดับกิลด์ทั้งหมด →</Link>
-      </div>
-      {!g ? (
-        <Empty>ยังไม่มีกิลด์ที่สมาชิกลงแข่ง สร้างกิลด์ได้ที่หน้าโปรไฟล์ของฉัน</Empty>
-      ) : (
-        <div className="home-guild card">
-          <Link href={`/guilds/${g.id}`} className="home-guild-main">
-            <Avatar src={g.logoUrl} name={g.tag || g.name} size="lg" />
-            <span>
-              <strong className="home-guild-name">{g.name}</strong> {g.tag && <span className="muted">[{g.tag}]</span>}
-              <br />
-              <span className="muted small">คะแนนกิลด์ <strong className="home-guild-score">{g.score}</strong> · {g.memberCount} สมาชิก</span>
-            </span>
-          </Link>
-          {g.top && (
-            <Link href={`/players/${g.top.id}`} className="home-guild-top" style={{ ["--tier" as string]: g.top.tier.color }}>
-              <TierEmblem tier={g.top.tier} size={48} />
-              <span>
-                <span className="muted small">🥇 อันดับ 1 ของกิลด์</span>
-                <br />
-                <strong>{g.top.nickname || g.top.name}</strong>
-                <br />
-                <span className="small">{g.top.mmr} MMR · <span style={{ color: g.top.tier.color }}>{g.top.tier.name}</span></span>
-              </span>
-            </Link>
-          )}
-        </div>
-      )}
-    </section>
+        )}
+      </section>
+    </div>
   );
 }

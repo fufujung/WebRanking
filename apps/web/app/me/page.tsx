@@ -1,7 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { api, qs } from "@/lib/api";
 import { getMember } from "@/lib/member";
-import { discordEnabled } from "@/lib/discord";
 import type { MyCharacter, PendingLink, ReservePlayer, GameRank, Wallet } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
 import { ConfirmReward } from "@/app/predict/PredictForms";
@@ -44,21 +44,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
   const me = await getMember();
   const error = sp.error ? ERRORS[sp.error] ?? ERRORS.discord : null;
 
-  if (!me) {
-    return (
-      <div className="card me-login">
-        <h1>เข้าสู่ระบบสำหรับผู้เล่น</h1>
-        <p className="muted">ใช้บัญชี Discord เดียวกับที่ใช้ในเซิร์ฟเวอร์ทัวร์นาเมนต์ แล้วแก้รูปโปรไฟล์ ชื่อเล่น และผูก UID ของคุณได้เอง</p>
-        {error && <div className="error" style={{ marginBottom: 12 }}>{error}</div>}
-        {discordEnabled() ? (
-          <a className="btn btn-discord" href="/api/auth/discord"><DiscordMark /> เข้าสู่ระบบด้วย Discord</a>
-        ) : (
-          <div className="notice small">ระบบเข้าสู่ระบบด้วย Discord ยังไม่เปิด ผู้จัดต้องใส่ DISCORD_CLIENT_ID และ DISCORD_CLIENT_SECRET ก่อน</div>
-        )}
-        <p className="muted small" style={{ marginTop: 14, marginBottom: 0 }}>เราขอแค่ชื่อและรูปโปรไฟล์ Discord ไม่ขออีเมลหรือรหัสผ่าน</p>
-      </div>
-    );
-  }
+  if (!me) redirect(`/login${sp.error ? `?error=${encodeURIComponent(sp.error)}` : ""}`);
 
   const [{ data: mine }, games, origin, { data: reserves }, wallet, { pending }] = await Promise.all([
     api<{ data: MyCharacter[] }>(`/members/${me.id}`),
