@@ -44,7 +44,8 @@ export default async function LoginPage({
   const next = safeNext(sp.next) ? sp.next : "/me";
   const success = Boolean(member && sp.verified === "1");
   if (member && !success) redirect(next === "/login" ? "/me" : next);
-  const enabled = discordEnabled() && membershipConfigured();
+  const enabled = discordEnabled();
+  const requiresMembership = membershipConfigured();
   const verificationError =
     pending && (sp.error === "verification" || sp.error === "config");
   return (
@@ -67,13 +68,13 @@ export default async function LoginPage({
           <div className="tr-auth-success">
             <span aria-hidden="true">✓</span>
             <h1 id="auth-title">พร้อมเข้าสู่ The Ranking</h1>
-            <p>ยืนยันบัญชีและสมาชิก Discord เรียบร้อย</p>
+            <p>{requiresMembership ? "ยืนยันบัญชีและสมาชิก Discord เรียบร้อย" : "เข้าสู่ระบบด้วย Discord เรียบร้อย"}</p>
           </div>
           <div className="tr-auth-account">
             <Avatar src={member.avatar} name={member.name} round />
             <div>
               <strong>{member.name}</strong>
-              <small>สมาชิก Overtime · เชื่อมต่อด้วย Discord</small>
+              <small>{requiresMembership ? "สมาชิก Overtime · เชื่อมต่อด้วย Discord" : "เชื่อมต่อด้วย Discord"}</small>
             </div>
           </div>
           <Link
@@ -149,11 +150,11 @@ export default async function LoginPage({
           <h1 id="auth-title">เข้าสู่ระบบด้วย Discord</h1>
           <p className="muted">ใช้บัญชี Discord เพื่อเข้าสู่ The Ranking</p>
           <p className="muted">ไม่ต้องสร้างบัญชีหรือจำรหัสผ่านเพิ่ม</p>
-          <div className="tr-auth-requirement">
+          {requiresMembership && <div className="tr-auth-requirement">
             <strong>สำหรับสมาชิก Discord ของ Overtime</strong>
             <p>คุณต้องอยู่ในเซิร์ฟเวอร์ก่อนเข้าใช้งานบัญชี</p>
             <p>หากยังไม่ได้เข้าร่วม เราจะพาไปในขั้นตอนถัดไป</p>
-          </div>
+          </div>}
           {sp.error && (
             <p className="error" role="alert">
               {errors[sp.error] ?? errors.discord}
