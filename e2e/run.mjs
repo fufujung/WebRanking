@@ -441,7 +441,7 @@ step("new player's profile shows their team and games");
 
 // Player ranking (old links to the stat leaderboard still work)
 await page.goto(base + "/rankings/players?sort=mvp");
-if (!page.url().includes("/rankings/stats?sort=mvp")) throw new Error("old stat ranking link not redirected: " + page.url());
+await page.waitForURL(/\/rankings\/stats\?sort=mvp/);
 if (!(await page.locator("tbody").textContent()).includes(`P01-${uniq}`)) throw new Error("MVP player missing from ranking");
 step("player ranking by MVP lists the player");
 
