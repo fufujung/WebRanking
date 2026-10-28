@@ -434,6 +434,7 @@ step("series edited (1 : 2)");
 // The new player has a profile with game stats
 await page.click(`a:has-text("${newName}")`);
 await page.waitForURL(/\/players\//);
+await page.locator(".page-head").waitFor();
 const profile = await page.locator("main").textContent();
 if (!profile.includes("Alpha")) throw new Error("new player should be on Alpha: " + profile.slice(0, 200));
 step("new player's profile shows their team and games");
@@ -446,6 +447,7 @@ step("player ranking by MVP lists the player");
 
 // MMR ladder: podium, tiers, and the new player still placing (one series played)
 await page.goto(base + "/rankings/players");
+await page.locator(".podium-card").first().waitFor();
 if ((await page.locator(".podium-card").count()) !== 3) throw new Error("MMR podium should show 3 players");
 if ((await page.locator(".tier-row").count()) !== 7) throw new Error("tier list should show 7 tiers");
 if (!(await page.locator(".placing-grid").textContent()).includes(`P01-${uniq}`)) throw new Error("a player with one series should be placing");
