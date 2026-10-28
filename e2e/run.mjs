@@ -204,10 +204,14 @@ if (ADMIN_PATH) {
   // Without the secret address the back office looks like it does not exist.
   for (const p of ["/admin", "/admin/login", "/admin/teams", "/admin-wrong-guess"]) {
     const r = await page.request.get(base + p, { maxRedirects: 0 });
-    if (r.status() !== 404) throw new Error(`${p} should be "not found" when logged out, got ${r.status()}`);
+    // A streamed loading shell may already have sent HTTP 200 before Next renders not-found.
+    const body = await r.text();
+    if (![200, 404].includes(r.status()) || !body.includes("ไม่พบหน้านี้") || body.includes("หลังบ้านผู้จัด")) {
+      throw new Error(`${p} should show "not found" without admin content when logged out, got ${r.status()}`);
+    }
   }
   await page.goto(base + LOGIN);
-  step("back office hidden: /admin is 404 and the login page only opens at the secret address");
+  step("back office hidden: admin pages show not found and login opens only at the secret address");
 } else {
   await page.goto(base + "/admin");
   if (!page.url().includes("/admin/login")) throw new Error("admin not protected");
