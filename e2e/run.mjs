@@ -130,7 +130,7 @@ await page.screenshot({ path: OUT + "/player.png", fullPage: true });
 
 // team dropdown filter on players page
 await page.goto(base + "/players");
-const combo = page.getByRole("combobox");
+const combo = page.getByRole("combobox", { name: "กรองตามทีม" });
 await combo.click();
 await combo.fill("sia");
 const opts = await page.getByRole("option").allTextContents();
