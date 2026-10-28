@@ -50,7 +50,7 @@ function MyTeam({ me, inviteBase }: { me: MyCharacter; inviteBase: string }) {
             <span className="muted small"> · {team.members.length} คน · MMR ทีม {team.rating}</span>
           </span>
         </a>
-        {team.isCaptain && <span className="pill pill-ok">👑 คุณเป็นหัวหน้าทีม</span>}
+        {team.isCaptain && <span className="pill pill-ok"> คุณเป็นหัวหน้าทีม</span>}
       </div>
 
       <ul className="team-members">
@@ -59,7 +59,7 @@ function MyTeam({ me, inviteBase }: { me: MyCharacter; inviteBase: string }) {
             <span className="entity">
               <Initial name={m.name} src={m.avatarUrl} />
               <span>
-                {m.captain && <span title="หัวหน้าทีม">👑 </span>}
+                {m.captain && <span title="หัวหน้าทีม">หัวหน้าทีม · </span>}
                 <strong>{m.nickname || m.name}</strong>
                 {m.id === me.id && <span className="muted small"> (คุณ)</span>}
                 <span className="muted small"> · {m.mmr} MMR{m.linked ? "" : " · ยังไม่ได้ล็อกอิน"}</span>
@@ -128,8 +128,7 @@ function NoTeam({ me }: { me: MyCharacter }) {
     <>
       <p className="muted small" style={{ margin: 0 }}>{me.name} ยังไม่มีทีม สร้างทีมใหม่แล้วชวนเพื่อน หรือเข้าทีมด้วยลิงก์/รหัสที่หัวหน้าทีมส่งให้</p>
       <div className="grid grid-2 team-start">
-        <form onSubmit={onCreate} className="form team-create">
-          <strong>สร้างทีมใหม่</strong>
+        <details className="me-team-choice"><summary>สร้างทีมใหม่</summary><form onSubmit={onCreate} className="form team-create">
           <div className="form-row">
             <label>ชื่อทีม *<input name="name" required maxLength={100} placeholder="เช่น Thunder Hawks" /></label>
             <label>ตัวย่อ<input name="tag" maxLength={12} placeholder="เช่น THK" /></label>
@@ -140,13 +139,12 @@ function NoTeam({ me }: { me: MyCharacter }) {
           </label>
           {create?.error && <div className="error">{create.error}</div>}
           <div><button className="btn btn-primary" disabled={creating}>{creating ? "กำลังสร้าง…" : "สร้างทีม"}</button></div>
-        </form>
-        <form onSubmit={onJoin} className="form team-join">
-          <strong>เข้าร่วมทีม</strong>
+        </form></details>
+        <details className="me-team-choice"><summary>เข้าร่วมทีมด้วยรหัสเชิญ</summary><form onSubmit={onJoin} className="form team-join">
           <label>ลิงก์หรือรหัสเชิญ *<input name="code" required maxLength={200} placeholder="เช่น K7Q2XW9M" autoCapitalize="characters" /></label>
           {join?.error && <div className="error">{join.error}</div>}
           <div><button className="btn btn-primary" disabled={joining}>{joining ? "กำลังเข้าร่วม…" : "เข้าร่วมทีม"}</button></div>
-        </form>
+        </form></details>
       </div>
     </>
   );

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import type { Award, Match, Status, TeamSummary } from "@/lib/types";
 import { fmtDateTime, signed, statusLabel } from "@/lib/format";
 
@@ -114,7 +114,7 @@ export function Pager({ total, limit, offset, params, path }: { total: number; l
       <span className="muted small" style={{ alignSelf: "center" }}>
         หน้า {Math.floor(offset / limit) + 1} / {Math.ceil(total / limit)}
       </span>
-      {offset + limit < total && <Link className="btn btn-sm" href={href(offset + limit)}>ถัดไป →</Link>}
+      {offset + limit < total && <Link className="btn btn-sm" href={href(offset + limit)}>ถัดไป</Link>}
     </div>
   );
 }

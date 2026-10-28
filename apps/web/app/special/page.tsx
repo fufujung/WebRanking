@@ -1,101 +1,199 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { api, PUBLIC, qs } from "@/lib/api";
-import type { PredictTournament, SeasonView, SpecialBoard, SpecialSeason } from "@/lib/types";
+import type {
+  PredictTournament,
+  SeasonView,
+  SpecialBoard,
+  SpecialSeason,
+} from "@/lib/types";
 import { CheerSection } from "@/components/predict/Cheer";
 import { fmtDate, fmtRating, signed } from "@/lib/format";
 import { POSITIONS, positionLabel } from "@/lib/solo";
 import { currentGame } from "@/lib/games";
 import { getMember } from "@/lib/member";
-import { discordEnabled } from "@/lib/discord";
 import { siteSettings } from "@/lib/settings";
 import { DiscordJoin } from "@/components/DiscordJoin";
-import { Avatar, Empty, PlayerLink, StatusBadge } from "@/components/ui";
+import { Avatar, Empty, PlayerLink } from "@/components/ui";
 import { Form, RankMove, TierBadge, TierProgress } from "@/components/Tier";
 import { GameTabs } from "@/components/GameTabs";
 import { RankBadge } from "@/components/RankBadge";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import { SpecialSections } from "./SpecialSections";
+import { HomeCarousel } from "@/components/public/HomeCarousel";
+import { HomeTournamentCard } from "@/components/public/HomeTournaments";
 
-export const metadata = { title: "เล่นเก่งปากเก่ง · ตัวสำรองและอันดับ MMR แยก" };
+export const metadata = {
+  title: "เล่นเก่งปากเก่ง · ตัวสำรองและอันดับ MMR แยก",
+};
 
-const winRate = (p: { wins: number; series: number }) => (p.series ? Math.round((p.wins / p.series) * 100) : 0);
+const winRate = (p: { wins: number; series: number }) =>
+  p.series ? Math.round((p.wins / p.series) * 100) : 0;
+
 
 /** The special "เล่นเก่งปากเก่ง" events: their own MMR ladder and stats, and the always-open substitutes list. */
-export default async function SpecialPage({ searchParams }: { searchParams: Promise<{ game?: string; season?: string }> }) {
+export default async function SpecialPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ game?: string; season?: string }>;
+}) {
   const sp = await searchParams;
   const { discordInvite } = await siteSettings();
   const { games, game } = await currentGame(sp.game);
   // ?season=all shows every event; no season picked shows the season running now (if there is one).
-  const seasons = (await api<{ data: SpecialSeason[] }>(`/special/seasons${qs({ gameId: game?.id })}`, PUBLIC)).data;
-  const current = seasons.find((x) => new Date(x.startDate) <= new Date()) ?? null;
-  const seasonId = sp.season === "all" ? null : (seasons.find((x) => x.id === sp.season) ?? current)?.id ?? null;
+  const seasons = (
+    await api<{ data: SpecialSeason[] }>(
+      `/special/seasons${qs({ gameId: game?.id })}`,
+      PUBLIC,
+    )
+  ).data;
+  const current =
+    seasons.find((x) => new Date(x.startDate) <= new Date()) ?? null;
+  const seasonId =
+    sp.season === "all"
+      ? null
+      : ((seasons.find((x) => x.id === sp.season) ?? current)?.id ?? null);
   const [board, me, season, predicting] = await Promise.all([
     api<SpecialBoard>(`/special${qs({ gameId: game?.id, seasonId })}`, PUBLIC),
     getMember(),
-    seasonId ? api<SeasonView>(`/special/seasons/${encodeURIComponent(seasonId)}`, PUBLIC) : null,
-    api<{ data: PredictTournament[] }>("/predict/tournaments", PUBLIC).then((r) => r.data).catch(() => [] as PredictTournament[]),
+    seasonId
+      ? api<SeasonView>(
+          `/special/seasons/${encodeURIComponent(seasonId)}`,
+          PUBLIC,
+        )
+      : null,
+    api<{ data: PredictTournament[] }>("/predict/tournaments", PUBLIC)
+      .then((r) => r.data)
+      .catch(() => [] as PredictTournament[]),
   ]);
   // Special events open for picks right now (this season's, when one is picked): cheer buttons at the top.
-  const cheering = predicting.filter((t) => t.special && t.open > 0 && (!seasonId || t.season?.id === seasonId)).slice(0, 3);
-  const byPosition = POSITIONS.map((p) => ({ p, players: board.reserve.filter((r) => r.position === p) }));
+  const cheering = predicting
+    .filter(
+      (t) =>
+        t.special && t.open > 0 && board.events.some((event) => event.id === t.id) && (!seasonId || t.season?.id === seasonId),
+    )
+    .slice(0, 3);
+  const byPosition = POSITIONS.map((p) => ({
+    p,
+    players: board.reserve.filter((r) => r.position === p),
+  }));
   const noPosition = board.reserve.filter((r) => !r.position);
 
   return (
-    <>
+    <div className="public-page-flow">
       <LiveRefresh />
       <GameTabs games={games} active={game?.id ?? null} />
       {seasons.length > 0 && (
         <nav className="tabs filter-tabs season-tabs" aria-label="เลือกซีซั่น">
           {seasons.map((x) => (
-            <Link key={x.id} href={`/special?season=${x.id}`} className={`tab ${x.id === seasonId ? "tab-active" : ""}`} aria-current={x.id === seasonId ? "page" : undefined}>
-              {x.name}{x.id === current?.id ? " · ล่าสุด" : ""}
+            <Link
+              key={x.id}
+              href={`/special${qs({ game: game?.id, season: x.id })}`}
+              className={`tab ${x.id === seasonId ? "tab-active" : ""}`}
+              aria-current={x.id === seasonId ? "page" : undefined}
+            >
+              {x.name}
+              {x.id === current?.id ? " · ล่าสุด" : ""}
             </Link>
           ))}
-          <Link href="/special?season=all" className={`tab ${seasonId ? "" : "tab-active"}`} aria-current={seasonId ? undefined : "page"}>ทุกซีซั่น</Link>
+          <Link
+            href={`/special${qs({ game: game?.id, season: "all" })}`}
+            className={`tab ${seasonId ? "" : "tab-active"}`}
+            aria-current={seasonId ? undefined : "page"}
+          >
+            ทุกซีซั่น
+          </Link>
         </nav>
       )}
       <section className="ladder-hero special-hero">
         <div>
-          <span className="eyebrow">⭐ รายการพิเศษ</span>
-          <h1>เล่นเก่งปากเก่ง{board.season ? ` · ${board.season.name}` : ""}</h1>
+          <h1>
+            เล่นเก่งปากเก่ง{board.season ? ` · ${board.season.name}` : ""}
+          </h1>
           <p className="muted">
-            สถิติและ MMR ของรายการนี้แยกจาก <Link href="/rankings/players">Ranking หลัก</Link> ทุกคนเริ่มที่ {board.rules.start} MMR
-            {" "}ผลการแข่งรายการนี้ไม่ไปเพิ่มหรือลด MMR ของรายการหลัก
-            {board.season && <> · ซีซั่นนี้ {fmtDate(board.season.startDate)} – {board.season.endDate ? fmtDate(board.season.endDate) : "ไม่กำหนด"} ลงแข่งได้เฉพาะคนที่มีชื่อในซีซั่น MMR สะสมต่อจากซีซั่นก่อน</>}
+            สถิติและ MMR ของรายการนี้แยกจาก{" "}
+            <Link href="/rankings/players">Ranking หลัก</Link> ทุกคนเริ่มที่{" "}
+            {board.rules.start} MMR ผลการแข่งรายการนี้ไม่ไปเพิ่มหรือลด MMR
+            ของรายการหลัก
+            {board.season && (
+              <>
+                {" "}
+                · ซีซั่นนี้ {fmtDate(board.season.startDate)} –{" "}
+                {board.season.endDate
+                  ? fmtDate(board.season.endDate)
+                  : "ไม่กำหนด"}{" "}
+                ลงแข่งได้เฉพาะคนที่มีชื่อในซีซั่น MMR สะสมต่อจากซีซั่นก่อน
+              </>
+            )}
           </p>
           <div className="row special-cta">
             {me ? (
-              <Link href="/me#reserve" className="btn btn-primary">📝 ลงชื่อตัวสำรอง / แก้ข้อมูล</Link>
-            ) : discordEnabled() ? (
-              <a href="/api/auth/discord?next=/me" className="btn btn-primary">📝 ลงชื่อตัวสำรอง</a>
-            ) : null}
+              <Link href="/me#reserve" className="btn btn-primary">
+                ลงชื่อตัวสำรอง / แก้ข้อมูล
+              </Link>
+            ) : (
+              <Link href={`/login?next=${encodeURIComponent("/me#reserve")}`} className="btn btn-primary">
+                ลงชื่อตัวสำรอง
+              </Link>
+            )}
             <DiscordJoin href={discordInvite} />
-            <span className="muted small">{me ? "" : "เข้าสู่ระบบด้วย Discord แล้วกรอกฟอร์มได้เลย · "}หรือกดปุ่ม 📝 ในห้องลงชื่อของ Discord · เปิดรับตลอด ใช้ได้ทุกงาน</span>
+            <span className="muted small">
+              {me ? "" : "เข้าสู่ระบบด้วย Discord แล้วกรอกฟอร์มได้เลย · "}
+              หรือลงชื่อในห้องลงชื่อของ Discord · เปิดรับตลอด ใช้ได้ทุกงาน
+            </span>
           </div>
         </div>
         <div className="ladder-hero-stats">
-          {board.season ? <div><strong>{board.season.players}</strong><span>ผู้เล่นในซีซั่น</span></div> : <div><strong>{board.reserve.length}</strong><span>ตัวสำรอง</span></div>}
-          <div><strong>{board.ranked.length}</strong><span>ผู้เล่นติดอันดับ</span></div>
-          <div><strong>{board.events.length}</strong><span>งานที่จัด</span></div>
+          {board.season ? (
+            <div>
+              <strong>{board.season.players}</strong>
+              <span>ผู้เล่นในซีซั่น</span>
+            </div>
+          ) : (
+            <div>
+              <strong>{board.reserve.length}</strong>
+              <span>ตัวสำรอง</span>
+            </div>
+          )}
+          <div>
+            <strong>{board.ranked.length}</strong>
+            <span>ผู้เล่นติดอันดับ</span>
+          </div>
+          <div>
+            <strong>{board.events.length}</strong>
+            <span>รายการแข่งขัน</span>
+          </div>
         </div>
       </section>
 
-      <nav className="row small special-jump" aria-label="ไปที่หัวข้อ">
-        <a href="#ladder" className="badge">อันดับ MMR</a>
-        <a href="#stats" className="badge">สถิติผู้เล่น</a>
-        {season && <a href="#season" className="badge">รายชื่อซีซั่น</a>}
-        <a href="#reserve" className="badge">ตัวสำรอง</a>
-        <a href="#events" className="badge">งานที่จัด</a>
-        <Link href={`/special/story${seasonId ? `?season=${seasonId}` : ""}`} className="badge badge-accent">📖 ต้นเรื่อง</Link>
-      </nav>
-
-      {cheering.map((t) => (
-        <CheerSection key={t.id} tournamentId={t.id} next={`/special${seasonId ? `?season=${seasonId}` : ""}#cheer`} title={`🔮 เชียร์ทีมไหน · ${t.name}`} />
-      ))}
-
-      <section id="ladder" className="mt">
-        <h2>อันดับ MMR เล่นเก่งปากเก่ง{board.season ? ` · ${board.season.name}` : ""}</h2>
+      <SpecialSections
+        storyHref={`/special/story${qs({ season: seasonId })}`}
+        events={<section id="events" className="special-events">
+        <div className="special-section-head">
+          <div><h2>รายการแข่งขัน{board.season ? ` · ${board.season.name}` : ""}</h2><p className="muted small">เลือกรายการเพื่อดูรายละเอียดและผลการแข่งขัน</p></div>
+          <span className="muted small">{board.events.length} รายการ</span>
+        </div>
+        {board.events.length === 0 ? <Empty>ยังไม่มีรายการแข่งขัน</Empty> : (
+          <div className="special-home-cards">
+            <HomeCarousel label="รายการแข่งขันเล่นเก่ง ปากเก่ง">
+              {[...board.events].sort((a, b) => {
+                const order = (status: string) => status === "ONGOING" ? 0 : status === "UPCOMING" ? 1 : 2;
+                const group = order(a.status) - order(b.status);
+                return group || (a.status === "COMPLETED" ? Date.parse(b.startDate) - Date.parse(a.startDate) : Date.parse(a.startDate) - Date.parse(b.startDate));
+              }).map((event) => <HomeTournamentCard key={event.id} tournament={event} />)}
+            </HomeCarousel>
+          </div>
+        )}
+      </section>}
+        ladder={<section id="ladder" className="mt">
+        <h2>
+          อันดับ MMR เล่นเก่งปากเก่ง
+          {board.season ? ` · ${board.season.name}` : ""}
+        </h2>
         {board.ranked.length === 0 ? (
-          <Empty>ยังไม่มีผู้เล่นติดอันดับ ต้องลงแข่งรายการพิเศษอย่างน้อย {board.rules.placementSeries} แมตช์ถึงจะขึ้นตาราง</Empty>
+          <Empty>
+            ยังไม่มีผู้เล่นติดอันดับ ต้องลงแข่งรายการพิเศษอย่างน้อย{" "}
+            {board.rules.placementSeries} แมตช์ถึงจะขึ้นตาราง
+          </Empty>
         ) : (
           <div className="table-wrap ladder-table">
             <table>
@@ -119,15 +217,41 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
                         <RankMove change={p.rankChange} isNew={p.series > 0} />
                       </div>
                     </td>
-                    <td><PlayerLink player={p} /></td>
-                    <td><TierBadge tier={p.tier} /></td>
+                    <td>
+                      <PlayerLink player={p} />
+                    </td>
+                    <td>
+                      <TierBadge tier={p.tier} />
+                    </td>
                     <td className="num">
                       <strong className="mmr-num">{p.mmr}</strong>
-                      <TierProgress tier={p.tier} progress={p.tierProgress} toNext={p.toNextTier} compact />
+                      <TierProgress
+                        tier={p.tier}
+                        progress={p.tierProgress}
+                        toNext={p.toNextTier}
+                        compact
+                      />
                     </td>
-                    <td className="hide-sm"><Form results={p.form} /></td>
-                    <td className="num hide-sm">{p.wins}-{p.losses} <span className="muted small">({winRate(p)}%)</span></td>
-                    <td className="num hide-sm">{p.lastDelta === null ? "-" : <span className={p.lastDelta >= 0 ? "delta-up" : "delta-down"}>{signed(p.lastDelta)}</span>}</td>
+                    <td className="hide-sm">
+                      <Form results={p.form} />
+                    </td>
+                    <td className="num hide-sm">
+                      {p.wins}-{p.losses}{" "}
+                      <span className="muted small">({winRate(p)}%)</span>
+                    </td>
+                    <td className="num hide-sm">
+                      {p.lastDelta === null ? (
+                        "-"
+                      ) : (
+                        <span
+                          className={
+                            p.lastDelta >= 0 ? "delta-up" : "delta-down"
+                          }
+                        >
+                          {signed(p.lastDelta)}
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -136,13 +260,20 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
         )}
         {board.placing.length > 0 && (
           <p className="muted small">
-            กำลังจัดอันดับ: {board.placing.map((p) => `${p.nickname || p.name} (อีก ${p.seriesToPlace} แมตช์)`).join(", ")}
+            กำลังจัดอันดับ:{" "}
+            {board.placing
+              .map(
+                (p) => `${p.nickname || p.name} (อีก ${p.seriesToPlace} แมตช์)`,
+              )
+              .join(", ")}
           </p>
         )}
-      </section>
-
-      <section id="stats" className="mt">
-        <h2>สถิติผู้เล่น เล่นเก่งปากเก่ง{board.season ? ` · ${board.season.name}` : ""}</h2>
+      </section>}
+        stats={<section id="stats" className="mt">
+        <h2>
+          สถิติผู้เล่น เล่นเก่งปากเก่ง
+          {board.season ? ` · ${board.season.name}` : ""}
+        </h2>
         {board.stats.length === 0 ? (
           <Empty>ยังไม่มีผลการแข่งรายการพิเศษ</Empty>
         ) : (
@@ -166,14 +297,22 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
                 {board.stats.map((p) => (
                   <tr key={p.id}>
                     <td>{p.rank}</td>
-                    <td><PlayerLink player={p} /></td>
-                    <td className="num"><strong>{p.stats.pts}</strong></td>
+                    <td>
+                      <PlayerLink player={p} />
+                    </td>
+                    <td className="num">
+                      <strong>{p.stats.pts}</strong>
+                    </td>
                     <td className="num">{p.stats.ppg}</td>
                     <td className="num hide-sm">{p.stats.games}</td>
-                    <td className="num hide-sm">{p.stats.wins}-{p.stats.losses}</td>
+                    <td className="num hide-sm">
+                      {p.stats.wins}-{p.stats.losses}
+                    </td>
                     <td className="num hide-sm">{p.stats.reb}</td>
                     <td className="num hide-sm">{p.stats.ast}</td>
-                    <td className="num hide-sm">{fmtRating(p.stats.avgRating)}</td>
+                    <td className="num hide-sm">
+                      {fmtRating(p.stats.avgRating)}
+                    </td>
                     <td className="num">{p.stats.mvp}</td>
                   </tr>
                 ))}
@@ -181,11 +320,73 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
             </table>
           </div>
         )}
-      </section>
-
-      {season && (
-        <section id="season" className="mt">
-          <h2>รายชื่อผู้เล่น {season.name} ({season.players.length} คน)</h2>
+      </section>}
+        reserve={<section id="reserve" className="mt">
+        <h2>ตัวสำรอง ({board.reserve.length} คน)</h2>
+        {board.reserve.length === 0 ? (
+          <Empty>ยังไม่มีใครลงชื่อ</Empty>
+        ) : (
+          <div className="grid grid-2 reserve-grid">
+            {[
+              ...byPosition,
+              ...(noPosition.length ? [{ p: null, players: noPosition }] : []),
+            ].map(({ p, players }) => (
+              <div key={p ?? "none"} className="card">
+                <h3 style={{ marginTop: 0 }}>
+                  {p ? positionLabel[p] : "ยังไม่ระบุตำแหน่ง"}{" "}
+                  <span className="muted small">{players.length} คน</span>
+                </h3>
+                {players.length === 0 ? (
+                  <p className="muted small" style={{ margin: 0 }}>
+                    ยังไม่มี
+                  </p>
+                ) : (
+                  <ul className="reserve-list">
+                    {players.map((r) => (
+                      <li key={r.id}>
+                        <Link
+                          href={`/players/${r.player.id}`}
+                          className="entity"
+                        >
+                          <Avatar
+                            src={r.player.avatarUrl}
+                            name={r.player.name}
+                          />
+                          <span>
+                            <strong>
+                              {r.player.nickname || r.player.name}
+                            </strong>
+                            <span className="muted small">
+                              {" "}
+                              · UID {r.player.uid ?? "-"}
+                            </span>
+                          </span>
+                        </Link>
+                        <span className="reserve-meta">
+                          {r.rank ? (
+                            <RankBadge rank={r.rank} ranks={board.ranks} />
+                          ) : (
+                            <span className="muted small">
+                              ยังไม่เลือกแรงค์
+                            </span>
+                          )}
+                          <span className="muted small">
+                            {r.player.specialMmr} MMR
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>}
+        season={season ? (<section id="season" className="mt">
+          <h2>
+            รายชื่อผู้เล่น {season.name} ({season.players.length} คน)
+          </h2>
           {season.players.length === 0 ? (
             <Empty>ผู้จัดยังไม่ได้ใส่รายชื่อ</Empty>
           ) : (
@@ -203,64 +404,10 @@ export default async function SpecialPage({ searchParams }: { searchParams: Prom
               ))}
             </ul>
           )}
-        </section>
-      )}
+        </section>) : null}
+        cheer={cheering.length ? (<section id="cheer" className="special-cheer-panel"><h2>ทำนายผลรายการพิเศษ</h2><p className="muted small">เลือกรายการและทีมที่ต้องการทายผล</p>{cheering.map((t) => <CheerSection key={t.id} tournamentId={t.id} anchor={`cheer-${t.id}`} next={`/special${seasonId ? `?season=${seasonId}` : ""}#cheer`} title={`เชียร์ทีมไหน · ${t.name}`} />)}</section>) : null}
+      />
 
-      <section id="reserve" className="mt">
-        <h2>ตัวสำรอง ({board.reserve.length} คน)</h2>
-        {board.reserve.length === 0 ? (
-          <Empty>ยังไม่มีใครลงชื่อ</Empty>
-        ) : (
-          <div className="grid grid-2 reserve-grid">
-            {[...byPosition, ...(noPosition.length ? [{ p: null, players: noPosition }] : [])].map(({ p, players }) => (
-              <div key={p ?? "none"} className="card">
-                <h3 style={{ marginTop: 0 }}>{p ? positionLabel[p] : "ยังไม่ระบุตำแหน่ง"} <span className="muted small">{players.length} คน</span></h3>
-                {players.length === 0 ? (
-                  <p className="muted small" style={{ margin: 0 }}>ยังไม่มี</p>
-                ) : (
-                  <ul className="reserve-list">
-                    {players.map((r) => (
-                      <li key={r.id}>
-                        <Link href={`/players/${r.player.id}`} className="entity">
-                          <Avatar src={r.player.avatarUrl} name={r.player.name} />
-                          <span>
-                            <strong>{r.player.nickname || r.player.name}</strong>
-                            <span className="muted small"> · UID {r.player.uid ?? "-"}</span>
-                          </span>
-                        </Link>
-                        <span className="reserve-meta">
-                          {r.rank ? <RankBadge rank={r.rank} ranks={board.ranks} /> : <span className="muted small">ยังไม่เลือกแรงค์</span>}
-                          <span className="muted small">{r.player.specialMmr} MMR</span>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section id="events" className="mt">
-        <h2>งานที่จัดแล้ว{board.season ? ` · ${board.season.name}` : ""}</h2>
-        {board.events.length === 0 ? (
-          <Empty>ยังไม่มีรายการพิเศษ ผู้จัดติ๊ก &quot;รายการพิเศษ เล่นเก่งปากเก่ง&quot; ตอนสร้างทัวร์ (หรือ /tour create special:True)</Empty>
-        ) : (
-          <div className="stack">
-            {board.events.map((e) => (
-              <Link key={e.id} href={`/tournaments/${e.id}`} className="card row between">
-                <span>
-                  <strong>{e.name}</strong>
-                  <span className="muted small"> · {fmtDate(e.startDate)} · {e.matches} แมตช์</span>
-                </span>
-                <StatusBadge status={e.status} />
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
-
-    </>
+    </div>
   );
 }

@@ -1,3 +1,4 @@
+import { DirectoryTabs } from "@/components/DirectoryTabs";
 import { api, qs } from "@/lib/api";
 import type { Page, Player, Team } from "@/lib/types";
 import { Empty, Pager, PlayerLink, TeamLink, pageOffset } from "@/components/ui";
@@ -15,7 +16,8 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
     api<Page<Team>>("/teams?limit=200"),
   ]);
   return (
-    <>
+    <div className="public-page-flow">
+      <DirectoryTabs active="players" />
       <div className="page-head"><h1>ผู้เล่นทั้งหมด</h1><span className="muted">{page.total} คน</span></div>
       <div className="filters">
         <form className="row grow" role="search">
@@ -45,6 +47,6 @@ export default async function PlayersPage({ searchParams }: { searchParams: Prom
         </div>
       )}
       <Pager total={page.total} limit={LIMIT} offset={offset} params={sp} path="/players" />
-    </>
+    </div>
   );
 }

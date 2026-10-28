@@ -21,7 +21,7 @@ export function MarketLock({ tournamentId, market }: { tournamentId: string; mar
         disabled={pending}
         onClick={() => start(async () => setState(await setMarketOpen(tournamentId, market.id, !open)))}
       >
-        {open ? "🔒 ปิดรับทาย" : "🔓 เปิดรับทาย"}
+        {open ? " ปิดรับทาย" : " เปิดรับทาย"}
       </button>
       {state?.error && <span className="error small">{state.error}</span>}
     </div>
@@ -37,13 +37,13 @@ export function LockAll({ tournamentId, markets }: { tournamentId: string; marke
   if (!anyOpen && !anyClosed) return null;
   return (
     <div className="card row between predict-lock-all">
-      <span className="small">👑 แอดมิน · คนทั่วไปไม่เห็นแถบนี้</span>
+      <span className="small"> แอดมิน · คนทั่วไปไม่เห็นแถบนี้</span>
       <div className="row">
         <button type="button" className="btn btn-sm btn-danger" disabled={pending || !anyOpen} onClick={() => start(async () => setState(await setAllMarketsOpen(tournamentId, false)))}>
-          🔒 ปิดรับทายทั้งหมด
+           ปิดรับทายทั้งหมด
         </button>
         <button type="button" className="btn btn-sm" disabled={pending || !anyClosed} onClick={() => start(async () => setState(await setAllMarketsOpen(tournamentId, true)))}>
-          🔓 เปิดทั้งหมด
+           เปิดทั้งหมด
         </button>
       </div>
       {state?.ok && <span className="success small">{state.ok}</span>}

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { fetchAll } from "@/lib/fetchAll";
 import type { Team } from "@/lib/types";
 import { Avatar, Empty, Pager, pageOffset } from "@/components/ui";

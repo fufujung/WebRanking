@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { fetchAll } from "@/lib/fetchAll";
 import type { Status, Tournament } from "@/lib/types";
 import { fmtDate, formatLabel, statusLabel } from "@/lib/format";

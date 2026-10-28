@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { api, qs } from "@/lib/api";
 import { STAT_KEYS, type Page, type Player, type PlayerStats, type Team } from "@/lib/types";
 import { fmtRating, statLabels } from "@/lib/format";
@@ -34,11 +34,11 @@ export default async function PlayerRankings({ searchParams }: { searchParams: P
     api<Page<Row>>(`/rankings/players${qs({ sort, teamId: sp.teamId, gameId: game?.id, minGames: 1, limit: 200 })}`),
     api<Page<Team>>(`/teams${qs({ limit: 200, gameId: game?.id })}`),
   ]);
-  const link = (s: string) => `/rankings/stats${qs({ sort: s, teamId: sp.teamId })}`;
+  const link = (s: string) => `/rankings/stats${qs({ sort: s, teamId: sp.teamId, game: game?.id })}`;
   return (
-    <>
+    <div className="public-page-flow">
       <LiveRefresh />
-      <RankingTabs active="stats" />
+      <RankingTabs active="stats" game={game?.id} teamId={sp.teamId} />
       <GameTabs games={games} active={game?.id ?? null} />
       <div className="page-head">
         <div>
@@ -85,6 +85,6 @@ export default async function PlayerRankings({ searchParams }: { searchParams: P
           </table>
         </div>
       )}
-    </>
+    </div>
   );
 }

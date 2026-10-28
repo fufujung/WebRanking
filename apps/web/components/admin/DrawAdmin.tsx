@@ -6,6 +6,7 @@ import { addDrawNames, closeDraw, createDraw, deleteDraw, drawNow, openDraw, rem
 import { DRAW_STATE, fmtDateTime } from "@/lib/format";
 import type { DrawEntry, LuckyDraw, LuckyDrawDetail } from "@/lib/types";
 import { useFormAction } from "./useFormAction";
+import { LogoMark } from "@/components/public/LogoMark";
 
 const SOURCE: Record<DrawEntry["source"], string> = { YOUTUBE: "▶ YouTube", DISCORD: "💬 Discord", MANUAL: "✍ เพิ่มเอง" };
 
@@ -149,7 +150,7 @@ export function DrawControls({ draw }: { draw: LuckyDrawDetail }) {
 
       {draw.winnerList.length > 0 && (
         <div className="stack" style={{ gap: 8 }}>
-          <strong>🏆 ผู้โชคดี</strong>
+          <strong><LogoMark /> ผู้โชคดี</strong>
           {draw.winnerList.map((w) => (
             <div key={w.id} className={`draw-winner${w.voided ? " draw-voided" : ""}`} data-winner={w.place}>
               <span className="draw-place">#{w.place}</span>
@@ -242,7 +243,7 @@ export function DrawOverlay({ draw }: { draw: LuckyDraw }) {
     <section className="card stack">
       <h3 style={{ margin: 0 }}>📺 Overlay สุ่มรางวัลบนไลฟ์ (vMix / OBS)</h3>
       <p className="muted small" style={{ margin: 0 }}>
-        ใน vMix: Add Input → Web Browser วางลิงก์นี้ ขนาด 1920×1080 พื้นหลังโปร่งใส ตอนเปิดรับจะโชว์คำที่ต้องพิมพ์ จำนวนคน และเวลาที่เหลือ พอกดสุ่มจะหมุนรายชื่อแล้วโชว์ผู้โชคดี
+        ใน vMix: Add Input · Web Browser วางลิงก์นี้ ขนาด 1920×1080 พื้นหลังโปร่งใส ตอนเปิดรับจะโชว์คำที่ต้องพิมพ์ จำนวนคน และเวลาที่เหลือ พอกดสุ่มจะหมุนรายชื่อแล้วโชว์ผู้โชคดี
         {" "}ใช้ <code>/overlay/draw</code> (ไม่ใส่ ?d=) เพื่อโชว์รอบล่าสุดเองทุกครั้ง
       </p>
       <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label="ลิงก์ overlay" />

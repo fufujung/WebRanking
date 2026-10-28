@@ -1,6 +1,7 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useLoadingRouter as useRouter } from "@/components/NavigationLoading";
 import { TeamPicker, type PickerTeam } from "./TeamPicker";
 
 /** Team dropdown that filters the current page through the ?teamId= query parameter. */

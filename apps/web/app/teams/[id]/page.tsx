@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { DirectoryTabs } from "@/components/DirectoryTabs";
+import Link from "@/components/LoadingLink";
 import { notFound } from "next/navigation";
 import { apiOrNull } from "@/lib/api";
 import type { TeamDetail } from "@/lib/types";
@@ -13,6 +14,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
   const s = team.stats;
   return (
     <>
+      <DirectoryTabs active="teams" />
       <div className="page-head">
         <div className="row">
           <Avatar src={team.logoUrl} name={team.tag || team.name} size="lg" />
@@ -51,7 +53,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
             <tbody>
               {team.players.map((p) => (
                 <tr key={p.id}>
-                  <td><PlayerLink player={p} />{p.id === team.captainId && <span className="captain-chip" title="หัวหน้าทีม"> 👑 หัวหน้า</span>}</td>
+                  <td><PlayerLink player={p} />{p.id === team.captainId && <span className="captain-chip" title="หัวหน้าทีม">  หัวหน้า</span>}</td>
                   <td>{p.stats.games ? <TierBadge tier={p.tier} size={20} /> : <span className="muted">-</span>}</td>
                   <td className="num"><strong>{p.stats.games ? p.mmr : "-"}</strong></td>
                   <td className="muted">{positionText(p.role) ?? "-"}</td>

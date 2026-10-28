@@ -4,6 +4,7 @@ import type { AdminDashboard } from "@/lib/types";
 import { AdminNav } from "@/components/admin/AdminNav";
 import { Icon } from "@/components/admin/Icons";
 import { logout } from "../actions";
+import { LogoMark } from "@/components/public/LogoMark";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   await requireAdmin();
@@ -14,7 +15,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="admin-shell">
       <aside className="side">
         <div className="side-brand">
-          <span className="brand-mark">🏆</span>
+          <span className="brand-mark"><LogoMark size={32} /></span>
           <div>
             <strong>The Ranking</strong>
             <span>หลังบ้านผู้จัด</span>

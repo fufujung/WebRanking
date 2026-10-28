@@ -3,9 +3,15 @@ import { createApp } from "./app.js";
 import { recomputeRatings } from "./lib/elo.js";
 import { backfillPlayerUids, backfillPositions } from "./lib/players.js";
 import { backfillGames } from "./lib/games.js";
+import { backfillPlayerRanks } from "./lib/playerRegistration.js";
 import { startDrawPoller } from "./lib/draws.js";
 import { tuneDatabase } from "./lib/db.js";
 import { runStartup } from "./lib/lifecycle.js";
+
+if (!process.env.DATABASE_URL?.trim()) {
+  console.error("API configuration error: DATABASE_URL is missing. Set it in apps/api/.env or the process environment before starting the API. See apps/api/.env.example.");
+  process.exit(1);
+}
 
 const port = Number(process.env.PORT ?? 4000);
 createApp().listen(port, () => {
@@ -20,6 +26,7 @@ void runStartup(async () => {
   await backfillPositions();
   const n = await backfillPlayerUids();
   if (n) console.log(`Linked ${n} player(s) to the UID from their tournament roster`);
+  await backfillPlayerRanks();
   await recomputeRatings();
 });
 

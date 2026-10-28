@@ -20,7 +20,7 @@ export function AddGameForm() {
     >
       <label className="grow">
         เพิ่มเกม
-        <input name="name" required maxLength={100} placeholder="เช่น Basketball 3v3" />
+        <input name="name" required maxLength={100} placeholder="เช่น Kuroko's Basketball: Street Rivals" />
       </label>
       <button className="btn btn-primary" disabled={pending}>{pending ? "กำลังเพิ่ม…" : "+ เพิ่มเกม"}</button>
       {state?.error && <div className="error">{state.error}</div>}

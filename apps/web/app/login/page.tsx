@@ -1,5 +1,6 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { Brand } from "@/components/public/Brand";
 import { DiscordMark } from "@/components/DiscordMark";
 import { VerificationButton } from "@/components/public/VerificationButton";
@@ -9,7 +10,7 @@ import { membershipConfigured } from "@/lib/discordMembership";
 import { getPendingDiscord } from "@/lib/discordPending";
 import { getMember } from "@/lib/member";
 import { siteSettings } from "@/lib/settings";
-import { switchDiscordAccount, verifyDiscordMembership } from "./actions";
+import { switchDiscordAccount, verifyDiscordMembership, testLogin } from "./actions";
 
 export const metadata = {
   title: "เข้าสู่ระบบด้วย Discord",
@@ -33,6 +34,7 @@ export default async function LoginPage({
     verified?: string;
     next?: string;
     membership?: string;
+    test?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -43,8 +45,12 @@ export default async function LoginPage({
   ]);
   const next = safeNext(sp.next) ? sp.next : "/me";
   const success = Boolean(member && sp.verified === "1");
-  if (member && !success) redirect(next === "/login" ? "/me" : next);
-  const enabled = discordEnabled() && membershipConfigured();
+  const enabled = discordEnabled();
+  const host = (await headers()).get("host") ?? "";
+  const testEnabled = process.env.NODE_ENV === "development" && process.env.TEST_LOGIN_ENABLED === "1" && /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
+  const testRequested = testEnabled && sp.test === "client";
+  if (member && !success && !testRequested) redirect(next === "/login" ? "/me" : next);
+  const requiresMembership = membershipConfigured();
   const verificationError =
     pending && (sp.error === "verification" || sp.error === "config");
   return (
@@ -62,18 +68,27 @@ export default async function LoginPage({
           ×
         </Link>
       </div>
-      {success && member ? (
+      {testRequested ? (
+        <>
+          <h1 id="auth-title">บัญชีทดสอบ Client</h1>
+          <p className="muted">เข้าสู่ระบบในมุมมองผู้เล่นทั่วไปบนเครื่องนี้ โดยออกจากระบบแอดมินในเบราว์เซอร์นี้</p>
+          <form action={testLogin}>
+            <input type="hidden" name="next" value={next} />
+            <button type="submit" className="btn tr-auth-button">เข้าสู่ระบบบัญชีทดสอบ Client</button>
+          </form>
+        </>
+      ) : success && member ? (
         <>
           <div className="tr-auth-success">
             <span aria-hidden="true">✓</span>
             <h1 id="auth-title">พร้อมเข้าสู่ The Ranking</h1>
-            <p>ยืนยันบัญชีและสมาชิก Discord เรียบร้อย</p>
+            <p>{requiresMembership ? "ยืนยันบัญชีและสมาชิก Discord เรียบร้อย" : "เข้าสู่ระบบด้วย Discord เรียบร้อย"}</p>
           </div>
           <div className="tr-auth-account">
             <Avatar src={member.avatar} name={member.name} round />
             <div>
               <strong>{member.name}</strong>
-              <small>สมาชิก Overtime · เชื่อมต่อด้วย Discord</small>
+              <small>{requiresMembership ? "สมาชิก Overtime · เชื่อมต่อด้วย Discord" : "เชื่อมต่อด้วย Discord"}</small>
             </div>
           </div>
           <Link
@@ -149,11 +164,11 @@ export default async function LoginPage({
           <h1 id="auth-title">เข้าสู่ระบบด้วย Discord</h1>
           <p className="muted">ใช้บัญชี Discord เพื่อเข้าสู่ The Ranking</p>
           <p className="muted">ไม่ต้องสร้างบัญชีหรือจำรหัสผ่านเพิ่ม</p>
-          <div className="tr-auth-requirement">
+          {requiresMembership && <div className="tr-auth-requirement">
             <strong>สำหรับสมาชิก Discord ของ Overtime</strong>
             <p>คุณต้องอยู่ในเซิร์ฟเวอร์ก่อนเข้าใช้งานบัญชี</p>
             <p>หากยังไม่ได้เข้าร่วม เราจะพาไปในขั้นตอนถัดไป</p>
-          </div>
+          </div>}
           {sp.error && (
             <p className="error" role="alert">
               {errors[sp.error] ?? errors.discord}
@@ -176,6 +191,11 @@ export default async function LoginPage({
               </p>
             </>
           )}
+          {testEnabled && <form action={testLogin}>
+            <input type="hidden" name="next" value={next} />
+            <button type="submit" className="btn tr-auth-button">เข้าสู่ระบบบัญชีทดสอบ Client</button>
+            <p className="tr-auth-hint">บัญชีผู้เล่นสำหรับทดสอบบนเครื่องนี้ การเข้าสู่ระบบจะออกจากแอดมิน</p>
+          </form>}
           <p className="tr-auth-hint">
             เราจะใช้ชื่อและรูปโปรไฟล์ Discord ของคุณ
           </p>

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { notFound } from "next/navigation";
 import { apiOrNull } from "@/lib/api";
 import type { TeamDetail } from "@/lib/types";
@@ -31,7 +31,7 @@ export default async function EditTeam({ params }: { params: Promise<{ id: strin
       <div className="stack" style={{ gap: 8 }}>
         {team.players.map((p) => (
           <Link key={p.id} href={`/admin/players/${p.id}`} className="card card-link row between" style={{ padding: 12 }}>
-            <span>{p.name}{p.id === team.captainId && " 👑"}</span><span className="muted small">แก้ไข →</span>
+            <span>{p.name}{p.id === team.captainId && " 👑"}</span><span className="muted small">แก้ไข</span>
           </Link>
         ))}
       </div>

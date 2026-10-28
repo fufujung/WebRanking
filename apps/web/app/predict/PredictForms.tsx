@@ -11,7 +11,7 @@ export function DailyButton({ amount, claimed }: { amount: number; claimed: bool
   return (
     <div className="predict-daily">
       <button type="button" className="btn btn-primary" disabled={pending || claimed || Boolean(state?.ok)} onClick={() => start(async () => setState(await claimDaily()))}>
-        {claimed || state?.ok ? "✓ รับเหรียญวันนี้แล้ว" : pending ? "กำลังรับ…" : `🪙 รับ ${amount} เหรียญวันนี้`}
+        {claimed || state?.ok ? "รับเหรียญวันนี้แล้ว" : pending ? "กำลังรับ…" : `รับ ${amount} เหรียญวันนี้`}
       </button>
       {state?.ok && <span className="success small">{state.ok}</span>}
       {state?.error && <span className="error small">{state.error}</span>}

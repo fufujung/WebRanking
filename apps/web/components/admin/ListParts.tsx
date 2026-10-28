@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 
 /** Title row of an admin list: name, a short line under it and the main button. */
 export function ListHead({ title, sub, action }: { title: string; sub: string; action?: { href: string; label: string } }) {

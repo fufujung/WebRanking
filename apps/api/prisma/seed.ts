@@ -88,7 +88,7 @@ for (const def of teamDefs) {
 
 const day = 86_400_000;
 const now = Date.now();
-const game = "Basketball 3v3";
+const game = "Kuroko's Basketball: Street Rivals";
 const cup = await prisma.tournament.create({
   data: { name: "Bangkok Masters 2026", game, location: "Discord", status: "COMPLETED", startDate: new Date(now - 40 * day), endDate: new Date(now - 38 * day) },
 });

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { fetchAll } from "@/lib/fetchAll";
 import type { LinkRequest, Player } from "@/lib/types";
 import { api } from "@/lib/api";

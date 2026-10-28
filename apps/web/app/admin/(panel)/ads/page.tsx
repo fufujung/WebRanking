@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { api } from "@/lib/api";
 import { adStatus, placementLabel } from "@/lib/ads";
 import { fmtThaiTime } from "@/lib/format";

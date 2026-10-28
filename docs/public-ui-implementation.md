@@ -1,5 +1,7 @@
 # Approved public UI implementation
 
+Follow-up: [navigation and tournament workflow](tournament-ui-workflow.md), with the [route coverage inventory](route-coverage.md).
+
 Implemented from [TR / New edit](https://www.figma.com/design/UADyUvdhR8AgxeurDdm5cu?node-id=32-551) and the approved [Discord authentication flow](https://www.figma.com/design/UADyUvdhR8AgxeurDdm5cu?node-id=35-338), 26 October 2026. Figma MCP extraction was quota-limited, so the implementation uses the original authored design sources and the verified exports from that same file.
 
 ## Delivered scope
@@ -7,7 +9,7 @@ Implemented from [TR / New edit](https://www.figma.com/design/UADyUvdhR8AgxeurDd
 - Shared navigation, footer, IBM Plex Sans Thai and Barlow Condensed fonts, neutral surfaces and red action color.
 - Shared navbar stays sticky at the top and its menu scrolls horizontally on narrow screens. Menu links use the existing routes and update the URL; the active destination is highlighted. Additional public destinations remain available in the footer.
 - Responsive homepage: original Kagami artwork, search, discovery links, API-backed totals, team ranking with real win/loss counts, recent results and upcoming tournaments.
-- Game selection opens the corresponding ranking board; season selection opens the existing special-season board. Neither pretends to filter the all-time homepage statistics. No seasons means the control is disabled.
+- Game selection filters homepage tournaments and recent results; season selection opens the existing special-season board. No seasons means the control is disabled.
 - `/login`: Discord sign-in, required membership, recheck/loading/error, verified member, and account switching. `/me` remains the existing member profile and redirects guests to `/login`.
 - Existing public routes, admin tools, ads and theme preference remain available. Other detail pages inherit shared typography/colors; this change does not replace their domain-specific layouts.
 

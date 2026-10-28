@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { api, qs } from "@/lib/api";
 import type { SpecialSeason, Story } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
@@ -28,9 +28,8 @@ export default async function StoryPage({ searchParams }: { searchParams: Promis
     <>
       <div className="page-head">
         <div>
-          <span className="eyebrow">⭐ เล่นเก่งปากเก่ง</span>
-          <h1>📖 ต้นเรื่อง</h1>
-          <p className="muted">ที่มาของแต่ละรายการ เรียงตามลำดับโพสต์ กดอ่านต่อใน Facebook · <Link href="/special">กลับหน้าเล่นเก่งปากเก่ง</Link></p>
+          <h1>ต้นเรื่อง</h1>
+          <p className="muted">ที่มาของแต่ละรายการ เรียงตามลำดับโพสต์ กดอ่านต่อใน Facebook · <Link href={`/special${qs({ season: sp.season })}`}>กลับหน้าเล่นเก่งปากเก่ง</Link></p>
         </div>
       </div>
       {seasons.length > 0 && (
@@ -44,7 +43,7 @@ export default async function StoryPage({ searchParams }: { searchParams: Promis
       {seasonStories.map((x) => (
         <section key={x.id} className="mt card stack">
           <div className="row between">
-            <h2 style={{ margin: 0 }}><Link href={`/special?season=${x.id}`}>📅 {x.name}</Link></h2>
+            <h2 style={{ margin: 0 }}><Link href={`/special?season=${x.id}`}>{x.name}</Link></h2>
             <span className="muted small">ต้นเรื่องของทั้งซีซั่น</span>
           </div>
           <StoryList stories={x.stories} />

@@ -607,10 +607,14 @@ export function refundTournament(tournamentId: string) {
  * Tournaments to predict: the ones being signed up for or played (with at least two teams), and the ones
  * that ended in the last two weeks with picks to look back on. Open markets are counted for each.
  */
-export async function predictionTournaments(now = new Date()) {
+export async function predictionTournaments(now = new Date(), filters: { search?: string; id?: string } = {}) {
+  const eligible = await prisma.tournamentEntry.groupBy({ by: ["tournamentId"], having: { teamId: { _count: { gte: 2 } } } });
   const recent = new Date(now.getTime() - 14 * 86400_000);
   const list = await prisma.tournament.findMany({
     where: {
+      id: filters.id ?? { in: eligible.map((entry) => entry.tournamentId) },
+      ...(filters.id ? { entries: { some: {} } } : {}),
+      ...(filters.search ? { name: { contains: filters.search } } : {}),
       AND: [
         // Events without a bracket show up once the organizer sets up a pair to predict.
         { OR: [{ format: { not: null } }, { markets: { some: { kind: "CUSTOM" } } }] },

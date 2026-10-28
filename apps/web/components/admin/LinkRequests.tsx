@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { useState, useTransition } from "react";
 import { approveLink, denyLink, type FormState } from "@/app/admin/actions";
 import { fmtDateTime } from "@/lib/format";

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { api, PUBLIC, qs } from "@/lib/api";
 import type { Movement, Page, Team, TeamStats } from "@/lib/types";
 import { signed } from "@/lib/format";
@@ -8,6 +8,7 @@ import { RankingTabs } from "@/components/RankingTabs";
 import { GameTabs } from "@/components/GameTabs";
 import { currentGame } from "@/lib/games";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import { LogoMark } from "@/components/public/LogoMark";
 
 export const metadata = { title: "Ranking ทีม" };
 
@@ -23,9 +24,10 @@ export default async function TeamRankings({ searchParams }: { searchParams: Pro
   const podium = q ? [] : rows.filter((t) => t.stats.matches > 0).slice(0, 3);
   const rest = rows.filter((t) => !podium.includes(t));
   return (
-    <>
+    <div className="public-page-flow">
       <LiveRefresh />
-      <RankingTabs active="teams" />
+      <div className="team-ranking-heading">
+      <RankingTabs active="teams" game={game?.id} />
       <GameTabs games={games} active={game?.id ?? null} />
       <div className="page-head">
         <div>
@@ -33,11 +35,13 @@ export default async function TeamRankings({ searchParams }: { searchParams: Pro
           <p className="muted small" style={{ margin: 0 }}>เรียงตาม MMR ทีม (เริ่มที่ 1000) คำนวณใหม่จากผลการแข่งทุกนัด ▲▼ คืออันดับที่ขยับใน 7 วันล่าสุด</p>
         </div>
         <div className="tabs">
-          <Link className={`tab ${min === 0 ? "tab-active" : ""}`} href="/rankings">ทุกทีม</Link>
-          <Link className={`tab ${min === 1 ? "tab-active" : ""}`} href="/rankings?min=1">เฉพาะทีมที่ลงแข่งแล้ว</Link>
+          <Link className={`tab ${min === 0 ? "tab-active" : ""}`} href={`/rankings${qs({ game: game?.id, q: sp.q })}`}>ทุกทีม</Link>
+          <Link className={`tab ${min === 1 ? "tab-active" : ""}`} href={`/rankings${qs({ min: 1, game: game?.id, q: sp.q })}`}>เฉพาะทีมที่ลงแข่งแล้ว</Link>
         </div>
       </div>
+      </div>
       <form className="filters" role="search">
+        {game && <input type="hidden" name="game" value={game.id} />}
         {min === 1 && <input type="hidden" name="min" value="1" />}
         <input className="grow" name="q" defaultValue={sp.q} placeholder="ค้นหาทีมในตาราง" aria-label="ค้นหาทีม" />
         <button className="btn btn-primary" type="submit" style={{ minWidth: 0 }}>ค้นหา</button>
@@ -50,13 +54,13 @@ export default async function TeamRankings({ searchParams }: { searchParams: Pro
             <div className="podium">
               {[podium[1], podium[0], podium[2]].filter(Boolean).map((t) => (
                 <Link key={t.id} href={`/teams/${t.id}`} className={`podium-card podium-${t.rank}`} style={{ ["--tier" as string]: t.tier.color }}>
-                  <span className="podium-rank">{t.rank === 1 ? "👑" : `#${t.rank}`}</span>
+                  <span className="podium-rank">{`#${t.rank}`}</span>
                   <div className="podium-avatar">
                     <Avatar src={t.logoUrl} name={t.tag || t.name} size="lg" />
                     <span className="podium-emblem"><TierEmblem tier={t.tier} size={t.rank === 1 ? 52 : 44} /></span>
                   </div>
                   <strong className="podium-name">{t.name}</strong>
-                  <span className="muted small podium-team">{t.stats.wins}-{t.stats.losses} · ชนะ {t.stats.winRate}%{t.stats.titles ? ` · 🏆 ${t.stats.titles}` : ""}</span>
+                  <span className="muted small podium-team">{t.stats.wins}-{t.stats.losses} · ชนะ {t.stats.winRate}%{t.stats.titles ? <> · <LogoMark size={16} /> {t.stats.titles}</> : ""}</span>
                   <span className="podium-mmr">{t.rating}<small>MMR</small></span>
                   <span className="podium-tier">{t.tier.name}</span>
                   <div className="row podium-meta">
@@ -97,7 +101,7 @@ export default async function TeamRankings({ searchParams }: { searchParams: Pro
                       <td className="num">{t.stats.wins}-{t.stats.losses}-{t.stats.draws}</td>
                       <td className="num hide-sm">{t.stats.winRate}%</td>
                       <td className="num hide-sm">{t.lastDelta === null ? "-" : <span className={t.lastDelta >= 0 ? "delta-up" : "delta-down"}>{signed(t.lastDelta)}</span>}</td>
-                      <td className="num">{t.stats.titles ? `🏆 ${t.stats.titles}` : "-"}</td>
+                      <td className="num">{t.stats.titles ? <><LogoMark size={16} /> {t.stats.titles}</> : "-"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -106,6 +110,6 @@ export default async function TeamRankings({ searchParams }: { searchParams: Pro
           )}
         </>
       )}
-    </>
+    </div>
   );
 }

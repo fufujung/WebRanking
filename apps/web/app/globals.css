@@ -101,6 +101,8 @@ main.container { padding-top: 24px; padding-bottom: 64px; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; white-space: nowrap; color: var(--on-black); }
 .brand:hover { color: var(--on-black); }
 .brand-mark { width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 17px; }
+.tr-inline-logo { display: inline-block; vertical-align: -0.2em; object-fit: contain; flex: none; }
+.side-brand .brand-mark { background: transparent; }
 .nav { display: flex; gap: 0; flex-wrap: wrap; flex: 1; }
 .nav a { padding: 6px 9px; border-radius: 8px; color: var(--on-black-muted); font-weight: 500; font-size: 15px; }
 .nav a:hover { color: var(--on-black); background: var(--nav-hover); }
@@ -194,6 +196,7 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-w
 }
 .btn:hover { border-color: var(--text); color: var(--text); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn.tournament-join-closed:disabled { cursor: default; }
 .btn-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-ink); }
 .btn-danger { background: transparent; color: var(--loss); border-color: var(--danger-border); }
@@ -361,10 +364,13 @@ h4 { font-size: 15px; font-weight: 700; }
 .seed-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
 
 /* Ranking pages: tabs, ladder hero, podium, tiers */
-.ranking-tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px; background: var(--bg-soft); border: 1px solid var(--border); margin-bottom: 20px; max-width: 100%; overflow-x: auto; }
-.ranking-tabs a { padding: 7px 16px; border-radius: 999px; font-weight: 600; font-size: 14px; color: var(--muted); white-space: nowrap; }
-.ranking-tabs a:hover { color: var(--text); }
-.ranking-tabs a.active { background: var(--accent); color: var(--accent-ink); }
+.ranking-tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--card); border: 1px solid var(--border); margin-bottom: 20px; max-width: 100%; overflow-x: auto; }
+.ranking-tabs a { position: relative; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 14px; color: var(--muted); white-space: nowrap; transition: color 150ms ease, background-color 150ms ease; }
+.ranking-tabs a:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, var(--card)); }
+.ranking-tabs a.active { background: color-mix(in srgb, var(--text) 9%, var(--card)); color: var(--text); }
+.ranking-tabs a.active::after { content: ""; position: absolute; bottom: 2px; left: 18px; right: 18px; height: 2px; border-radius: 2px; background: var(--accent); }
+.ranking-tabs a:focus-visible { outline: 2px solid var(--muted); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) { .ranking-tabs a { transition: none; } }
 .ladder-hero { position: relative; overflow: hidden; display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; padding: 28px; margin-bottom: 20px; border-radius: 18px; border: 1px solid var(--border); color: var(--on-black);
   background: radial-gradient(circle at 85% -20%, rgba(217, 18, 31, 0.55), transparent 55%), radial-gradient(circle at 0% 120%, rgba(217, 18, 31, 0.25), transparent 50%), var(--hero-bg); }
 .ladder-hero h1 { font-size: 34px; color: var(--on-black); margin-bottom: 6px; }
@@ -723,10 +729,13 @@ h4 { font-size: 15px; font-weight: 700; }
 .ad-thumb { width: 72px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); flex: none; }
 
 /* Game picker on ranking pages */
-.game-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -8px 0 18px; }
-.game-tab { font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; }
-.game-tab:hover { border-color: var(--accent); }
-.game-tab-on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.game-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -8px 0 18px; }
+.game-tabs > span { margin-right: 4px; font-weight: 600; }
+.game-tab { position: relative; max-width: 100%; font: inherit; font-size: 14px; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--muted); cursor: pointer; text-align: left; overflow-wrap: anywhere; transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease; }
+.game-tab:hover { color: var(--text); border-color: var(--muted); background: color-mix(in srgb, var(--text) 5%, var(--card)); }
+.game-tab-on, .game-tab-on:hover { background: color-mix(in srgb, var(--text) 9%, var(--card)); border-color: var(--border); color: var(--text); font-weight: 600; }
+.game-tab:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .game-tab { transition: none; } }
 
 /* My profile: rank per game and team */
 .me-rank { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 10px; background: var(--bg-soft); border: 1px solid var(--border); }
@@ -848,11 +857,11 @@ h4 { font-size: 15px; font-weight: 700; }
 .season-roster .entity { min-width: 0; }
 /* Predictions (ทายผล) */
 .predict-daily { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
-.market-grid { align-items: start; }
-.market-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.market-grid { align-items: start; gap: 24px; }
+.market-card { display: flex; flex-direction: column; gap: 20px; min-width: 0; padding: 24px; }
 .market-card h3 { margin: 0; font-size: 16px; }
-.market-open { border-color: var(--accent); }
-.market-options { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.market-open { border-color: var(--border); }
+.market-options { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
 .market-options li { min-width: 0; }
 .market-options .entity { min-width: 0; overflow: hidden; }
 .market-options .entity strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -867,11 +876,13 @@ h4 { font-size: 15px; font-weight: 700; }
 .market-game { display: grid; gap: 8px; padding: 10px; margin-top: 8px; border-radius: 10px; background: var(--bg-soft); }
 .market-game .market-bar { background: var(--bg); }
 .market-game .market-mine { background: var(--bg); }
-.pick-form { gap: 10px; }
-.pick-teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pick-form { gap: 16px; }
+.pick-teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .pick-team { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pick-team input { accent-color: var(--accent); margin: 0; }
-.pick-team-on { border-color: var(--accent); background: var(--accent-soft); }
+.pick-team:hover { border-color: var(--muted); background: color-mix(in srgb, var(--text) 8%, var(--card)); }
+.pick-team:focus-within { outline: 2px solid var(--muted); outline-offset: 2px; }
+.pick-team-on, .pick-team-on:hover { border-color: var(--muted); background: color-mix(in srgb, var(--text) 8%, var(--card)); }
 .pick-amount { align-items: flex-end; flex-wrap: wrap; }
 .pick-amount .grow { flex: 1 1 120px; }
 .predict-rules ul { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 6px; }
@@ -880,7 +891,7 @@ h4 { font-size: 15px; font-weight: 700; }
 .reward-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
 .reward-code { font-size: 15px; font-weight: 700; letter-spacing: 1px; padding: 4px 10px; border-radius: 8px; background: var(--bg-soft); border: 1px dashed var(--accent); user-select: all; word-break: break-all; }
 .watch-toast { position: fixed; right: 16px; bottom: 16px; z-index: 50; padding: 10px 14px; border-radius: 12px; background: var(--card); border: 1px solid var(--accent); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); font-weight: 600; max-width: calc(100vw - 32px); }
-@media (max-width: 480px) { .pick-teams { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) { .pick-teams { grid-template-columns: minmax(0, 1fr); } .market-card { padding: 18px; } }
 /* Organizers pick players from the substitutes or season list */
 .pick-filter { align-items: end; }
 .pick-list { display: grid; gap: 6px; max-height: 420px; overflow-y: auto; padding: 2px; }

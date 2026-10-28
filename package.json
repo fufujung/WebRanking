@@ -17,7 +17,8 @@
     "test": "npm test -w apps/api && npm test -w apps/bot && npm test -w apps/web && npm run test:deploy",
     "test:deploy": "node --test deploy/deploy.test.mjs",
     "typecheck": "npm run typecheck -w apps/api && npm run typecheck -w apps/web && npm run typecheck -w apps/bot",
-    "test:e2e": "node e2e/run.mjs"
+    "test:e2e": "node e2e/run.mjs",
+    "test:e2e:registration": "node e2e/registration.mjs"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",

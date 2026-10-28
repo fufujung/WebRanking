@@ -65,6 +65,7 @@ model Player {
   nickname       String?
   country        String?
   role           String?
+  inGameRank     String? // registration rank, distinct from MMR and leaderboard position
   avatarUrl      String?
   teamId         String?
   uid            String? // in-game UID; one player per UID + server

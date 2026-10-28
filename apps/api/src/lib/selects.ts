@@ -11,7 +11,7 @@ export const playerSummary = {
 export const matchInclude = {
   teamA: teamSummary,
   teamB: teamSummary,
-  tournament: { select: { id: true, name: true } },
+  tournament: { select: { id: true, name: true, special: true } },
 } as const;
 
 export const matchOrder = [{ playedAt: "desc" as const }, { createdAt: "desc" as const }];

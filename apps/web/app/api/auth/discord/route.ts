@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { callbackUrl, discord, discordEnabled, safeNext } from "@/lib/discord";
 
 import {
-  membershipConfigured,
   PENDING_DISCORD_COOKIE,
 } from "@/lib/discordMembership";
 
@@ -14,8 +13,6 @@ const NEXT = "tr_oauth_next";
 export async function GET(req: Request) {
   if (!discordEnabled())
     return NextResponse.redirect(new URL("/login?error=off", req.url));
-  if (!membershipConfigured())
-    return NextResponse.redirect(new URL("/login?error=config", req.url));
   const state = randomBytes(16).toString("hex");
   const url = new URL(discord.authorizeUrl());
   url.search = new URLSearchParams({

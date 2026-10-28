@@ -1,14 +1,16 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { usePathname } from "next/navigation";
 
 const links = [
   ["/", "หน้าหลัก"],
   ["/rankings", "อันดับ"],
+  ["/special", "เล่นเก่ง ปากเก่ง"],
   ["/tournaments", "ทัวร์นาเมนต์"],
   ["/teams", "ทีมและผู้เล่น"],
   ["/matches", "ผลการแข่งขัน"],
+  ["/predict", "ทำนายผล"],
 ] as const;
 
 /** Shared route navigation; the strip scrolls horizontally on narrow screens. */
@@ -26,7 +28,7 @@ export function PublicNavigation() {
               href === "/"
                 ? path === "/"
                 : path.startsWith(href) ||
-                  (href === "/teams" && path.startsWith("/players"))
+                  (href === "/teams" && (path.startsWith("/players") || path.startsWith("/guilds")))
             )
               ? "page"
               : undefined

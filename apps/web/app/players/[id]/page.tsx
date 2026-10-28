@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { DirectoryTabs } from "@/components/DirectoryTabs";
+import Link from "@/components/LoadingLink";
 import { notFound } from "next/navigation";
 import { api, apiOrNull } from "@/lib/api";
 import { STAT_KEYS, type PlayerDetail, type Tier } from "@/lib/types";
@@ -18,6 +19,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
   const form = [...p.mmrHistory].reverse().slice(0, 5).map((h) => h.result);
   return (
     <>
+      <DirectoryTabs active="players" />
       <div className="page-head">
         <div className="row">
           <Avatar src={p.avatarUrl} name={p.name} size="lg" round />
@@ -41,7 +43,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
         <div className="stack" style={{ gap: 6, alignItems: "flex-end" }}>
           {p.team ? <TeamLink team={p.team} /> : <span className="muted">ไม่มีทีม</span>}
           {p.guild && (
-            <Link href={`/guilds/${p.guild.id}`} className="chip guild-chip" title="กิลด์">🛡 {p.guild.name}{p.guild.tag ? ` [${p.guild.tag}]` : ""}</Link>
+            <Link href={`/guilds/${p.guild.id}`} className="chip guild-chip" title="กิลด์"> {p.guild.name}{p.guild.tag ? ` [${p.guild.tag}]` : ""}</Link>
           )}
           {p.blacklist?.active && <Link href="/blacklist" className="blacklist-chip" title="ดูรายชื่อ Blacklist">⛔ ติด Blacklist</Link>}
         </div>
@@ -96,14 +98,14 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
         <Link href="/special" className="card special-card" style={{ ["--tier" as string]: p.special.tier.color }}>
           <TierEmblem tier={p.special.tier} size={48} />
           <div className="grow">
-            <strong>⭐ เล่นเก่งปากเก่ง</strong> <span className="muted small">MMR แยกจากรายการหลัก</span>
+            <strong> เล่นเก่งปากเก่ง</strong> <span className="muted small">MMR แยกจากรายการหลัก</span>
             <div className="special-card-facts small">
               <span><strong>{p.special.mmr}</strong> MMR</span>
               <span>{p.special.rank ? `อันดับ #${p.special.rank} จาก ${p.special.rankedPlayers} คน` : "กำลังจัดอันดับ"}</span>
               <span>{p.special.series} แมตช์ · แต้มรวม {p.special.stats.pts} · MVP {p.special.stats.mvp}</span>
             </div>
           </div>
-          <span className="muted small">ดูอันดับ →</span>
+          <span className="muted small">ดูอันดับ</span>
         </Link>
       )}
 
@@ -111,7 +113,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
         <section className="card" style={{ marginBottom: 16 }}>
           <div className="row between">
             <h2 style={{ margin: 0 }}>MMR ตามเวลา</h2>
-            <Link href="/rankings/players" className="small muted">ดู Ranking ทั้งหมด →</Link>
+            <Link href="/rankings/players" className="small muted">ดู Ranking ทั้งหมด</Link>
           </div>
           <MmrChart
             tiers={tiers.data}

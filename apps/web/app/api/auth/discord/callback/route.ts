@@ -27,7 +27,6 @@ export async function GET(req: Request) {
   const next = jar.get("tr_oauth_next")?.value;
   jar.delete("tr_oauth_next");
   if (!discordEnabled()) return back("?error=off");
-  if (!membershipConfigured()) return back("?error=config");
   // Pressed "Cancel" on Discord's page.
   if (url.searchParams.get("error")) return back("?error=cancelled");
   const code = url.searchParams.get("code");
@@ -35,12 +34,18 @@ export async function GET(req: Request) {
     return back("?error=state");
   try {
     const user = await discordUser(code, callbackUrl(req));
-    const guildId = process.env.DISCORD_REQUIRED_GUILD_ID!.trim();
     const member = {
       id: user.id,
       name: user.global_name || user.username,
       avatar: avatarUrl(user),
     };
+    // Temporary compatibility with installations that only have the original OAuth settings.
+    if (!membershipConfigured()) {
+      await startMemberSession(member);
+      jar.delete(PENDING_DISCORD_COOKIE);
+      return back(`?verified=1${safeNext(next) ? `&next=${encodeURIComponent(next)}` : ""}`);
+    }
+    const guildId = process.env.DISCORD_REQUIRED_GUILD_ID!.trim();
     await setPendingDiscord({
       ...member,
       guildId,

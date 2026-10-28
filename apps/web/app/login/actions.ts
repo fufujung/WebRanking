@@ -1,5 +1,5 @@
 "use server";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { discord, safeNext } from "@/lib/discord";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@/lib/discordMembership";
 import { getPendingDiscord } from "@/lib/discordPending";
 import { endMemberSession, startMemberSession } from "@/lib/member";
+import { endSession } from "@/lib/auth";
 
 export async function verifyDiscordMembership(): Promise<void> {
   const pending = await getPendingDiscord();
@@ -39,4 +40,14 @@ export async function switchDiscordAccount(): Promise<void> {
   (await cookies()).delete(PENDING_DISCORD_COOKIE);
   await endMemberSession();
   redirect("/login");
+}
+
+/** Explicit opt-in and localhost only; never creates a production session. */
+export async function testLogin(form: FormData): Promise<void> {
+  const host = (await headers()).get("host") ?? "";
+  if (process.env.NODE_ENV !== "development" || process.env.TEST_LOGIN_ENABLED !== "1" || !/^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host)) throw new Error("Test login unavailable");
+  const next = form.get("next");
+  await endSession();
+  await startMemberSession({ id: "00000000000000000000", name: "บัญชีทดสอบ Client", avatar: null }, process.env.DISCORD_REQUIRED_GUILD_ID?.trim(), true);
+  redirect(typeof next === "string" && safeNext(next) && next !== "/login" ? next : "/me");
 }

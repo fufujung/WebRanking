@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { placeBet, type PredictState } from "@/app/predict/actions";
 import type { Market } from "@/lib/types";
 import { fmtThaiTime } from "@/lib/format";
+import { LogoMark } from "@/components/public/LogoMark";
 
 const STAGE: Record<string, string> = { L: "สายล่าง", GF: "ชิงชนะเลิศ", P3: "ชิงที่ 3" };
 const CHIPS = [10, 50, 100];
@@ -24,11 +25,11 @@ export function CheerCard({ market: m, coins }: { market: Market; coins: number 
       setState(r);
       if (r?.ok) setPicked(teamId);
     });
-  const title = m.kind === "CHAMPION" ? "🏆 ใครจะเป็นแชมป์" : m.kind === "CUSTOM" ? `🎯 ${m.title}` : `คู่ที่ ${m.number ?? m.key}${m.stage && STAGE[m.stage] ? ` · ${STAGE[m.stage]}` : ""}`;
+  const title = m.kind === "CHAMPION" ? "ใครจะเป็นแชมป์" : m.kind === "CUSTOM" ? m.title : `คู่ที่ ${m.number ?? m.key}${m.stage && STAGE[m.stage] ? ` · ${STAGE[m.stage]}` : ""}`;
   return (
     <article className="card cheer-card">
       <header className="row between">
-        <strong>{title}</strong>
+        <strong>{m.kind === "CHAMPION" && <><LogoMark /> </>}{title}</strong>
         {m.locksAt && <span className="badge badge-accent">ถึง {fmtThaiTime(m.locksAt)}</span>}
       </header>
       <div className={`cheer-teams ${m.options.length > 2 ? "cheer-many" : ""}`}>
@@ -45,7 +46,7 @@ export function CheerCard({ market: m, coins }: { market: Market; coins: number 
             >
               <span className="cheer-fill" style={{ width: `${o.percent}%` }} aria-hidden />
               <span className="cheer-label">
-                <span className="cheer-name">{picked === o.team.id ? "✓ " : "📣 "}{o.team.name}</span>
+                <span className="cheer-name">{picked === o.team.id ? "เลือกแล้ว · " : ""}{o.team.name}</span>
                 <span className="small">{o.percent}% · {o.people} คน{ratio ? ` · x${ratio.toFixed(ratio >= 10 ? 1 : 2)}` : ""}</span>
               </span>
             </button>
@@ -65,7 +66,7 @@ export function CheerCard({ market: m, coins }: { market: Market; coins: number 
       )}
       {coins !== null && spendable < 1 && <p className="muted small" style={{ margin: 0 }}>เหรียญหมด รับเหรียญประจำวันก่อนนะ</p>}
       {m.mine && !state && <p className="small market-mine" style={{ margin: 0 }}>คุณเชียร์ <strong>{m.options.find((o) => o.team.id === m.mine!.teamId)?.team.name}</strong> {m.mine.amount} เหรียญ · กดทีมอีกครั้งเพื่อเปลี่ยน</p>}
-      {state?.ok && <p className="success small" style={{ margin: 0 }}>📣 เชียร์แล้ว {amount} เหรียญ · {state.ok.replace("ทายแล้ว ", "")}</p>}
+      {state?.ok && <p className="success small" style={{ margin: 0 }}>เชียร์แล้ว {amount} เหรียญ · {state.ok.replace("ทายแล้ว ", "")}</p>}
       {state?.error && <p className="error small" style={{ margin: 0 }}>{state.error}</p>}
     </article>
   );

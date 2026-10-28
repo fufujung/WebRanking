@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { api, qs } from "@/lib/api";
 import { currentGame } from "@/lib/games";
 import type { SpecialSeason } from "@/lib/types";

@@ -19,7 +19,7 @@ function useSubmit(action: (s: MeState, f: FormData) => Promise<MeState>) {
 export function ClaimForm({ first, games }: { first: boolean; games: Game[] }) {
   const [state, onSubmit, pending] = useSubmit(claimPlayer);
   return (
-    <form onSubmit={onSubmit} className="form card claim-form">
+    <form id="claim-profile" onSubmit={onSubmit} className="form card claim-form">
       <div>
         <h2 style={{ margin: 0 }}>{first ? "ผูกโปรไฟล์ผู้เล่นของคุณ" : "ผูกตัวละครอื่นเพิ่ม"}</h2>
         <p className="muted small" style={{ margin: 0 }}>
@@ -113,7 +113,7 @@ export function ReserveForm({
   return (
     <form onSubmit={onSubmit} className="form card" id={anchor ? "reserve" : undefined} data-game={game?.id ?? ""} style={{ marginBottom: 24 }}>
       <div>
-        <h2 style={{ margin: 0 }}>⭐ ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง{game ? <span className="muted"> · {game.name}</span> : null}</h2>
+        <h2 style={{ margin: 0 }}> ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง{game ? <span className="muted"> · {game.name}</span> : null}</h2>
         <p className="muted small" style={{ margin: 0 }}>
           เปิดรับตลอด ใช้ได้ทุกงาน ผู้จัดจะสุ่มคนจากรายชื่อนี้ไปช่วยแข่ง สถิติและ MMR ของรายการนี้แยกจากรายการหลัก
           Facebook และเบอร์โทรเห็นเฉพาะผู้จัด

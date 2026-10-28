@@ -89,6 +89,7 @@ const discordMock = http.createServer(async (req, res) => {
 });
 await new Promise((r) => discordMock.listen(Number(process.env.DISCORD_MOCK_PORT ?? 4999), r));
 const uniq = Date.now().toString().slice(-5);
+const DEFAULT_GAME = "Kuroko's Basketball: Street Rivals";
 
 console.log("— Public pages");
 const paths = ["/", "/guilds", "/special", "/blacklist", "/rankings", "/rankings?min=1", "/rankings/players", "/rankings/players?sort=ppg", "/rankings/stats", "/teams", "/players", "/tournaments", "/tournaments?status=ONGOING", "/matches", "/search?q=tiger", "/search", LOGIN];
@@ -100,11 +101,22 @@ for (const p of paths) {
 }
 await page.goto(base + "/");
 if (await page.locator('footer a[href$="/docs"]').count()) throw new Error("visitors see the API docs link");
-await page.locator("h2:has-text('อันดับทีม')").waitFor();
+for (const href of ["/predict", "/special", "/blacklist"]) {
+  if (!(await page.locator(`footer a[href='${href}']`).count())) throw new Error(`missing secondary destination ${href}`);
+}
+await page.goto(base + "/teams");
+for (const [label, destination] of [["ผู้เล่น", "/players"], ["กิลด์", "/guilds"], ["ทีม", "/teams"]]) {
+  const directory = page.getByRole("navigation", { name: "ทีม ผู้เล่น และกิลด์" });
+  await directory.getByRole("link", { name: label, exact: true }).click();
+  await page.waitForURL(base + destination);
+  await directory.locator(`a[href='${destination}'][aria-current='page']`).waitFor();
+}
+await page.goto(base + "/");
+await page.locator("h2:has-text('ผลการแข่งขันล่าสุด')").waitFor();
 await page.screenshot({ path: OUT + "/home.png", fullPage: true });
 // follow a team, player, tournament, match link
 for (const sel of ['a[href^="/teams/"]', 'a[href^="/tournaments/"]', 'a[href^="/matches/"]']) {
-  await page.goto(base + "/");
+  await page.goto(base + (sel.includes("/teams/") ? "/teams" : "/"));
   await page.locator(sel).first().click();
   await page.waitForLoadState("networkidle");
   console.log("detail", page.url(), "→", await page.locator("h1").first().textContent().catch(() => "(no h1)"));
@@ -129,16 +141,15 @@ await page.waitForLoadState("networkidle");
 console.log("filtered rows:", await page.locator("tbody tr").count(), page.url());
 await page.screenshot({ path: OUT + "/players-filter.png", fullPage: true });
 
-// The header search opens from its icon on desktop and mobile.
-await page.locator('header button[aria-controls="header-search"]').click();
-await page.locator(".tr-search-backdrop").waitFor();
+// Header search stays visible; Escape only dismisses its suggestions.
+await page.locator(".header-search input").focus();
+await page.locator(".header-search input").waitFor({ state: "visible" });
 await page.waitForFunction(() => document.activeElement === document.querySelector(".header-search input"));
 await page.keyboard.press("Escape");
-await page.locator(".tr-search-backdrop").waitFor({ state: "detached" });
-await page.locator('header button[aria-controls="header-search"]').click();
+await page.locator(".header-search input").waitFor({ state: "visible" });
 // header search with button
 await page.locator('header input[name="q"]').fill("Ace");
-await page.locator("header button", { hasText: "ค้นหา" }).click();
+await page.locator("header .header-search-submit").click();
 await page.waitForURL(/search\?q=Ace/);
 console.log("search results text:", (await page.locator("main").textContent()).slice(0, 120));
 
@@ -146,6 +157,7 @@ await page.goto(base + "/teams/does-not-exist");
 console.log("404 page:", await page.locator("h1").first().textContent());
 
 await page.setViewportSize({ width: 390, height: 844 });
+await page.evaluate(() => { document.activeElement?.blur(); window.scrollTo(0, 0); });
 await page.goto(base + "/rankings");
 await page.screenshot({ path: OUT + "/mobile-rankings.png", fullPage: true });
 const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
@@ -160,8 +172,7 @@ await page.locator('.tr-nav a[href="/tournaments"]').click();
 await page.waitForURL(base + "/tournaments");
 await page.locator('.tr-nav a[href="/tournaments"][aria-current="page"]').waitFor();
 await page.goto(base + "/rankings");
-await page.locator('header button[aria-controls="header-search"]').click();
-if (!(await page.locator(".header-search input").isVisible())) throw new Error("search box did not open on a phone");
+if (!(await page.locator(".header-search input").isVisible())) throw new Error("search box is not visible on a phone");
 for (const href of ["/", "/teams", "/matches", "/special", "/blacklist", "/predict"]) {
   await page.goto(base + href);
   if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error(`${href} is wider than a phone screen`);
@@ -171,6 +182,7 @@ step("phone: sticky navbar scrolls horizontally and follows routes; search and p
 // Dark is the default; the toggle switches to light and the choice survives a reload.
 const bodyBg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 if ((await bodyBg()) !== "rgb(9, 11, 15)") throw new Error("dark theme is not the default");
+if (await page.locator("footer .theme-toggle").count()) {
 await page.locator("footer .theme-toggle").click();
 await page.reload();
 if ((await bodyBg()) !== "rgb(247, 248, 250)") throw new Error("light theme not kept after reload");
@@ -178,12 +190,16 @@ await page.locator("footer .theme-toggle").click();
 await page.reload();
 if ((await bodyBg()) !== "rgb(9, 11, 15)") throw new Error("could not switch back to dark");
 step("theme toggle: dark by default, light kept after reload, back to dark");
+} else {
+  step("dark theme default verified; theme switch is hidden in the current UI");
+}
+
 
 
 console.log("— Admin flows");
 await page.setViewportSize({ width: 1280, height: 900 });
 // Logged-out protection
-if (await page.locator('.tr-footer-more a[href="/admin"]').count()) throw new Error("public menu shows the admin link to visitors");
+if (await page.locator('footer a[href="/admin"]').count()) throw new Error("public menu shows the admin link to visitors");
 if (ADMIN_PATH) {
   // Without the secret address the back office looks like it does not exist.
   for (const p of ["/admin", "/admin/login", "/admin/teams", "/admin-wrong-guess"]) {
@@ -207,7 +223,7 @@ step("wrong password rejected: " + (await page.textContent(".error")));
 await page.fill('input[name="password"]', PASSWORD);
 await page.click("button:has-text('เข้าสู่ระบบ')");
 await page.waitForURL(base + "/admin");
-if (!(await page.locator('.tr-footer-more a[href="/admin"]').count())) throw new Error("admin link missing from the menu after login");
+if (!(await page.locator('footer a[href="/admin"]').count())) throw new Error("admin link missing from the menu after login");
 if (!(await page.locator('footer a[href$="/docs"]').count())) throw new Error("API docs link missing for the organizer");
 step("logged in; the API docs link shows only to organizers");
 
@@ -432,7 +448,7 @@ if (!(await page.locator(".placing-grid").textContent()).includes(`P01-${uniq}`)
 step("MMR ladder shows the podium, 7 tiers and players still placing");
 
 // UID keeps a player across a rename; a UID can't be given to two players; duplicates can be merged
-const WEB_KEY = fromEnvFile("API_KEY");
+const WEB_KEY = process.env.API_KEY ?? fromEnvFile("API_KEY");
 const findPlayer = async (name) => (await (await fetch(`${API}/api/v1/players?search=${encodeURIComponent(name)}`, { headers: { "X-API-Key": WEB_KEY } })).json()).data[0];
 const p01 = await findPlayer(`P01-${uniq}`);
 await page.goto(`${base}/admin/players/${p01.id}`);
@@ -655,7 +671,8 @@ for (const [i, name] of cupTeams.entries()) {
   await page.locator("h2", { hasText: `ทีมที่ลงแข่ง (${i + 1})` }).waitFor();
 }
 step("bracket cup created with 3 teams");
-await page.click('[data-topic="bracket"]');
+await page.getByRole("region", { name: "ขั้นตอนจัดการแข่งขัน" }).locator('a[href="#bracket"]').click();
+await page.locator('[data-topic="bracket"][aria-pressed="true"]').waitFor();
 
 await page.click("button:has-text('จัดเอง (แมนนวล)')");
 // Pair 1: Thunder Hawks vs Night Owls; pair 2: Siam Dragons gets the bye.
@@ -667,6 +684,11 @@ const draft = await page.locator(".bk-canvas").first().textContent();
 if (!draft.includes("บาย") || !draft.includes("Night Owls")) throw new Error("draft bracket should show the manual pairs and a bye: " + draft);
 await page.screenshot({ path: OUT + "/bracket-draft.png", fullPage: true });
 step("manual draw previewed before confirming");
+const spectator = await ctx.newPage();
+await spectator.goto(cupUrl.replace("/admin/tournaments/", "/tournaments/"));
+await spectator.locator("#overview").waitFor();
+if (await spectator.locator(".bk-canvas").count()) throw new Error("draft bracket leaked onto the public page");
+await spectator.close();
 
 await page.click("button:has-text('ยืนยันสายและเริ่มแข่ง')");
 await page.locator("button.bm.bm-READY").first().waitFor();
@@ -697,10 +719,20 @@ await page.fill('input[placeholder^="เหตุผล"]', "Thunder Hawks ม�
 await page.click("button:has-text('ให้ Siam Dragons ชนะ')");
 await page.locator(".success", { hasText: "ตัดสินแล้ว" }).waitFor();
 await page.goto(cupUrl.replace("/admin/tournaments/", "/tournaments/"));
+await page.locator("#overview").waitFor();
 const publicCup = await page.locator("main").textContent();
 if (!publicCup.includes("สายการแข่งขัน") || !publicCup.includes("ชนะบาย")) throw new Error("public bracket missing: " + publicCup.slice(0, 300));
 if (!(await page.locator(".card", { hasText: "แชมป์" }).textContent()).includes("Siam Dragons")) throw new Error("champion not shown");
 await page.screenshot({ path: OUT + "/bracket-public.png", fullPage: true });
+for (const id of ["overview", "teams", "bracket", "results"]) {
+  await page.locator(`.tournament-sections a[href='#${id}']`).click();
+  await page.locator(`#${id}`).waitFor();
+}
+await page.setViewportSize({ width: 390, height: 844 });
+await page.evaluate(() => { document.activeElement?.blur(); window.scrollTo(0, 0); });
+await page.screenshot({ path: OUT + "/tournament-mobile.png", fullPage: true });
+if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)) throw new Error("tournament page overflows on mobile");
+await page.setViewportSize({ width: 1280, height: 900 });
 step("final decided by the organizer; public page shows the bracket and the champion");
 
 // Thunder Hawks never checked in for the final: every player of the team is on the blacklist, 20 MMR each
@@ -850,13 +882,13 @@ step("ad switched off from the list disappears from the site; ads deleted");
 // Games: MMR and rankings are per game; organizers manage the list.
 console.log("— Games");
 await page.goto(base + "/admin/games");
-await page.locator("tr:has-text('Basketball 3v3')").waitFor();
+await page.locator("tr", { hasText: DEFAULT_GAME }).waitFor();
 const newGame = `E2E Game ${uniq}`;
 await page.fill('.game-add input[name="name"]', newGame);
 await page.click(".game-add button");
 await page.locator(`.game-add .success:has-text('${newGame}')`).waitFor();
 await page.locator(`tr:has-text('${newGame}')`).waitFor();
-await page.fill('.game-add input[name="name"]', "basketball 3V3");
+await page.fill('.game-add input[name="name"]', DEFAULT_GAME.toLowerCase());
 await page.click(".game-add button");
 await page.locator(".game-add .error:has-text('มีเกม')").waitFor();
 const gameRow = page.locator(`tr:has-text('${newGame}')`);
@@ -866,7 +898,7 @@ const editing = page.locator("tbody tr:has(input[name='name'])");
 await editing.locator('input[name="name"]').fill(`${newGame} R`);
 await editing.locator("button:has-text('บันทึก')").click();
 await page.locator(`tr strong:has-text('${newGame} R')`).waitFor();
-if (await page.locator("tr:has-text('Basketball 3v3') button:has-text('ลบ')").isEnabled()) throw new Error("a game in use can be deleted");
+if (await page.locator("tr", { hasText: DEFAULT_GAME }).locator("button:has-text('ลบ')").isEnabled()) throw new Error("a game in use can be deleted");
 step("game added, duplicate name refused, renamed; a game in use can't be deleted");
 
 // Two games: the rankings get a game picker that is remembered.
@@ -874,13 +906,20 @@ await page.goto(base + "/rankings/players");
 await page.locator(".game-tabs").waitFor();
 await page.locator(".game-tab", { hasText: `${newGame} R` }).click();
 await page.locator(`h1:has-text('${newGame} R')`).waitFor();
+const selectedGame = await page.locator('.ranking-tabs a[href^="/rankings?"]').getAttribute("href");
+if (!selectedGame?.includes("game=")) throw new Error("ranking tabs lost the selected game");
+await page.locator('.ranking-tabs a[href^="/rankings?"]').click();
+await page.locator(`h1:has-text('${newGame} R')`).waitFor();
+await page.locator('form.filters input[name="q"]').fill("filter-preservation");
+await page.locator('form.filters button[type="submit"]').click();
+await page.waitForURL(/game=.*q=|q=.*game=/);
 await page.goto(base + "/rankings");
 await page.locator(`h1:has-text('${newGame} R')`).waitFor();
 await page.screenshot({ path: OUT + "/rankings-game-tabs.png" });
-await page.locator(".game-tab", { hasText: "Basketball 3v3" }).click();
-await page.locator("h1:has-text('Basketball 3v3')").waitFor();
+await page.locator(".game-tab", { hasText: DEFAULT_GAME }).click();
+await page.locator("h1", { hasText: DEFAULT_GAME }).waitFor();
 await page.goto(base + "/rankings/players");
-await page.locator("h1:has-text('Basketball 3v3')").waitFor();
+await page.locator("h1", { hasText: DEFAULT_GAME }).waitFor();
 if ((await page.locator(".podium, table tbody tr").count()) === 0) throw new Error("Basketball ladder empty after switching back");
 step("rankings show a game picker; the picked game is remembered across pages");
 
@@ -914,7 +953,7 @@ await page.goto(base + "/admin");
 console.log("— Solo tournament");
 // The game's in-game ranks, lowest first, with an icon for the top one.
 await page.goto(base + "/admin/games");
-await page.locator("tr:has-text('Basketball 3v3') a:has-text('แรงค์')").click();
+await page.locator("tr", { hasText: DEFAULT_GAME }).locator("a:has-text('แรงค์')").click();
 await page.locator("h1:has-text('แรงค์ในเกม')").waitFor();
 if ((await page.locator(".rank-editor-row").count()) !== 4) throw new Error("default ranks not offered");
 await page.locator(".rank-editor-row").nth(3).locator('input[type="file"]').setInputFiles(LOGO);
@@ -949,7 +988,7 @@ step("SOLO tournament created with in-game ranks; 5 players signed up");
 // Logout
 await page.click("button:has-text('ออกจากระบบ')");
 await page.waitForURL(base + "/");
-if (await page.locator('.tr-footer-more a[href="/admin"]').count()) throw new Error("admin link still in the menu after logout");
+if (await page.locator('footer a[href="/admin"]').count()) throw new Error("admin link still in the menu after logout");
 if (ADMIN_PATH) {
   if ((await page.request.get(base + "/admin/matches/new", { maxRedirects: 0 })).status() !== 404) throw new Error("still logged in");
 } else {
@@ -1020,8 +1059,8 @@ if (!(await page.locator(".tr-auth a.btn-discord").count())) {
   console.log("— Teams run by players");
   await page.goto(base + "/me");
   const ace = page.locator(".me-player:has-text('Ace')");
-  await ace.locator(".me-rank:has-text('Basketball 3v3')").waitFor();
-  if (!/อันดับ #\d+ จาก \d+ คน ใน Basketball 3v3/.test(await ace.locator(".me-rank").textContent())) throw new Error("own rank in the game missing on /me");
+  await ace.locator(".me-rank", { hasText: DEFAULT_GAME }).waitFor();
+  if (!/อันดับ #\d+ จาก \d+ คน ใน /.test(await ace.locator(".me-rank").textContent())) throw new Error("own rank in the game missing on /me");
   const disc = page.locator(`.me-player:has-text('Disc-${uniq}')`);
   await disc.locator('.team-create input[name="name"]').fill(`Squad ${uniq}`);
   await disc.locator('.team-create input[name="tag"]').fill("SQD");
@@ -1159,24 +1198,26 @@ if (!(await page.locator(".tr-auth a.btn-discord").count())) {
   discordUser = DISCORD_USER;
   step("captain handed the team to the teammate; 👑 shows on the team page");
 
-  // The logged-in player signs up for the SOLO tournament on its page.
-  await page.goto(base + `/tournaments/${soloId}`);
-  await page.locator("h2:has-text('ลงทะเบียนเดี่ยว')").waitFor();
-  const soloForm = page.locator(".solo-form");
-  if (await soloForm.locator('select[name="playerId"]').count()) await soloForm.locator('select[name="playerId"]').selectOption({ label: `Disc-${uniq} (UID 77${uniq})` });
-  await soloForm.locator('select[name="position"]').selectOption("FORWARD");
-  if (!(await soloForm.locator(".rank-pick label:has-text('เจ้าแห่ง ZONE') img").count())) throw new Error("rank icon missing in the picker");
-  await soloForm.locator(".rank-pick label:has-text('เจ้าแห่ง ZONE')").click();
-  await soloForm.locator("button:has-text('ลงทะเบียน')").click();
-  await soloForm.locator(".success").waitFor();
-  await page.locator("tr.row-me:has-text('Forward')").waitFor();
-  // Changing position keeps one sign-up.
-  await soloForm.locator('select[name="position"]').selectOption("CENTER");
-  await soloForm.locator("button:has-text('บันทึกการเปลี่ยนแปลง')").click();
-  await page.locator("tr.row-me:has-text('Center')").waitFor();
-  await page.locator("h2:has-text('6 คน · ได้ 2 ทีม')").waitFor();
-  await page.screenshot({ path: OUT + "/solo-signup.png", fullPage: true });
-  step("player signed up alone with position and rank on the tournament page, then changed position");
+  // Solo uses saved player details; missing details return to this tournament after setup.
+  await page.goto(base + '/me/player?next=' + encodeURIComponent('/tournaments/' + soloId));
+  const registrationProfile = page.locator('form.registration-form').filter({ has: page.locator('h2:has-text("Disc-' + uniq + '")') }).first();
+  await registrationProfile.locator('select[name="position"]').selectOption('FORWARD');
+  await registrationProfile.locator('select[name="inGameRank"]').selectOption('เจ้าแห่ง ZONE');
+  await registrationProfile.getByRole('button', { name: 'บันทึกและกลับ' }).click();
+  await page.waitForURL(base + '/tournaments/' + soloId);
+  const joinForm = page.locator('#join');
+  if (await joinForm.locator('select[name="playerId"]').count()) await joinForm.locator('select[name="playerId"]').selectOption({ label: 'Disc-' + uniq });
+  await joinForm.getByRole('button', { name: 'Join Tournament', exact: true }).click();
+  await joinForm.locator('.success').waitFor();
+  await page.locator('tr.row-me:has-text("Forward")').waitFor();
+  await page.getByText('แก้ไขข้อมูลการสมัครเดี่ยว', { exact: true }).click();
+  const soloForm = page.locator('.solo-form');
+  await soloForm.locator('select[name="position"]').selectOption('CENTER');
+  await soloForm.locator('button:has-text("บันทึกการเปลี่ยนแปลง")').click();
+  await page.locator('tr.row-me:has-text("Center")').waitFor();
+  await page.locator('h2:has-text("6 คน · ได้ 2 ทีม")').waitFor();
+  await page.screenshot({ path: OUT + '/solo-signup.png', fullPage: true });
+  step('player saved registration details, joined Solo with one click, then explicitly edited their signup');
 
   // An organizer draws the teams and saves them.
   const adminCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });

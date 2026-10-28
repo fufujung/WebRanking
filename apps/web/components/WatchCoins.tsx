@@ -28,7 +28,7 @@ export function WatchCoins() {
   }, []);
   return toast ? (
     <div className="watch-toast" role="status">
-      🪙 {toast}
+      {toast}
     </div>
   ) : null;
 }

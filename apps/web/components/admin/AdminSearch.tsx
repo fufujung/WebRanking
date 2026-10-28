@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { useMemo, useState } from "react";
 
 type Item = { id: string; label: string; sub: string };
@@ -39,7 +39,7 @@ export function AdminSearch({ teams, players, tournaments }: { teams: Item[]; pl
           {results.map((r) => (
             <Link key={r.kind + r.id} href={r.href} className="row between" style={{ padding: "6px 4px" }}>
               <span><span className="badge">{r.kind}</span> {r.label}</span>
-              <span className="muted small">{r.sub} · แก้ไข →</span>
+              <span className="muted small">{r.sub} · แก้ไข</span>
             </Link>
           ))}
         </div>

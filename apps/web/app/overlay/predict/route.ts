@@ -7,7 +7,12 @@ export const dynamic = "force-dynamic";
  * (W1-0, or W1-0#2 for game 2), ?pos=top puts it at the top, ?scale=0.8 resizes it, ?preview=1 plays fake numbers.
  */
 export function GET() {
-  return new Response(HTML, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+  return new Response(HTML, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 const HTML = `<!doctype html>
@@ -66,6 +71,7 @@ const HTML = `<!doctype html>
   .banner { margin-top: 14px; padding: 12px 18px; border-radius: 14px; background: linear-gradient(90deg, rgba(255,196,0,.22), rgba(255,196,0,.05)); border: 1px solid rgba(255,215,64,.5); font-size: 24px; font-weight: 700; display: none; }
   .banner.on { display: block; animation: rise .6s cubic-bezier(.2,1.3,.4,1); }
   .banner small { display: block; font-size: 18px; color: var(--muted); font-weight: 600; margin-top: 2px; }
+  .overlay-logo { width: 1em; height: 1em; vertical-align: -0.15em; object-fit: contain; }
   .confetti { position: absolute; width: 10px; height: 16px; top: -20px; animation: fall linear forwards; border-radius: 2px; }
   @keyframes pulse { 50% { box-shadow: 0 0 0 8px rgba(217,18,31,.25); } }
   @keyframes blink { 50% { opacity: .2; } }
@@ -81,7 +87,7 @@ const HTML = `<!doctype html>
 <div class="stage" id="stage">
   <div class="card" id="card">
     <div class="head">
-      <span class="tag">🔮 ทายผล</span>
+      <span class="tag"> ทายผล</span>
       <span class="title" id="title"></span>
       <span class="state" id="state"></span>
     </div>
@@ -191,8 +197,9 @@ const HTML = `<!doctype html>
       const winA = m.winnerTeamId === A.id, w = winA ? A : B;
       $(winA ? "sideA" : "sideB").className = "side " + (winA ? "a" : "b") + " won";
       $(winA ? "sideB" : "sideA").className = "side " + (winA ? "b" : "a") + " lost";
-      st.textContent = "🏆 มีผลแล้ว"; stamp.className = "stamp";
-      banner.textContent = "🏆 " + w.name + " ชนะ! ทายถูก " + m.right + " คน ได้เหรียญ " + ratio(w.ratio);
+      const logoMark = () => { const img = document.createElement("img"); img.src = "/images/logo.png"; img.alt = ""; img.className = "overlay-logo"; return img; };
+      st.replaceChildren(logoMark(), " มีผลแล้ว"); stamp.className = "stamp";
+      banner.replaceChildren(logoMark(), " " + w.name + " ชนะ! ทายถูก " + m.right + " คน ได้เหรียญ " + ratio(w.ratio));
       if (m.topWinners.length) {
         const s = document.createElement("small");
         s.textContent = "ได้มากสุด: " + m.topWinners.map((x) => x.name + " +" + fmt(x.won)).join(" · ");

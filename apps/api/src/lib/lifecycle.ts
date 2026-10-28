@@ -33,7 +33,7 @@ export const readiness: RequestHandler = async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     // Touches the tables this code reads most, with its own column list: an older or newer schema fails here.
-    await prisma.player.findFirst({ select: { id: true, mmr: true, specialMmr: true, gameId: true } });
+    await prisma.player.findFirst({ select: { id: true, mmr: true, specialMmr: true, gameId: true, inGameRank: true } });
     await prisma.match.findFirst({ select: { id: true, playedAt: true } });
     res.json({ ok: true, state: "ready" });
   } catch (e) {

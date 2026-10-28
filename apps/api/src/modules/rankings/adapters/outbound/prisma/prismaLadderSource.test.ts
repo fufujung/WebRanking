@@ -10,7 +10,8 @@ import { prismaLadderSource } from "./prismaLadderSource.js";
 import { seedLadder } from "../../../contract/fixtures.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tr-ladder-source-"));
-const url = `file:${path.join(tmp, "source.db")}`;
+fs.writeFileSync(path.join(tmp, "source.db"), "");
+const url = `file:${path.join(tmp, "source.db").replaceAll("\\", "/")}`;
 execSync("npx prisma db push --skip-generate", { stdio: "ignore", env: { ...process.env, DATABASE_URL: url } });
 const prisma = new PrismaClient({ datasources: { db: { url } } });
 const source = prismaLadderSource(prisma);
@@ -56,7 +57,8 @@ test("blacklist: active entries only, one id per player", async () => {
 });
 
 test("an empty database loads empty lists", async () => {
-  const emptyUrl = `file:${path.join(tmp, "empty.db")}`;
+  fs.writeFileSync(path.join(tmp, "empty.db"), "");
+  const emptyUrl = `file:${path.join(tmp, "empty.db").replaceAll("\\", "/")}`;
   execSync("npx prisma db push --skip-generate", { stdio: "ignore", env: { ...process.env, DATABASE_URL: emptyUrl } });
   const empty = new PrismaClient({ datasources: { db: { url: emptyUrl } } });
   try {

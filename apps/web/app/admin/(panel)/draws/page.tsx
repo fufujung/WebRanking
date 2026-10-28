@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { api } from "@/lib/api";
 import { DRAW_STATE, fmtDateTime } from "@/lib/format";
 import type { LuckyDraw } from "@/lib/types";

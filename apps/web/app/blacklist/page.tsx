@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { api, qs } from "@/lib/api";
 import type { BlacklistEntry } from "@/lib/types";
 import { fmtDate } from "@/lib/format";

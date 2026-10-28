@@ -16,7 +16,8 @@ import { ChannelType, MessageFlags, PermissionFlagsBits } from "discord.js";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tr-tour-test-"));
 const apiDir = path.resolve(import.meta.dirname, "../../api");
-process.env.DATABASE_URL = `file:${path.join(tmp, "test.db")}`;
+fs.writeFileSync(path.join(tmp, "test.db"), "");
+process.env.DATABASE_URL = `file:${path.join(tmp, "test.db").replaceAll("\\", "/")}`;
 process.env.UPLOAD_DIR = path.join(tmp, "uploads");
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.DISCORD_WEBHOOK_URL;
