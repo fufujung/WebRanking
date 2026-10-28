@@ -613,8 +613,8 @@ page.once("dialog", (d) => d.accept());
 await page.click(".page-head button:has-text('ลบ')");
 await page.waitForURL(/\/admin\/matches\?deleted=1/);
 const gone = await page.request.get(matchUrl);
-if (gone.status() !== 404) throw new Error("deleted match still visible: " + gone.status());
-step("match deleted, page now 404");
+if (![200, 404].includes(gone.status()) || !(await gone.text()).includes("ไม่พบหน้านี้")) throw new Error("deleted match still visible: " + gone.status());
+step("match deleted, page now shows not found");
 
 // Trash bin: a deleted tournament comes back from ถังขยะ
 {
@@ -996,7 +996,9 @@ await page.click("button:has-text('ออกจากระบบ')");
 await page.waitForURL(base + "/");
 if (await page.locator('footer a[href="/admin"]').count()) throw new Error("admin link still in the menu after logout");
 if (ADMIN_PATH) {
-  if ((await page.request.get(base + "/admin/matches/new", { maxRedirects: 0 })).status() !== 404) throw new Error("still logged in");
+  const loggedOut = await page.request.get(base + "/admin/matches/new", { maxRedirects: 0 });
+  const loggedOutBody = await loggedOut.text();
+  if (![200, 404].includes(loggedOut.status()) || !loggedOutBody.includes("ไม่พบหน้านี้") || loggedOutBody.includes("หลังบ้านผู้จัด")) throw new Error("still logged in");
 } else {
   await page.goto(base + "/admin/matches/new");
   if (!page.url().includes("/admin/login")) throw new Error("still logged in");
@@ -1275,6 +1277,7 @@ if (!(await page.locator(".tr-auth a.btn-discord").count())) {
   await page.locator("#reserve").screenshot({ path: OUT + "/reserve-form.png" });
   await page.goto(base + "/special");
   await page.locator("h1:has-text('เล่นเก่งปากเก่ง')").waitFor();
+  await page.locator('.special-sections a[href="#reserve"]').click();
   await page.locator(`#reserve .card:has-text('บอลหลัก') li:has-text('UID 77${uniq}') .rank-badge:has-text('${reserveRank}')`).waitFor();
   const publicText = await page.locator("main").textContent();
   if (publicText.includes(`disc${uniq}`) || publicText.includes("0812345678")) throw new Error("Facebook or phone shown on the public page");
