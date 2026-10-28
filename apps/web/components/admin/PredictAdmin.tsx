@@ -150,7 +150,7 @@ export function OverlayLink({ tournaments }: { tournaments: { id: string; name: 
     <section className="card stack">
       <h3 style={{ margin: 0 }}>📺 Overlay ทายผลบนไลฟ์ (vMix / OBS)</h3>
       <p className="muted small" style={{ margin: 0 }}>
-        ใน vMix: Add Input → Web Browser วางลิงก์นี้ ขนาด 1920×1080 พื้นหลังโปร่งใสอยู่แล้ว (OBS: Browser Source) ลิงก์เดียวใช้ได้ทั้งไลฟ์ จะโชว์คู่ที่เปิดทายอยู่ ถ้าไม่มีจะโชว์คู่ที่กำลังแข่ง แล้วโชว์ผลเมื่อบันทึกผล
+        ใน vMix: Add Input · Web Browser วางลิงก์นี้ ขนาด 1920×1080 พื้นหลังโปร่งใสอยู่แล้ว (OBS: Browser Source) ลิงก์เดียวใช้ได้ทั้งไลฟ์ จะโชว์คู่ที่เปิดทายอยู่ ถ้าไม่มีจะโชว์คู่ที่กำลังแข่ง แล้วโชว์ผลเมื่อบันทึกผล
       </p>
       <div className="form-row">
         <label>

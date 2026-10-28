@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { notFound } from "next/navigation";
 import { apiOrNull, api } from "@/lib/api";
 import { getMember } from "@/lib/member";

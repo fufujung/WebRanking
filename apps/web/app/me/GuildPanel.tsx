@@ -72,7 +72,7 @@ function MyGuildView({ me, guild }: { me: MyCharacter; guild: MyGuild }) {
             <span className="muted small"> · {guild.memberCount} / {guild.capacity} คน{guild.myRank ? ` · คุณอันดับ ${guild.myRank} ของกิลด์` : ""}</span>
           </span>
         </a>
-        {guild.isLeader && <span className="pill pill-ok">👑 คุณเป็นหัวหน้ากิลด์</span>}
+        {guild.isLeader && <span className="pill pill-ok"> คุณเป็นหัวหน้ากิลด์</span>}
       </div>
 
       {guild.isLeader && (
@@ -108,7 +108,7 @@ function MyGuildView({ me, guild }: { me: MyCharacter; guild: MyGuild }) {
                 <Logo name={m.name} src={m.avatarUrl} />
                 <span>
                   <span className="muted small">{m.guildRank ? `#${m.guildRank} ` : "- "}</span>
-                  {m.leader && <span title="หัวหน้ากิลด์">👑 </span>}
+                  {m.leader && <span title="หัวหน้ากิลด์">หัวหน้ากิลด์ · </span>}
                   <strong>{m.nickname || m.name}</strong>
                   {m.id === me.id && <span className="muted small"> (คุณ)</span>}
                   <span className="muted small"> · {m.series ? `${m.mmr} MMR` : "ยังไม่ลงแข่ง"}</span>

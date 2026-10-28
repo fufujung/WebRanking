@@ -19,8 +19,10 @@ predict.get("/rules", (_req, res) => {
   res.json(COINS);
 });
 
-predict.get("/tournaments", async (_req, res) => {
-  res.json({ data: await predictionTournaments() });
+predict.get("/tournaments", async (req, res) => {
+  const search = typeof req.query.search === "string" ? req.query.search.trim().slice(0, 100) : undefined;
+  const id = typeof req.query.id === "string" ? req.query.id.trim().slice(0, 40) : undefined;
+  res.json({ data: await predictionTournaments(new Date(), { search, id }) });
 });
 
 predict.get(

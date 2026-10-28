@@ -6,13 +6,15 @@ import "@fontsource/barlow-condensed/600.css";
 import "@fontsource/barlow-condensed/700.css";
 import "./globals.css";
 import "./public-ui.css";
+import { NavigationLoadingProvider, NavigationContent } from "@/components/NavigationLoading";
 import type { Metadata } from "next";
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { cookies } from "next/headers";
 import { isAdmin } from "@/lib/auth";
 import { getMember } from "@/lib/member";
 import { Brand } from "@/components/public/Brand";
 import { PublicNavigation } from "@/components/public/PublicNavigation";
+import { HeaderSearch } from "@/components/public/HeaderSearch";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { MobileHeader } from "@/components/MobileHeader";
 import { WatchCoins } from "@/components/WatchCoins";
@@ -40,6 +42,7 @@ export default async function RootLayout({
   return (
     <html lang="th" data-theme={theme === "light" ? "light" : undefined}>
       <body>
+        <NavigationLoadingProvider>
         <a className="skip-link" href="#main-content">
           ข้ามไปยังเนื้อหา
         </a>
@@ -65,34 +68,33 @@ export default async function RootLayout({
                 </>
               )}
             </Link>
-            <div className="header-tools">
-              <form
-                id="header-search"
-                action="/search"
-                className="header-search"
-                role="search"
-                aria-label="ค้นหาทั่วเว็บไซต์"
+            {member && (
+              <Link
+                href="/me"
+                className="tr-profile-link"
+                aria-label="โปรไฟล์ของฉัน"
+                title="โปรไฟล์ของฉัน"
               >
-                <img
-                  src="/images/icons/search.svg"
-                  width="18"
-                  height="18"
-                  alt=""
-                />
-                <input
-                  name="q"
-                  maxLength={100}
-                  placeholder="ค้นหาทีม ผู้เล่น…"
-                  aria-label="ค้นหาทีม ผู้เล่น ทัวร์นาเมนต์"
-                />
-                <button
-                  className="header-search-submit"
-                  type="submit"
-                  aria-label="ค้นหา"
-                >
-                  <span className="sr-only">ค้นหา</span>
-                </button>
-              </form>
+                {member.avatar ? (
+                  <img src={member.avatar} alt="" width="24" height="24" />
+                ) : (
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="8" r="4" />
+                    <path d="M5 20a7 7 0 0 1 14 0" />
+                  </svg>
+                )}
+              </Link>
+            )}
+            <div className="header-tools">
+              <HeaderSearch />
               <DiscordJoin
                 href={discordInvite}
                 className="header-discord"
@@ -106,7 +108,7 @@ export default async function RootLayout({
           <HideOnAdmin>
             <AdBanner />
           </HideOnAdmin>
-          {children}
+          <NavigationContent>{children}</NavigationContent>
         </main>
         <HideOnAdmin>
           <AdPopupSlot />
@@ -122,21 +124,12 @@ export default async function RootLayout({
               <Link href="/rankings">อันดับ</Link>
               <Link href="/tournaments">ทัวร์นาเมนต์</Link>
               <Link href="/teams">ทีมและผู้เล่น</Link>
-              <Link href="/blacklist">⛔ Blacklist</Link>
-              <details className="tr-footer-more">
-                <summary>สำรวจเพิ่มเติม</summary>
-                <div>
-                  <Link href="/players">ผู้เล่นทั้งหมด</Link>
-                  <Link href="/rankings/players">อันดับผู้เล่น</Link>
-                  <Link href="/matches">ผลการแข่งขัน</Link>
-                  <Link href="/guilds">กิลด์</Link>
-                  <Link href="/special">เล่นเก่งปากเก่ง</Link>
-                  <Link href="/predict">ทายผล</Link>
-                  {admin && <Link href="/admin">จัดการข้อมูล</Link>}
-                </div>
-              </details>
+              <Link href="/predict">ทายผล</Link>
+              <Link href="/special">เล่นเก่งปากเก่ง</Link>
+              <Link href="/blacklist">Blacklist</Link>
+              {admin && <Link href="/admin">จัดการข้อมูล</Link>}
               <DiscordJoin href={discordInvite} className="btn-sm" />
-              <ThemeToggle initial={theme} />
+              {/* <ThemeToggle initial={theme} /> Comment the theme switch part */}
             </span>
             {/* Only organizers need the API docs; visitors don't see the link. */}
             {admin && (
@@ -150,6 +143,7 @@ export default async function RootLayout({
             )}
           </div>
         </footer>
+      </NavigationLoadingProvider>
       </body>
     </html>
   );

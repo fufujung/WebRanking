@@ -72,7 +72,9 @@ async function playerBoard(prisma: PrismaClient, gameId?: string | null, now = n
     }),
     prisma.blacklistEntry.findMany({ where: { liftedAt: null }, select: { playerId: true }, distinct: ["playerId"] }),
   ]);
-  const players = special ? found.map((p) => ({ ...p, mmr: p.specialMmr, peakMmr: p.specialPeakMmr })) : found;
+  // Freeze the legacy public shape: registration details added later are not ladder fields.
+  const legacyPlayers = found.map(({ inGameRank: _registrationRank, ...p }) => p);
+  const players = special ? legacyPlayers.map((p) => ({ ...p, mmr: p.specialMmr, peakMmr: p.specialPeakMmr })) : legacyPlayers;
   const banned = new Set(blacklisted.map((b) => b.playerId));
   const empty = () => ({ series: 0, wins: 0, losses: 0, seriesBefore: 0, recentDelta: 0, form: [] as SeriesResult[], lastDelta: null as number | null });
   const info = new Map<string, ReturnType<typeof empty>>();

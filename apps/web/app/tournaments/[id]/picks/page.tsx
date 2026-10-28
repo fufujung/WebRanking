@@ -1,10 +1,11 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { notFound } from "next/navigation";
 import { apiOrNull, PUBLIC } from "@/lib/api";
 import type { Draft, DraftCharStat, DraftSlot, TournamentDetail, TournamentDrafts } from "@/lib/types";
 import { fmtThaiTime } from "@/lib/format";
 import { Avatar, Empty, StatusBadge } from "@/components/ui";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { LogoMark } from "@/components/public/LogoMark";
 
 export const metadata = { title: "สถิติแบน/พิค" };
 
@@ -18,7 +19,7 @@ function Char({ slot }: { slot: Pick<DraftSlot, "char" | "name" | "kind"> }) {
   );
 }
 
-function Leaders({ title, rows, value }: { title: string; rows: DraftCharStat[]; value: (r: DraftCharStat) => string }) {
+function Leaders({ title, rows, value }: { title: React.ReactNode; rows: DraftCharStat[]; value: (r: DraftCharStat) => string }) {
   return (
     <div className="card">
       <h3 className="pb-lead-title">{title}</h3>
@@ -98,9 +99,9 @@ export default async function TournamentPicksPage({ params }: { params: Promise<
       ) : (
         <>
           <div className="grid grid-3">
-            <Leaders title="🔥 พิคบ่อยสุด" rows={top("picks", (r) => r.picks > 0)} value={(r) => `${r.picks} ครั้ง · ${r.pickRate}%`} />
-            <Leaders title="🚫 แบนบ่อยสุด" rows={top("bans", (r) => r.bans > 0)} value={(r) => `${r.bans} ครั้ง · ${r.banRate}%`} />
-            <Leaders title="🏆 อัตราชนะสูงสุด (ลง 2 เกมขึ้นไป)" rows={best} value={(r) => `${r.winRate}% (${r.wins}-${r.losses})`} />
+            <Leaders title=" พิคบ่อยสุด" rows={top("picks", (r) => r.picks > 0)} value={(r) => `${r.picks} ครั้ง · ${r.pickRate}%`} />
+            <Leaders title=" แบนบ่อยสุด" rows={top("bans", (r) => r.bans > 0)} value={(r) => `${r.bans} ครั้ง · ${r.banRate}%`} />
+            <Leaders title={<><LogoMark /> อัตราชนะสูงสุด (ลง 2 เกมขึ้นไป)</>} rows={best} value={(r) => `${r.winRate}% (${r.wins}-${r.losses})`} />
           </div>
 
           <h2 className="mt">ตัวละครทั้งหมด</h2>

@@ -40,7 +40,7 @@ type Tx = Prisma.TransactionClient;
 
 let queue: Promise<unknown> = Promise.resolve();
 /** Bracket changes run one at a time, so two people reporting at once can't both advance a team. */
-function serial<T>(fn: () => Promise<T>): Promise<T> {
+export function serial<T>(fn: () => Promise<T>): Promise<T> {
   const run = queue.then(fn, fn);
   queue = run.catch(() => {});
   return run;
@@ -276,22 +276,41 @@ async function withPicked(body: unknown) {
 }
 
 /** A team signs up (from Discord, or added by an organizer with override). */
-export async function register(tournamentId: string, body: unknown) {
-  const input = registrationInput.parse(await withPicked(body));
+export async function register(tournamentId: string, body: unknown, memberDiscordId?: string) {
+  const legacyInput = memberDiscordId ? null : registrationInput.parse(await withPicked(body));
   return serial(async () => {
-    const t = await tournamentOr404(tournamentId);
-    if (!input.override && !t.registrationOpen) throw fail(409, "Registration is closed", "ปิดรับสมัครแล้ว");
-    if (!input.override && t.entryMode === "SOLO") throw fail(409, "Players sign up alone for this tournament", "ทัวร์นี้ลงชื่อเดี่ยว: กดปุ่ม 🙋 ลงชื่อเดี่ยว ในประกาศของบอท หรือลงที่หน้าเว็บ แล้วผู้จัดจะสุ่มจัดทีมให้");
-    if (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") throw fail(409, "The tournament has already started", "ทัวร์นาเมนต์เริ่มแข่งแล้ว สมัครเพิ่มไม่ได้");
-    checkRosterShape(t, input.players);
-    const count = await prisma.tournamentEntry.count({ where: { tournamentId } });
-    if (t.maxTeams && count >= t.maxTeams) throw fail(409, "The tournament is full", `ทีมเต็มแล้ว (${t.maxTeams} ทีม)`);
-
     const teamId = await prisma.$transaction(async (tx) => {
+      const t = await tx.tournament.findUnique({ where: { id: tournamentId } });
+      if (!t) throw notFound("Tournament");
+      let picked: Awaited<ReturnType<typeof tx.player.findMany>> | null = null;
+      let ownedTeam: Awaited<ReturnType<typeof tx.team.findUnique>> = null;
+      if (memberDiscordId) {
+        const request = z.object({ playerId: z.string().min(1), playerIds: z.array(z.string().min(1)).min(1).max(10).optional() }).parse(body);
+        const captain = await tx.player.findUnique({ where: { id: request.playerId } });
+        if (!captain || captain.discordId !== memberDiscordId) throw fail(403, "Not your character", "ตัวละครนี้ไม่ได้ผูกกับบัญชีของคุณ");
+        ownedTeam = captain.teamId ? await tx.team.findUnique({ where: { id: captain.teamId } }) : null;
+        if (!ownedTeam || ownedTeam.captainId !== captain.id) throw fail(403, "Captain only", "เฉพาะหัวหน้าทีมเท่านั้นที่สมัครทั้งทีมได้");
+        const existing = await tx.tournamentEntry.findUnique({ where: { tournamentId_teamId: { tournamentId, teamId: ownedTeam.id } } });
+        if (existing) return ownedTeam.id;
+        const members = await tx.player.findMany({ where: { teamId: ownedTeam.id }, orderBy: { name: "asc" } });
+        picked = request.playerIds ? members.filter((p) => request.playerIds!.includes(p.id)) : members;
+        if (request.playerIds && (new Set(request.playerIds).size !== request.playerIds.length || picked.length !== request.playerIds.length)) throw fail(400, "Invalid roster", "เลือกได้เฉพาะสมาชิกในทีมและห้ามเลือกซ้ำ");
+        if (!picked.some((p) => p.id === captain.id)) throw fail(400, "Captain missing", "รายชื่อผู้เข้าแข่งต้องมีหัวหน้าทีมด้วย");
+        if (t.gameId && ((ownedTeam.gameId && ownedTeam.gameId !== t.gameId) || picked.some((p) => p.gameId && p.gameId !== t.gameId))) throw fail(400, "Different game", "ทีมและผู้เล่นต้องอยู่ในเกมเดียวกับรายการ");
+      }
+      const input = legacyInput ?? registrationInput.parse({ teamName: ownedTeam!.name, tag: ownedTeam!.tag, captainDiscordId: memberDiscordId, players: picked!.map((p) => ({ name: p.name, uid: p.uid, server: p.server, discordId: p.discordId })) });
+      if (!input.override && !t.registrationOpen) throw fail(409, "Registration is closed", "ปิดรับสมัครแล้ว");
+      if (t.status === "COMPLETED") throw fail(409, "Tournament completed", "รายการนี้สิ้นสุดแล้ว");
+      if (!input.override && t.entryMode === "SOLO") throw fail(409, "Players sign up alone for this tournament", "ทัวร์นี้ลงชื่อเดี่ยว: กดปุ่ม 🙋 ลงชื่อเดี่ยว ในประกาศของบอท หรือลงที่หน้าเว็บ แล้วผู้จัดจะสุ่มจัดทีมให้");
+      if (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") throw fail(409, "The tournament has already started", "ทัวร์นาเมนต์เริ่มแข่งแล้ว สมัครเพิ่มไม่ได้");
+      checkRosterShape(t, input.players);
+      const count = await tx.tournamentEntry.count({ where: { tournamentId } });
+      if (t.maxTeams && count >= t.maxTeams) throw fail(409, "The tournament is full", `ทีมเต็มแล้ว (${t.maxTeams} ทีม)`);
+
       const key = normaliseName(input.teamName);
       if (!key) throw fail(400, "Team names must contain letters or numbers", "ชื่อทีมต้องมีตัวอักษรหรือตัวเลข");
       const teams = await tx.team.findMany({ select: { id: true, name: true, tag: true } });
-      let team = teams.find((x) => normaliseName(x.name) === key);
+      let team = ownedTeam ?? teams.find((x) => normaliseName(x.name) === key);
       if (!team) team = await tx.team.create({ data: { name: input.teamName, tag: input.tag } });
       else if (input.tag && !team.tag) await tx.team.update({ where: { id: team.id }, data: { tag: input.tag } });
       const existing = await tx.tournamentEntry.findUnique({ where: { tournamentId_teamId: { tournamentId, teamId: team.id } } });
@@ -303,13 +322,13 @@ export async function register(tournamentId: string, body: unknown) {
         if (captainElsewhere) throw fail(409, "This captain already leads another team", `คุณเป็นหัวหน้าทีม ${captainElsewhere.team.name} อยู่แล้ว`);
       }
       const entry = await tx.tournamentEntry.create({ data: { tournamentId, teamId: team.id, captainDiscordId: input.captainDiscordId ?? null, memberDiscordIds: JSON.stringify(members) } });
-      const roster = await resolveRoster(tx, team.id, input.players);
+      const roster = picked ? picked.map((p) => ({ playerId: p.id, discordId: p.discordId, uid: p.uid, server: p.server })) : await resolveRoster(tx, team.id, input.players);
       await assertOnSeason(tx, t, roster.map((r) => r.playerId));
       await replaceRoster(tx, entry.id, roster);
       // A new team invalidates a seeded-but-not-started bracket.
       if (t.bracketStatus === "DRAFT") await dropDraft(tx, tournamentId);
       return team.id;
-    });
+    }, { timeout: 15000 });
     return entryView(tournamentId, teamId);
   });
 }

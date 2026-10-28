@@ -10,7 +10,8 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tr-draw-test-"));
-process.env.DATABASE_URL = `file:${path.join(tmp, "test.db")}`;
+fs.writeFileSync(path.join(tmp, "test.db"), "");
+process.env.DATABASE_URL = `file:${path.join(tmp, "test.db").replaceAll("\\", "/")}`;
 process.env.UPLOAD_DIR = path.join(tmp, "uploads");
 execSync("npx prisma db push --skip-generate", { stdio: "ignore", env: process.env });
 

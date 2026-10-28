@@ -10,7 +10,8 @@ import type { Server } from "node:http";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tr-life-test-"));
 const gate = path.join(tmp, "WRITE_GATE");
-process.env.DATABASE_URL = `file:${path.join(tmp, "test.db")}`;
+fs.writeFileSync(path.join(tmp, "test.db"), "");
+process.env.DATABASE_URL = `file:${path.join(tmp, "test.db").replaceAll("\\", "/")}`;
 process.env.UPLOAD_DIR = path.join(tmp, "uploads");
 process.env.THERANKING_WRITE_GATE = gate;
 delete process.env.ANTHROPIC_API_KEY;

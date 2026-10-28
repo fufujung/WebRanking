@@ -1,6 +1,7 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useLoadingRouter as useRouter } from "@/components/NavigationLoading";
 import type { Game } from "@/lib/types";
 
 /** Picks which game's rankings to show. The choice is remembered for the next visit. */
@@ -15,6 +16,7 @@ export function GameTabs({ games, active }: { games: Game[]; active: string | nu
     next.delete("game");
     next.delete("teamId");
     next.delete("season");
+    next.delete("page");
     const q = next.toString();
     router.push(q ? `${path}?${q}` : path);
     router.refresh();

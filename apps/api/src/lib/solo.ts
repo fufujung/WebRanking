@@ -10,6 +10,7 @@ import { prisma } from "./db.js";
 import { fail, notFound } from "./errors.js";
 import { normaliseName, POSITIONS, type Position } from "./validate.js";
 import { parseRanks, type GameRank } from "./games.js";
+import { serial } from "./competition.js";
 
 /** Used while the tournament's game has no ranks set: Kuroko's season ranks, lowest first. */
 export const DEFAULT_SOLO_RANKS: GameRank[] = ["แม่ทัพไร้มงกุฎ", "ซูเปอร์สตาร์ ม.ปลาย", "รุ่นแห่งปาฏิหาริย์", "เจ้าแห่ง ZONE"].map((name) => ({ name, iconUrl: null }));
@@ -66,18 +67,25 @@ export async function soloView(tournamentId: string) {
 }
 
 /** A member signs up (or changes position, rank or character). One character per Discord account. */
-export async function signUp(discordId: string, tournamentId: string, body: unknown) {
-  const input = signupInput.parse(body);
-  const t = await soloTournament(tournamentId);
-  if (!t.registrationOpen) throw fail(409, "Registration is closed", "ปิดรับสมัครแล้ว");
-  if (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") throw fail(409, "The tournament has started", "ทัวร์นาเมนต์เริ่มแข่งแล้ว");
-  if (await prisma.tournamentEntry.count({ where: { tournamentId } })) throw fail(409, "Teams have been drawn", "ผู้จัดสุ่มทีมไปแล้ว ลงทะเบียนเพิ่มไม่ได้ (ติดต่อผู้จัด)");
-  if (!(await ranksOf(t)).some((r) => r.name === input.rank)) throw fail(400, "Unknown rank", "เลือกแรงค์จากรายการ");
-  const player = await prisma.player.findUnique({ where: { id: input.playerId } });
-  if (!player || player.discordId !== discordId) throw fail(403, "Not your character", "ตัวละครนี้ไม่ใช่ของคุณ");
-  if (t.gameId && player.gameId && player.gameId !== t.gameId) throw fail(400, "This character plays another game", "ตัวละครนี้อยู่คนละเกมกับทัวร์นาเมนต์");
-  await assertOnSeason(prisma, t, [player.id]);
-  await prisma.$transaction(async (tx) => {
+export async function signUp(discordId: string, tournamentId: string, body: unknown, savedProfileOnly = false) {
+  const { playerId } = z.object({ playerId: z.string().min(1) }).parse(body);
+  await serial(() => prisma.$transaction(async (tx) => {
+    const t = await tx.tournament.findUnique({ where: { id: tournamentId } });
+    if (!t) throw notFound("Tournament");
+    if (t.entryMode !== "SOLO") throw fail(409, "Not solo", "รายการนี้สมัครเป็นทีม");
+    const player = await tx.player.findUnique({ where: { id: playerId } });
+    if (!player || player.discordId !== discordId) throw fail(403, "Not your character", "ตัวละครนี้ไม่ใช่ของคุณ");
+    const current = await tx.soloSignup.findFirst({ where: { tournamentId, discordId } });
+    if (savedProfileOnly && current) return;
+    const input = signupInput.parse(savedProfileOnly ? { playerId, position: player.role, rank: player.inGameRank } : body);
+    if (t.status === "COMPLETED") throw fail(409, "Tournament completed", "รายการนี้สิ้นสุดแล้ว");
+    if (!t.registrationOpen) throw fail(409, "Registration is closed", "ปิดรับสมัครแล้ว");
+    if (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") throw fail(409, "The tournament has started", "ทัวร์นาเมนต์เริ่มแข่งแล้ว");
+    if (await tx.tournamentEntry.count({ where: { tournamentId } })) throw fail(409, "Teams have been drawn", "ผู้จัดสุ่มทีมไปแล้ว ลงทะเบียนเพิ่มไม่ได้ (ติดต่อผู้จัด)");
+    if (!current && t.maxTeams != null && await tx.soloSignup.count({ where: { tournamentId } }) >= t.maxTeams * t.teamSize) throw fail(409, "Tournament full", "ผู้สมัครครบจำนวนแล้ว");
+    if (!(await ranksOf(t)).some((r) => r.name === input.rank)) throw fail(400, "Unknown rank", "เลือกแรงค์จากรายการ");
+    if (t.gameId && player.gameId && player.gameId !== t.gameId) throw fail(400, "This character plays another game", "ตัวละครนี้อยู่คนละเกมกับทัวร์นาเมนต์");
+    await assertOnSeason(tx, t, [player.id]);
     // Switching character replaces the earlier sign-up of this account.
     await tx.soloSignup.deleteMany({ where: { tournamentId, discordId, playerId: { not: player.id } } });
     const data = { position: input.position, rank: input.rank, discordId };
@@ -87,8 +95,8 @@ export async function signUp(discordId: string, tournamentId: string, body: unkn
       update: data,
     });
     // The position picked here is the player's position on the website too.
-    await tx.player.update({ where: { id: player.id }, data: { role: input.position, ...(t.gameId && !player.gameId ? { gameId: t.gameId } : {}) } });
-  });
+    await tx.player.update({ where: { id: player.id }, data: { role: input.position, inGameRank: input.rank, ...(t.gameId && !player.gameId ? { gameId: t.gameId } : {}) } });
+  }, { timeout: 15000 }));
   return soloView(tournamentId);
 }
 

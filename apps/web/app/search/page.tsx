@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { api, qs } from "@/lib/api";
 import type { Player, Team, Tournament } from "@/lib/types";
 import { fmtDate } from "@/lib/format";
@@ -10,13 +10,13 @@ type Results = { teams: Team[]; players: (Player & { team: { id: string; name: s
 
 export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const q = ((await searchParams).q ?? "").trim();
-  const r = q ? await api<Results>(`/stats/search${qs({ q })}`) : { teams: [], players: [], tournaments: [] };
+  const r = q ? await api<Results>(`/stats/search${qs({ q, scope: "tournaments" })}`) : { teams: [], players: [], tournaments: [] };
   const none = r.teams.length + r.players.length + r.tournaments.length === 0;
   return (
     <>
-      <div className="page-head"><h1>ค้นหา</h1></div>
+      <div className="page-head"><h1>ค้นหาทัวร์นาเมนต์</h1></div>
       <form className="row" role="search" style={{ marginBottom: 24 }}>
-        <input name="q" defaultValue={q} placeholder="พิมพ์ชื่อทีม ผู้เล่น หรือทัวร์นาเมนต์" aria-label="คำค้นหา" style={{ flex: 1 }} autoFocus />
+        <input name="q" maxLength={100} defaultValue={q} placeholder="ค้นหาชื่อทัวร์นาเมนต์…" aria-label="ชื่อทัวร์นาเมนต์" style={{ flex: 1 }} autoFocus />
         <button className="btn btn-primary" type="submit">ค้นหา</button>
       </form>
       {!q && <Empty>พิมพ์คำที่ต้องการค้นหาแล้วกดปุ่มค้นหา</Empty>}
@@ -44,6 +44,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
             {r.tournaments.map((t) => (
               <Link key={t.id} href={`/tournaments/${t.id}`} className="row between">
                 <span>{t.name}<br /><span className="muted small">{fmtDate(t.startDate)}</span></span>
+                {t.special && <span className="badge">เล่นเก่ง ปากเก่ง</span>}
                 <StatusBadge status={t.status} />
               </Link>
             ))}

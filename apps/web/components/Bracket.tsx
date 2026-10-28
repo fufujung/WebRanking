@@ -1,10 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type { Bracket, BracketSlot, Entry } from "@/lib/types";
 import { fmtThaiTime } from "@/lib/format";
 import { Avatar } from "./ui";
+import { LogoMark } from "./public/LogoMark";
 
 const STAGE_TITLE: Record<BracketSlot["stage"], string> = {
   W: "สายบน",
@@ -67,7 +68,7 @@ function TeamLine({ slot, side, hover }: { slot: BracketSlot; side: "A" | "B"; h
 export function MatchBox({ slot, onSelect, selected, hover, now }: { slot: BracketSlot; onSelect?: (slot: BracketSlot) => void; selected?: boolean; hover?: Hover; now?: number | null }) {
   const live = slot.status === "READY" && slot.scheduledAt && now != null && now >= new Date(slot.scheduledAt).getTime();
   const right = slot.disputed ? (
-    <span className="bm-flag" title="มีการแย้งผล">⚠️ แย้งผล</span>
+    <span className="bm-flag" title="มีการแย้งผล"> แย้งผล</span>
   ) : slot.outcome === "WALKOVER" ? (
     <span>ชนะบาย</span>
   ) : slot.outcome === "BYE" ? (
@@ -217,7 +218,7 @@ function Stage({ slots, byes, champion, onSelect, selectedId, hover, now }: { sl
             onMouseEnter={() => hover.set(champion.id)}
             onMouseLeave={() => hover.set(null)}
           >
-            <div className="bk-champ-cup">🏆</div>
+            <div className="bk-champ-cup"><LogoMark size={40} /></div>
             <div className="bk-champ-label">แชมป์</div>
             <Link href={`/teams/${champion.id}`} className="bk-champ-name">{champion.name}</Link>
           </div>

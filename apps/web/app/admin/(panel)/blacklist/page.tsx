@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { api } from "@/lib/api";
 import { fetchAll } from "@/lib/fetchAll";
 import type { BlacklistEntry, Player } from "@/lib/types";

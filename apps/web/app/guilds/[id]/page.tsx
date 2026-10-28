@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { DirectoryTabs } from "@/components/DirectoryTabs";
+import Link from "@/components/LoadingLink";
 import { notFound } from "next/navigation";
 import { apiOrNull } from "@/lib/api";
 import type { GuildDetail } from "@/lib/types";
@@ -11,7 +12,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: g ? `กิลด์ ${g.name}` : "ไม่พบกิลด์" };
 }
 
-const medal = (rank: number | null) => (rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null);
+const medal = (rank: number | null) => (rank === 1 ? "#1" : rank === 2 ? "#2" : rank === 3 ? "#3" : null);
 
 export default async function GuildPage({ params }: { params: Promise<{ id: string }> }) {
   const g = await apiOrNull<GuildDetail>(`/guilds/${encodeURIComponent((await params).id)}`);
@@ -19,6 +20,7 @@ export default async function GuildPage({ params }: { params: Promise<{ id: stri
   const played = g.members.filter((m) => m.guildRank !== null);
   return (
     <>
+      <DirectoryTabs active="guilds" />
       <div className="page-head">
         <div className="row">
           <Avatar src={g.logoUrl} name={g.tag || g.name} size="lg" />
@@ -26,7 +28,7 @@ export default async function GuildPage({ params }: { params: Promise<{ id: stri
             <h1>{g.name} {g.tag && <span className="muted">[{g.tag}]</span>}</h1>
             <span className="muted small">
               {[g.game?.name, `ก่อตั้ง ${fmtDate(g.createdAt)}`].filter(Boolean).join(" · ")}
-              {g.leader && <> · หัวหน้ากิลด์ <Link href={`/players/${g.leader.id}`}>👑 {g.leader.nickname || g.leader.name}</Link></>}
+              {g.leader && <> · หัวหน้ากิลด์ <Link href={`/players/${g.leader.id}`}> {g.leader.nickname || g.leader.name}</Link></>}
             </span>
           </div>
         </div>
@@ -41,7 +43,7 @@ export default async function GuildPage({ params }: { params: Promise<{ id: stri
         <Link href={`/players/${g.top.id}`} className="card card-link guild-top" style={{ ["--tier" as string]: g.top.tier.color }}>
           <TierEmblem tier={g.top.tier} size={72} />
           <span className="grow">
-            <span className="muted small">🥇 อันดับ 1 ของกิลด์</span>
+            <span className="muted small"> อันดับ 1 ของกิลด์</span>
             <span className="row" style={{ gap: 10 }}>
               <Avatar src={g.top.avatarUrl} name={g.top.name} round />
               <strong className="guild-top-name">{g.top.nickname || g.top.name}</strong>
@@ -72,7 +74,7 @@ export default async function GuildPage({ params }: { params: Promise<{ id: stri
                   <td className="num"><strong>{m.guildRank ? <>{medal(m.guildRank)} {m.guildRank}</> : <span className="muted">-</span>}</strong></td>
                   <td>
                     <PlayerLink player={m} />
-                    {m.leader && <span className="captain-chip" title="หัวหน้ากิลด์"> 👑 หัวหน้า</span>}
+                    {m.leader && <span className="captain-chip" title="หัวหน้ากิลด์">  หัวหน้า</span>}
                   </td>
                   <td>{m.series ? <TierBadge tier={m.tier} size={20} /> : <span className="muted small">ยังไม่ลงแข่ง</span>}</td>
                   <td className="num"><strong>{m.series ? m.mmr : "-"}</strong></td>

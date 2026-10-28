@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { api } from "@/lib/api";
 import { fetchAll } from "@/lib/fetchAll";
 import { adminDashboard } from "@/lib/adminData";
@@ -115,7 +115,7 @@ export default async function AdminHome({ searchParams }: { searchParams: Promis
               <h2>แมตช์ต่อวัน</h2>
               <span className="muted small">{days.length} วันล่าสุด · รวม {days.reduce((n, d) => n + d.matches, 0)} แมตช์ {days.reduce((n, d) => n + d.games, 0)} เกม</span>
             </div>
-            <Link className="small muted" href="/admin/matches">ดูทั้งหมด →</Link>
+            <Link className="small muted" href="/admin/matches">ดูทั้งหมด</Link>
           </div>
           <DayBars days={days} />
         </section>
@@ -175,7 +175,7 @@ export default async function AdminHome({ searchParams }: { searchParams: Promis
               <h2>Top 5 MMR</h2>
               <span className="muted small">อันดับบนสุดของ Ranking ผู้เล่น</span>
             </div>
-            <Link className="small muted" href="/rankings/players">ดูหน้าเว็บ →</Link>
+            <Link className="small muted" href="/rankings/players">ดูหน้าเว็บ</Link>
           </div>
           {dash.topPlayers.length === 0 ? <Empty>ยังไม่มี</Empty> : (
             <ol className="top-list">
@@ -201,7 +201,7 @@ export default async function AdminHome({ searchParams }: { searchParams: Promis
               <h2>ผลที่บันทึกล่าสุด</h2>
               <span className="muted small">กดเพื่อแก้ไข</span>
             </div>
-            <Link className="small muted" href="/admin/matches">ทั้งหมด →</Link>
+            <Link className="small muted" href="/admin/matches">ทั้งหมด</Link>
           </div>
           {recent.data.length === 0 ? <Empty>ยังไม่มีผลการแข่ง</Empty> : (
             <ul className="recent-list">

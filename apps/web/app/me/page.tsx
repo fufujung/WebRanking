@@ -1,8 +1,14 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { redirect } from "next/navigation";
 import { api, qs } from "@/lib/api";
 import { getMember } from "@/lib/member";
-import type { MyCharacter, PendingLink, ReservePlayer, GameRank, Wallet } from "@/lib/types";
+import type {
+  MyCharacter,
+  PendingLink,
+  ReservePlayer,
+  GameRank,
+  Wallet,
+} from "@/lib/types";
 import { fmtDate } from "@/lib/format";
 import { ConfirmReward } from "@/app/predict/PredictForms";
 import { siteOrigin } from "@/lib/site";
@@ -31,78 +37,144 @@ function RankLine({ p }: { p: MyCharacter }) {
       <TierBadge tier={p.tier} size={20} />
       <strong>{p.mmr} MMR</strong>
       {p.rank ? (
-        <span>อันดับ <strong>#{p.rank}</strong> จาก {p.rankedPlayers} คน{p.game ? ` ใน ${p.game.name}` : ""}</span>
+        <span>
+          อันดับ <strong>#{p.rank}</strong> จาก {p.rankedPlayers} คน
+          {p.game ? ` ใน ${p.game.name}` : ""}
+        </span>
       ) : (
-        <span className="muted">ยังไม่ติดอันดับ · แข่งอีก {p.seriesToPlace} ซีรีส์</span>
+        <span className="muted">
+          ยังไม่ติดอันดับ · แข่งอีก {p.seriesToPlace} ซีรีส์
+        </span>
       )}
     </span>
   );
 }
 
-export default async function MePage({ searchParams }: { searchParams: Promise<{ error?: string; joined?: string }> }) {
+export default async function MePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; joined?: string }>;
+}) {
   const sp = await searchParams;
   const me = await getMember();
-  const error = sp.error ? ERRORS[sp.error] ?? ERRORS.discord : null;
+  const error = sp.error ? (ERRORS[sp.error] ?? ERRORS.discord) : null;
 
-  if (!me) redirect(`/login${sp.error ? `?error=${encodeURIComponent(sp.error)}` : ""}`);
+  if (!me)
+    redirect(
+      `/login${sp.error ? `?error=${encodeURIComponent(sp.error)}` : ""}`,
+    );
 
-  const [{ data: mine }, games, origin, { data: reserves }, wallet, { pending }] = await Promise.all([
+  const [
+    { data: mine },
+    games,
+    origin,
+    { data: reserves },
+    wallet,
+    { pending },
+  ] = await Promise.all([
     api<{ data: MyCharacter[] }>(`/members/${me.id}`),
     allGames(),
     siteOrigin(),
-    api<{ data: (ReservePlayer & { player: { gameId: string | null } })[] }>(`/members/${me.id}/reserves`),
+    api<{ data: (ReservePlayer & { player: { gameId: string | null } })[] }>(
+      `/members/${me.id}/reserves`,
+    ),
     api<Wallet>(`/predict/members/${me.id}`),
     api<{ pending: PendingLink[] }>(`/players/discord/${me.id}`),
   ]);
   // เล่นเก่งปากเก่ง keeps a list per game (UIDs and names differ between games): one form for each game the member plays.
-  const byGame = [...new Map(mine.map((c) => [c.game?.id ?? "", c.game])).values()];
+  const byGame = [
+    ...new Map(mine.map((c) => [c.game?.id ?? "", c.game])).values(),
+  ];
   const reserveForms = await Promise.all(
     byGame.map(async (game) => ({
       game,
       characters: mine.filter((c) => (c.game?.id ?? "") === (game?.id ?? "")),
-      current: reserves.find((r) => (r.player.gameId ?? "") === (game?.id ?? "")) ?? null,
-      ranks: (await api<{ data: GameRank[] }>(`/special/ranks${qs({ gameId: game?.id })}`)).data,
+      current:
+        reserves.find((r) => (r.player.gameId ?? "") === (game?.id ?? "")) ??
+        null,
+      ranks: (
+        await api<{ data: GameRank[] }>(
+          `/special/ranks${qs({ gameId: game?.id })}`,
+        )
+      ).data,
     })),
   );
   return (
-    <>
+    <div className="me-page">
       <div className="page-head">
         <div className="row">
           <Avatar src={me.avatar} name={me.name} size="lg" round />
           <div>
             <h1>{me.name}</h1>
-            <span className="muted small discord-chip"><DiscordMark /> เข้าสู่ระบบด้วย Discord</span>
+            <span className="muted small discord-chip">
+              {me.testSession ? "บัญชีทดสอบ" : <><DiscordMark /> เข้าสู่ระบบด้วย Discord</>}
+            </span>
           </div>
         </div>
-        <form action={memberLogout}><button className="btn btn-sm">ออกจากระบบ</button></form>
+        <div className="row">
+          <a className="btn" href={mine.length ? "#my-teams" : "#claim-profile"}>
+            {mine.length ? "จัดการทีมของฉัน" : "ผูกโปรไฟล์ผู้เล่น"}
+          </a>
+          <Link className="btn" href="/me/player">
+            ข้อมูลสมัครแข่งขัน
+          </Link>
+        </div>
       </div>
-      {error && <div className="error" style={{ marginBottom: 16 }}>{error}</div>}
-      {sp.joined && <div className="success" style={{ marginBottom: 16 }}>เข้าร่วมทีมแล้ว ยินดีต้อนรับ!</div>}
+      {error && (
+        <div className="error" style={{ marginBottom: 16 }}>
+          {error}
+        </div>
+      )}
+      {sp.joined && (
+        <div className="success" style={{ marginBottom: 16 }}>
+          เข้าร่วมทีมแล้ว ยินดีต้อนรับ!
+        </div>
+      )}
 
-      <section id="rewards" className="card me-coins" style={{ marginBottom: 24 }}>
+      <section
+        id="rewards"
+        className="card me-coins"
+        style={{ marginBottom: 24 }}
+      >
         <div className="row between">
-          <h2 style={{ margin: 0 }}>🔮 ทายผล · {wallet.coins} เหรียญ</h2>
-          <Link href="/predict" className="btn btn-sm btn-primary">{wallet.dailyClaimed ? "ไปทายผล" : "รับเหรียญวันนี้"}</Link>
+          <h2 style={{ margin: 0 }}> ทายผล · {wallet.coins} เหรียญ</h2>
+          <Link href="/predict" className="btn btn-sm btn-primary">
+            {wallet.dailyClaimed ? "ไปทายผล" : "รับเหรียญวันนี้"}
+          </Link>
         </div>
         {wallet.rewards.length === 0 ? (
-          <p className="muted small" style={{ marginBottom: 0 }}>ยังไม่มีรางวัล ติดอันดับคนทายของรายการหรือซีซั่นเพื่อลุ้นโค้ดส่วนลดและอุปกรณ์เกมมิ่ง</p>
+          <p className="muted small" style={{ marginBottom: 0 }}>
+            ยังไม่มีรางวัล
+            ติดอันดับคนทายของรายการหรือซีซั่นเพื่อลุ้นโค้ดส่วนลดและอุปกรณ์เกมมิ่ง
+          </p>
         ) : (
           <ul className="reward-list">
             {wallet.rewards.map((r) => (
               <li key={r.id}>
                 <div>
-                  <strong>🎁 {r.title}</strong>
-                  {r.place ? <span className="muted small"> · อันดับ {r.place}</span> : null}
+                  <strong> {r.title}</strong>
+                  {r.place ? (
+                    <span className="muted small"> · อันดับ {r.place}</span>
+                  ) : null}
                   <span className="muted small"> · {fmtDate(r.createdAt)}</span>
                   {r.note && <div className="muted small">{r.note}</div>}
                 </div>
                 {r.code ? (
-                  <code className="reward-code" title={r.codeLabel ?? undefined}>{r.code}</code>
+                  <code
+                    className="reward-code"
+                    title={r.codeLabel ?? undefined}
+                  >
+                    {r.code}
+                  </code>
                 ) : r.status === "RECEIVED" ? (
                   <span className="badge">ได้รับแล้ว</span>
                 ) : (
                   <span className="row" style={{ gap: 8 }}>
-                    <span className="badge">{r.status === "SENT" ? "ส่งแล้ว" : "รอผู้จัดส่ง (ติดต่อทาง Discord DM)"}</span>
+                    <span className="badge">
+                      {r.status === "SENT"
+                        ? "ส่งแล้ว"
+                        : "รอผู้จัดส่ง (ติดต่อทาง Discord DM)"}
+                    </span>
                     {r.status === "SENT" && <ConfirmReward id={r.id} />}
                   </span>
                 )}
@@ -110,11 +182,16 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
             ))}
           </ul>
         )}
-        {wallet.rewards.some((r) => r.code) && <p className="muted small" style={{ marginBottom: 0 }}>นำโค้ดไปใช้ที่ร้าน Overtimeboosboos ได้เลย โค้ดใช้ได้ครั้งเดียว อย่าส่งให้คนอื่น</p>}
+        {wallet.rewards.some((r) => r.code) && (
+          <p className="muted small" style={{ marginBottom: 0 }}>
+            นำโค้ดไปใช้ที่ร้าน Overtimeboosboos ได้เลย โค้ดใช้ได้ครั้งเดียว
+            อย่าส่งให้คนอื่น
+          </p>
+        )}
       </section>
 
       {mine.length > 0 && (
-        <section className="stack" style={{ marginBottom: 24 }}>
+        <section id="my-teams" className="stack" style={{ marginBottom: 24 }}>
           <h2 style={{ margin: 0 }}>โปรไฟล์ของคุณ ({mine.length})</h2>
           {mine.map((p) => (
             <div key={p.id} className="card me-player">
@@ -123,37 +200,82 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
                   <Avatar src={p.avatarUrl} name={p.name} round />
                   <span>
                     <strong>{p.name}</strong>
-                    <span className="muted small"> · {p.uid ? `UID ${p.uid}${p.server ? ` (${p.server})` : ""}` : "ยังไม่มี UID"}</span>
+                    <span className="muted small">
+                      {" "}
+                      ·{" "}
+                      {p.uid
+                        ? `UID ${p.uid}${p.server ? ` (${p.server})` : ""}`
+                        : "ยังไม่มี UID"}
+                    </span>
                   </span>
                 </Link>
-                <Link href={`/players/${p.id}`} className="muted small">ดูหน้าโปรไฟล์ →</Link>
+                <Link href={`/players/${p.id}`} className="muted small">
+                  ดูหน้าโปรไฟล์
+                </Link>
               </div>
               <RankLine p={p} />
               <h3 className="me-sub">ทีม</h3>
               <TeamPanel me={p} inviteBase={origin} />
-              <h3 className="me-sub">กิลด์{p.guildInvites.length > 0 && !p.guild ? <span className="pill pill-warn" style={{ marginLeft: 8 }}>มีคำเชิญ {p.guildInvites.length}</span> : null}</h3>
-              <GuildPanel me={p} />
-              <h3 className="me-sub">แก้ไขโปรไฟล์</h3>
-              <EditMyPlayer player={{ ...p, team: null }} />
+              <details className="me-disclosure" open={p.guildInvites.length > 0 && !p.guild ? true : undefined}>
+                <summary>
+                <span>กิลด์</span>
+                {p.guildInvites.length > 0 && !p.guild ? (
+                  <span className="pill pill-warn" style={{ marginLeft: 8 }}>
+                    มีคำเชิญ {p.guildInvites.length}
+                  </span>
+                ) : null}
+                </summary>
+                <div className="me-disclosure-content"><GuildPanel me={p} /></div>
+              </details>
+              <details className="me-disclosure">
+                <summary>แก้ไขโปรไฟล์</summary>
+                <div className="me-disclosure-content"><EditMyPlayer player={{ ...p, team: null }} /></div>
+              </details>
             </div>
           ))}
         </section>
       )}
       {mine.length > 0 ? (
-        reserveForms.map((f, n) => <ReserveForm key={f.game?.id ?? "none"} anchor={n === 0} game={games.length > 1 ? f.game : null} characters={f.characters} current={f.current} ranks={f.ranks} />)
+        reserveForms.map((f, n) => (
+          <ReserveForm
+            key={f.game?.id ?? "none"}
+            anchor={n === 0}
+            game={games.length > 1 ? f.game : null}
+            characters={f.characters}
+            current={f.current}
+            ranks={f.ranks}
+          />
+        ))
       ) : (
         <section id="reserve" className="card mt">
-          <h2 style={{ marginTop: 0 }}>📝 ลงชื่อตัวสำรอง เล่นเก่งปากเก่ง</h2>
-          <p className="muted" style={{ margin: 0 }}>ผูกตัวละครของคุณด้านล่างก่อน (ใส่ชื่อในเกมและ UID) แล้วฟอร์มลงชื่อตัวสำรองจะขึ้นตรงนี้</p>
+          <h2 style={{ marginTop: 0 }}> ลงชื่อตัวสำรอง เล่นเก่งปากเก่ง</h2>
+          <p className="muted" style={{ margin: 0 }}>
+            ผูกตัวละครของคุณด้านล่างก่อน (ใส่ชื่อในเกมและ UID)
+            แล้วฟอร์มลงชื่อตัวสำรองจะขึ้นตรงนี้
+          </p>
         </section>
       )}
       {pending.length > 0 && (
         <div className="notice mt" data-pending-links>
-          ⏳ รอผู้จัดอนุมัติการผูกตัวละคร: {pending.map((l) => `${l.player.name}${l.player.uid ? ` (UID ${l.player.uid})` : ""}`).join(", ")} · อนุมัติแล้วตัวละครจะขึ้นในหน้านี้เอง
+          ⏳ รอผู้จัดอนุมัติการผูกตัวละคร:{" "}
+          {pending
+            .map(
+              (l) =>
+                `${l.player.name}${l.player.uid ? ` (UID ${l.player.uid})` : ""}`,
+            )
+            .join(", ")}{" "}
+          · อนุมัติแล้วตัวละครจะขึ้นในหน้านี้เอง
         </div>
       )}
-      <ClaimForm first={mine.length === 0} games={games} />
-      <p className="muted small mt">ชื่อในเกม ทีม และสถิติ อัปเดตจากผลการแข่งและบอท Discord อัตโนมัติ ถ้าข้อมูลผิด แจ้งผู้จัดได้เลย</p>
-    </>
+      {mine.length === 0 ? <ClaimForm first games={games} /> : <details className="card me-add-profile">
+        <summary>ผูกตัวละครอื่นเพิ่ม</summary>
+        <ClaimForm first={false} games={games} />
+      </details>}
+      <p className="muted small mt">
+        ชื่อในเกม ทีม และสถิติ อัปเดตจากผลการแข่งและบอท Discord อัตโนมัติ
+        ถ้าข้อมูลผิด แจ้งผู้จัดได้เลย
+      </p>
+      <div className="me-logout"><form action={memberLogout}><button className="btn" type="submit">ออกจากระบบ</button></form></div>
+    </div>
   );
 }

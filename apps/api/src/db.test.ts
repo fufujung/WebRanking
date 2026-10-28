@@ -7,7 +7,8 @@ import os from "node:os";
 import path from "node:path";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tr-db-test-"));
-process.env.DATABASE_URL = `file:${path.join(tmp, "test.db")}`;
+fs.writeFileSync(path.join(tmp, "test.db"), "");
+process.env.DATABASE_URL = `file:${path.join(tmp, "test.db").replaceAll("\\", "/")}`;
 execSync("npx prisma db push --skip-generate", { stdio: "ignore", env: process.env });
 
 const { databaseUrl, prisma, tuneDatabase } = await import("./lib/db.js");

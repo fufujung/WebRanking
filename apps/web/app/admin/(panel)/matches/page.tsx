@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/LoadingLink";
 import { api, qs } from "@/lib/api";
 import { fetchAll } from "@/lib/fetchAll";
 import type { Match, Page, Team, Tournament } from "@/lib/types";

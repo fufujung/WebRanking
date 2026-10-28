@@ -1,7 +1,9 @@
+import { LogoMark } from "@/components/public/LogoMark";
+
 /** Line icons for the admin menu and cards (24x24, drawn with the current text colour). */
 const PATHS = {
   dashboard: "M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z",
-  matches: "M7 4h10v4a5 5 0 0 1-10 0zM5 5H3v2a3 3 0 0 0 3 3M19 5h2v2a3 3 0 0 1-3 3M12 13v4M8 21h8M9 17h6",
+  matches: "",
   tournaments: "M4 5h4v4H4zM4 15h4v4H4zM8 7h4v10H8M12 12h4M16 10h4v4h-4z",
   teams: "M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z",
   players: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0",
@@ -30,6 +32,7 @@ const PATHS = {
 export type IconName = keyof typeof PATHS;
 
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
+  if (name === "matches") return <LogoMark size={size} />;
   return (
     <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d={PATHS[name]} />

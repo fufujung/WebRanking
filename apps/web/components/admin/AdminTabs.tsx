@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 export interface AdminTab {
   key: string;
-  icon: string;
+  icon: React.ReactNode;
   label: string;
   /** One short line under the label saying what is inside. */
   hint: string;

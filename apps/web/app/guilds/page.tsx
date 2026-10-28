@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { DirectoryTabs } from "@/components/DirectoryTabs";
+import Link from "@/components/LoadingLink";
 import { api, qs } from "@/lib/api";
 import type { GuildListItem, Page } from "@/lib/types";
 import { Avatar, Empty, Pager, pageOffset } from "@/components/ui";
@@ -12,7 +13,8 @@ export default async function GuildsPage({ searchParams }: { searchParams: Promi
   const offset = pageOffset(sp.page, LIMIT);
   const page = await api<Page<GuildListItem>>(`/guilds${qs({ search: sp.q, limit: LIMIT, offset })}`);
   return (
-    <>
+    <div className="public-page-flow">
+      <DirectoryTabs active="guilds" />
       <div className="page-head">
         <h1>อันดับกิลด์</h1>
         <span className="muted">{page.total} กิลด์ · สร้างหรือรับคำเชิญได้ที่ <Link href="/me">โปรไฟล์ของฉัน</Link></span>
@@ -40,7 +42,7 @@ export default async function GuildsPage({ searchParams }: { searchParams: Promi
               {g.score !== null && <span className="small">คะแนนกิลด์ <strong>{g.score}</strong></span>}
               <span className="guild-card-top small">
                 {g.top ? (
-                  <>🥇 อันดับ 1: <strong>{g.top.nickname || g.top.name}</strong> <TierBadge tier={g.top.tier} size={16} /> {g.top.mmr} MMR</>
+                  <> อันดับ 1: <strong>{g.top.nickname || g.top.name}</strong> <TierBadge tier={g.top.tier} size={16} /> {g.top.mmr} MMR</>
                 ) : (
                   <span className="muted">ยังไม่มีใครลงแข่ง</span>
                 )}
@@ -50,6 +52,6 @@ export default async function GuildsPage({ searchParams }: { searchParams: Promi
         </div>
       )}
       <Pager total={page.total} limit={LIMIT} offset={offset} params={sp} path="/guilds" />
-    </>
+    </div>
   );
 }

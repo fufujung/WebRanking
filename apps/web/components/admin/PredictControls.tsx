@@ -5,6 +5,7 @@ import { createPair, deletePair, setAllMarketsOpen, setMarketOpen, settlePair, t
 import { fmtDateTime } from "@/lib/format";
 import type { Market } from "@/lib/types";
 import { useFormAction } from "./useFormAction";
+import { LogoMark } from "@/components/public/LogoMark";
 
 const STATE: Record<Market["status"], string> = { OPEN: "เปิดรับทาย", CLOSED: "ปิดรับแล้ว", SETTLED: "มีผลแล้ว", REFUNDED: "คืนเหรียญแล้ว" };
 
@@ -25,7 +26,7 @@ export function PredictControls({ tournamentId, markets, teams }: { tournamentId
   const live = markets.filter((m) => m.status === "OPEN" || m.status === "CLOSED");
   const anyOpen = live.some((m) => m.open);
   const anyClosed = live.some((m) => m.status === "CLOSED");
-  const label = (m: Market) => (m.kind === "CHAMPION" ? "🏆 ใครจะเป็นแชมป์" : m.kind === "CUSTOM" ? `🎯 ${m.title}` : m.title);
+  const label = (m: Market) => (m.kind === "CHAMPION" ? "ใครจะเป็นแชมป์" : m.kind === "CUSTOM" ? `🎯 ${m.title}` : m.title);
 
   return (
     <div className="stack">
@@ -47,7 +48,7 @@ export function PredictControls({ tournamentId, markets, teams }: { tournamentId
           return (
             <div key={m.id} className="predict-admin-row" data-market={m.id}>
               <div>
-                <strong>{label(m)}</strong>
+                <strong>{m.kind === "CHAMPION" && <><LogoMark /> </>}{label(m)}</strong>
                 <div className="muted small">
                   {m.options.map((o) => `${o.team.name} ${o.percent}%`).join(" · ")} · {m.pool} เหรียญ · {m.people} คน
                   {m.locksAt && !done ? ` · ปิดเอง ${fmtDateTime(m.locksAt)}` : ""}

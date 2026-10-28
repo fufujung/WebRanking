@@ -69,6 +69,7 @@ export interface Player {
   nickname: string | null;
   country: string | null;
   role: string | null;
+  inGameRank?: string | null;
   avatarUrl: string | null;
   teamId: string | null;
   /** In-game UID: the same player whatever name they use. */
@@ -244,7 +245,7 @@ export interface Match {
   playedAt: string;
   teamA: TeamSummary;
   teamB: TeamSummary;
-  tournament: { id: string; name: string };
+  tournament: { id: string; name: string; special?: boolean };
 }
 
 export interface StatLine extends Record<StatKey, number> {
@@ -363,6 +364,8 @@ export interface Overview {
   topPlayers: LadderPlayer[];
   recentMatches: Match[];
   upcomingTournaments: Tournament[];
+  normalTournaments: Tournament[];
+  specialTournaments: Tournament[];
 }
 
 export interface ApiKeyInfo {
@@ -632,7 +635,7 @@ export interface SpecialBoard {
   placing: MmrLadder["placing"];
   tiers: MmrLadder["tiers"];
   stats: (Player & { rank: number; mmr: number; tier: Tier; stats: PlayerStats })[];
-  events: { id: string; name: string; status: Status; startDate: string; matches: number }[];
+  events: (Tournament & { matches: number })[];
   reserve: ReservePlayer[];
   rules: MmrLadder["rules"];
 }

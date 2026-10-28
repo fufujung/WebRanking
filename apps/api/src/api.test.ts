@@ -9,7 +9,8 @@ import type { Server } from "node:http";
 
 // Isolated database and upload folder for this test run.
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tr-api-test-"));
-process.env.DATABASE_URL = `file:${path.join(tmp, "test.db")}`;
+fs.writeFileSync(path.join(tmp, "test.db"), "");
+process.env.DATABASE_URL = `file:${path.join(tmp, "test.db").replaceAll("\\", "/")}`;
 process.env.UPLOAD_DIR = path.join(tmp, "uploads");
 process.env.CORS_ORIGINS = "https://my-site.example";
 delete process.env.ANTHROPIC_API_KEY;
@@ -343,6 +344,7 @@ describe("tournament flow", () => {
   test("overview totals", async () => {
     const res = await call("GET", "/api/v1/stats/overview");
     assert.deepEqual(res.body.totals, { teams: 3, players: 5, tournaments: 1, matches: 2, ongoingTournaments: 0 });
+    assert.equal(res.body.upcomingTournaments.find((t: { id: string }) => t.id === ids.cup)?.teamCount, 3);
   });
 
   test("admin dashboard: activity per day and a to-do list, admin keys only", async () => {

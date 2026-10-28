@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { DirectoryTabs } from "@/components/DirectoryTabs";
+import Link from "@/components/LoadingLink";
 import { api, qs } from "@/lib/api";
 import type { Page, Team } from "@/lib/types";
 import { Avatar, Empty, Pager, pageOffset } from "@/components/ui";
@@ -11,8 +12,9 @@ export default async function TeamsPage({ searchParams }: { searchParams: Promis
   const offset = pageOffset(sp.page, LIMIT);
   const page = await api<Page<Team>>(`/teams${qs({ search: sp.q, limit: LIMIT, offset })}`);
   return (
-    <>
-      <div className="page-head"><h1>ทีมทั้งหมด</h1><span className="muted">{page.total} ทีม</span></div>
+    <div className="public-page-flow">
+      <DirectoryTabs active="teams" />
+      <div className="page-head"><div><h1>ทีมทั้งหมด</h1><span className="muted">{page.total} ทีม</span></div><Link href="/teams/new" className="btn btn-primary">สร้างทีม</Link></div>
       <form className="filters" role="search">
         <input className="grow" name="q" defaultValue={sp.q} placeholder="ค้นหาชื่อทีมหรือตัวย่อ" aria-label="ค้นหาทีม" />
         <button className="btn btn-primary" type="submit" style={{ minWidth: 0 }}>ค้นหา</button>
@@ -34,6 +36,6 @@ export default async function TeamsPage({ searchParams }: { searchParams: Promis
         </div>
       )}
       <Pager total={page.total} limit={LIMIT} offset={offset} params={sp} path="/teams" />
-    </>
+    </div>
   );
 }

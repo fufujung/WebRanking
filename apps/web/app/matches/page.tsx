@@ -14,13 +14,13 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
     api<Page<Team>>("/teams?limit=200"),
   ]);
   return (
-    <>
+    <div className="public-page-flow">
       <div className="page-head"><h1>ผลการแข่ง</h1><span className="muted">{page.total} แมตช์</span></div>
       <div className="filters"><div style={{ minWidth: 300 }}><TeamFilter teams={teams.data} placeholder="ทุกทีม (พิมพ์เพื่อหาทีม)" /></div></div>
       {page.data.length === 0 ? <Empty>ยังไม่มีผลการแข่ง</Empty> : (
         <div className="grid grid-2">{page.data.map((m) => <MatchCard key={m.id} match={m} />)}</div>
       )}
       <Pager total={page.total} limit={LIMIT} offset={offset} params={sp} path="/matches" />
-    </>
+    </div>
   );
 }

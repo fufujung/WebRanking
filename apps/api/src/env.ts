@@ -1,6 +1,9 @@
-// Loads apps/api/.env before anything reads process.env. Must be the first import.
+// Resolve the API's configuration relative to this file, regardless of the launch directory.
+import { fileURLToPath } from "node:url";
+
 try {
-  process.loadEnvFile();
-} catch {
-  // No .env file: rely on the real environment.
+  process.loadEnvFile(fileURLToPath(new URL("../.env", import.meta.url)));
+} catch (error) {
+  // Deployments can provide their configuration directly through the environment.
+  if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 }

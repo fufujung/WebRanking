@@ -184,7 +184,7 @@ export async function joinReserve(discordId: string, body: unknown) {
     // One sign-up per account in each game: switching to another character of the same game moves it.
     await tx.reservePlayer.deleteMany({ where: { discordId, playerId: { not: player.id }, ...inGame(player.gameId) } });
     await tx.reservePlayer.upsert({ where: { playerId: player.id }, create: { playerId: player.id, ...data }, update: data });
-    await tx.player.update({ where: { id: player.id }, data: { role: input.position } });
+    await tx.player.update({ where: { id: player.id }, data: { role: input.position, inGameRank: input.rank } });
   });
   return prisma.reservePlayer.findUnique({ where: { playerId: player.id }, include: { player: { select: playerSelect } } });
 }
@@ -222,7 +222,7 @@ export async function editReserve(playerId: string, body: unknown) {
   if (!row) throw notFound("Reserve player");
   if (input.rank) await checkRank(input.rank, row.player.gameId);
   return prisma.$transaction(async (tx) => {
-    if (input.position) await tx.player.update({ where: { id: playerId }, data: { role: input.position } });
+    if (input.position || input.rank) await tx.player.update({ where: { id: playerId }, data: { ...(input.position ? { role: input.position } : {}), ...(input.rank ? { inGameRank: input.rank } : {}) } });
     return tx.reservePlayer.update({ where: { playerId }, data: input, include: { player: { select: playerSelect } } });
   });
 }
@@ -280,7 +280,7 @@ export async function specialBoard(gameId?: string | null, seasonId?: string | n
     prisma.tournament.findMany({
       where: { special: true, ...(game ? { gameId: game } : {}), ...(seasonId ? { seasonId } : {}) },
       orderBy: { startDate: "desc" },
-      select: { id: true, name: true, status: true, startDate: true, seasonId: true, _count: { select: { matches: true } } },
+      include: { _count: { select: { matches: true, entries: true } } },
     }),
     reserveList(false, game),
     reserveRanks(game),
@@ -307,7 +307,7 @@ export async function specialBoard(gameId?: string | null, seasonId?: string | n
     placing: inSeason(board.placing),
     tiers: tierCounts(ranked),
     stats: statRows,
-    events: events.map(({ _count, ...t }) => ({ ...t, matches: _count.matches })),
+    events: events.map(({ _count, ...t }) => ({ ...t, matches: _count.matches, teamCount: _count.entries })),
     reserve,
     ranks,
     rules: { start: START_MMR, k: MMR_K, placementK: PLACEMENT_K, placementSeries: PLACEMENT_SERIES, mvpBonus: MVP_BONUS, svpBonus: SVP_BONUS, movementDays: MOVEMENT_DAYS },

@@ -23,8 +23,9 @@ const badDates = () => new HttpError(400, "endDate must be on or after startDate
 const badRoster = () => fail(400, "rosterMin must not be more than rosterMax", "จำนวนผู้เล่นขั้นต่ำต้องไม่มากกว่าขั้นสูงสุด");
 
 tournaments.get("/", async (req, res) => {
-  const q = searchQuery.extend({ status: tournamentStatus.optional() }).parse(req.query);
+  const q = searchQuery.extend({ status: tournamentStatus.optional(), category: z.enum(["normal", "special", "all"]).default("all") }).parse(req.query);
   const where = {
+    ...(q.category === "all" ? {} : { special: q.category === "special" }),
     ...(q.status ? { status: q.status } : {}),
     ...(q.search
       ? { OR: [{ name: { contains: q.search } }, { game: { contains: q.search } }, { location: { contains: q.search } }] }

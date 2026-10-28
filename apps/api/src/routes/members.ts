@@ -3,8 +3,12 @@ import { z } from "zod";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { discordId } from "../lib/members.js";
 import { notFound } from "../lib/errors.js";
-import { leaveSolo, signUp } from "../lib/solo.js";
+import { leaveSolo, signUp, ranksOf } from "../lib/solo.js";
 import { setOwnPosition } from "../lib/players.js";
+import { saveRegistrationProfile } from "../lib/playerRegistration.js";
+import { register } from "../lib/competition.js";
+import { adoptGame } from "../lib/games.js";
+import { syncPredictions } from "../lib/predict.js";
 import { checkReserve, joinReserve, leaveReserve, myReserve, myReserves } from "../lib/special.js";
 import { acceptInvite, cancelInvite, createGuild, declineInvite, editGuild, inviteToGuild, kickFromGuild, leaveGuild, passLeader } from "../lib/guilds.js";
 import { createTeam, inviteInfo, joinTeam, kickMember, leaveTeam, makeCaptain, memberView, resetInvite } from "../lib/teamSelf.js";
@@ -46,6 +50,29 @@ members.post("/:discordId/invite", async (req, res) => {
 /** Sets the position (GUARD, FORWARD, CENTER or ALL) of the member's characters, or of one with playerId. */
 members.post("/:discordId/position", async (req, res) => {
   res.json(await setOwnPosition(who(req.params.discordId), req.body));
+});
+
+members.post("/:discordId/player-profile", async (req, res) => {
+  res.json(await saveRegistrationProfile(who(req.params.discordId), req.body));
+});
+
+members.get("/:discordId/player-ranks", async (req, res) => {
+  who(req.params.discordId);
+  const { gameId } = z.object({ gameId: z.string().min(1).optional() }).parse(req.query);
+  res.json({ data: await ranksOf({ gameId: gameId ?? null }) });
+});
+
+members.post("/:discordId/tournaments/:tournamentId/join", async (req, res) => {
+  const id = String(req.params.tournamentId);
+  const entry = await register(id, req.body, who(req.params.discordId));
+  await adoptGame(id);
+  await syncPredictions(id);
+  res.json(entry);
+});
+
+members.post("/:discordId/solo/:tournamentId/join", async (req, res) => {
+  const discordId = who(req.params.discordId);
+  res.json(await signUp(discordId, String(req.params.tournamentId), req.body, true));
 });
 
 /** Signs up alone for a SOLO tournament with position and rank (again to change them). */
