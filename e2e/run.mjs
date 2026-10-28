@@ -296,7 +296,7 @@ for (const [ti, team] of teamNames.entries()) {
   await page.goto(base + "/admin/players/new");
   for (let n = 1; n <= 2; n++) {
     await page.fill('input[name="name"]', `P${ti}${n}-${uniq}`);
-    const combo = page.locator("input[role=combobox]");
+    const combo = page.locator("main input[role=combobox]");
     await combo.click();
     await combo.fill(team.split(" ")[0].toLowerCase());
     await page.locator(".combo-list [role=option]", { hasText: team }).click();
@@ -306,7 +306,7 @@ for (const [ti, team] of teamNames.entries()) {
     await page.waitForFunction(() => document.querySelector('input[name="name"]')?.value === "");
     await page.waitForSelector(".success");
     // the team stays selected for the next player
-    const kept = await page.locator("input[role=combobox]").inputValue();
+    const kept = await page.locator("main input[role=combobox]").inputValue();
     if (kept !== team) throw new Error("team not kept for next player: " + kept);
   }
 }
@@ -495,7 +495,7 @@ step("rankings updated: " + top.replace(/\s+/g, " ").slice(0, 60));
 
 // Tournament entries: placement
 await page.goto(tournamentUrl);
-const entryCombo = page.locator("input[role=combobox]");
+const entryCombo = page.locator("main input[role=combobox]");
 await entryCombo.click();
 await entryCombo.fill("bravo " + uniq);
 await page.locator(".combo-list [role=option]").first().click();
@@ -667,7 +667,7 @@ await page.locator('[data-topic="register"][aria-pressed="true"]').waitFor();
 await page.locator('[data-topic-panel="bracket"]').locator("text=ต้องมีอย่างน้อย 2 ทีม").waitFor({ state: "attached" });
 const cupTeams = ["Thunder Hawks", "Siam Dragons", "Night Owls"];
 for (const [i, name] of cupTeams.entries()) {
-  const c = page.locator("input[role=combobox]");
+  const c = page.locator("main input[role=combobox]");
   await c.click();
   await c.fill(name);
   await page.locator(".combo-list [role=option]", { hasText: name }).first().click();
