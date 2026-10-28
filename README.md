@@ -397,4 +397,13 @@ schtasks /Create /F /TN TheRanking-bot /SC ONSTART /RU SYSTEM /TR "C:\PROGRA~1\n
 schtasks /Create /F /TN TheRanking-deploy /SC MINUTE /MO 5 /RU SYSTEM /TR "C:\PROGRA~1\nodejs\node.exe C:\theranking\deploy\auto-deploy.mjs"
 ```
 
+**สำคัญ:** `schtasks /Create` ตั้งค่าเริ่มต้นให้หยุดงานเองเมื่อรันครบ 72 ชั่วโมง ถ้าไม่แก้ เว็บ, API และบอทจะดับพร้อมกันทุก 3 วัน (เกิดจริงเมื่อ 28 ต.ค. 2026 ล่มไปประมาณ 7 ชั่วโมง) หลังสร้างงานแล้ว ให้รันคำสั่งนี้ใน PowerShell แบบ Administrator ทุกครั้ง เพื่อปลดเวลาจำกัด และให้ Windows เปิดงานใหม่เองภายใน 1 นาทีถ้างานหยุด:
+
+```powershell
+$s = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+"TheRanking-api","TheRanking-web","TheRanking-bot" | ForEach-Object { Set-ScheduledTask -TaskName $_ -Settings $s }
+```
+
+เช็กได้ด้วย `(Get-ScheduledTask TheRanking-web).Settings.ExecutionTimeLimit` ต้องได้ `PT0S`
+
 ก่อนสร้างงานใหม่ ให้ปิดตัวเดิม (`run-*.cmd` และ node ของมัน) ก่อน แล้วสั่ง `schtasks /Run` ทั้งสามงาน
