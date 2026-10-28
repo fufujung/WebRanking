@@ -442,7 +442,7 @@ step("new player's profile shows their team and games");
 // Player ranking (old links to the stat leaderboard still work)
 await page.goto(base + "/rankings/players?sort=mvp");
 await page.waitForURL(/\/rankings\/stats\?sort=mvp/);
-if (!(await page.locator("tbody").textContent()).includes(`P01-${uniq}`)) throw new Error("MVP player missing from ranking");
+await page.getByRole("row").filter({ hasText: `P01-${uniq}` }).first().waitFor();
 step("player ranking by MVP lists the player");
 
 // MMR ladder: podium, tiers, and the new player still placing (one series played)
