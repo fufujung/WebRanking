@@ -197,7 +197,8 @@ describe("registration", () => {
 
 describe("seeding and starting", () => {
   test("seed by rating, by hand, then start", async () => {
-    const t = await newTournament();
+    const startDate = new Date(Date.now() + 86_400_000).toISOString();
+    const t = await newTournament({ startDate });
     let res = await call("POST", `/tournaments/${t.id}/bracket/seed`, {});
     assert.equal(res.status, 409, "needs two teams");
     const teams = [];
@@ -224,7 +225,7 @@ describe("seeding and starting", () => {
     b = await ok("POST", `/tournaments/${t.id}/bracket/start`);
     assert.equal(b.status, "LIVE");
     assert.equal(b.registrationOpen, false);
-    assert.ok(b.matches.filter((m: any) => m.status === "READY").every((m: any) => m.scheduledAt === "2030-11-01T12:00:00.000Z"), "ready matches get the start time");
+    assert.ok(b.matches.filter((m: any) => m.status === "READY").every((m: any) => m.scheduledAt === startDate), "ready matches get the future start time");
     const detail = await ok("GET", `/tournaments/${t.id}`);
     assert.equal(detail.status, "ONGOING");
 
@@ -528,9 +529,11 @@ describe("live bracket", () => {
     const dv = await ok("POST", `/tournaments/${d.id}/bracket/start`);
     assert.ok(dv.matches.filter((m: any) => m.stage === "GF").every((m: any) => m.bestOf === 3));
     assert.ok(dv.matches.filter((m: any) => m.stage !== "GF").every((m: any) => m.bestOf === 1));
-    const same = await ok("PATCH", `/tournaments/${d.id}`, { finalBestOf: null });
+    assert.equal((await call("PATCH", `/tournaments/${d.id}`, { finalBestOf: null })).status, 409, "started scoring rules are locked");
+    assert.ok((await bracket(d.id)).matches.filter((m: any) => m.stage === "GF").every((m: any) => m.bestOf === 3));
+    const unstarted = await newTournament({ bestOf: 1, finalBestOf: 3 });
+    const same = await ok("PATCH", `/tournaments/${unstarted.id}`, { finalBestOf: null });
     assert.equal(same.finalBestOf, null);
-    assert.ok((await bracket(d.id)).matches.every((m: any) => m.bestOf === 1));
     assert.equal((await call("POST", "/tournaments", { name: "Even", startDate: "2026-11-01T12:00:00Z", finalBestOf: 4 })).status, 400);
   });
 

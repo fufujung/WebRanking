@@ -133,3 +133,17 @@ test("a gate left behind for more than 30 minutes is ignored", async () => {
     recheck();
   }
 });
+
+test("automatic tournament status pauses during a deploy and catches up afterward", async () => {
+  const { refreshTournamentStatuses } = await import("./lib/tournamentStatus.js");
+  const now = new Date();
+  const t = await prisma.tournament.create({ data: { name: "Scheduled during deploy", startDate: now } });
+  fs.writeFileSync(gate, "deploy");
+  recheck();
+  try {
+    assert.equal(await refreshTournamentStatuses(now), 0);
+    assert.equal((await prisma.tournament.findUniqueOrThrow({ where: { id: t.id } })).status, "UPCOMING");
+  } finally { fs.rmSync(gate, { force: true }); recheck(); }
+  assert.equal(await refreshTournamentStatuses(now), 1);
+  assert.equal((await prisma.tournament.findUniqueOrThrow({ where: { id: t.id } })).status, "ONGOING");
+});

@@ -118,10 +118,10 @@ export async function saveTournament(id: string | null, _: FormState, form: Form
     const body = {
       name: text(form, "name"),
       // An existing game is picked by id; "new" sends a typed name, which adds the game.
-      ...(text(form, "gameId") === "new" ? { gameId: null, game: orNull(text(form, "game")) } : { gameId: orNull(text(form, "gameId")), game: null }),
+      ...(form.has("gameId") ? (text(form, "gameId") === "new" ? { gameId: null, game: orNull(text(form, "game")) } : { gameId: orNull(text(form, "gameId")), game: null }) : {}),
       location: orNull(text(form, "location")),
       description: orNull(text(form, "description")),
-      status: text(form, "status") || "UPCOMING",
+      ...(form.has("status") ? { status: text(form, "status") || "UPCOMING" } : {}),
       startDate: fromBangkokInput(text(form, "startDate")) ?? text(form, "startDate"),
       // The whole end day counts (Thai time), so a one-day event can end on its start day.
       endDate: text(form, "endDate") ? (fromBangkokInput(`${text(form, "endDate")}T23:59`) ?? text(form, "endDate")) : null,
@@ -132,7 +132,7 @@ export async function saveTournament(id: string | null, _: FormState, form: Form
   });
   if (result) return result;
   revalidatePath("/", "layout");
-  redirect(id ? `/admin/tournaments/${savedId}?saved=1` : `/admin/tournaments/${savedId}`);
+  redirect(id ? `/admin/tournaments/${savedId}?saved=1#settings` : `/admin/tournaments/${savedId}`);
 }
 
 /** Bracket settings from the tournament form. Fields locked by a running bracket are not sent. */
@@ -304,6 +304,15 @@ export async function registerPickedTeam(tournamentId: string, teamName: string,
 }
 
 // Solo tournaments
+export async function saveSpecialTeamSides(tournamentId: string, body: unknown): Promise<{ view?: import("@/components/admin/SpecialTeamEditor").SpecialTeamsView; error?: string }> {
+  await requireAdmin();
+  try {
+    const view = await api<import("@/components/admin/SpecialTeamEditor").SpecialTeamsView>(`/tournaments/${encodeURIComponent(tournamentId)}/special-teams`, { method: "PUT", json: body });
+    revalidatePath("/", "layout");
+    return { view };
+  } catch (error) { return { error: explain(error) }; }
+}
+
 /** Proposes balanced teams from the solo sign-ups; nothing is saved. */
 export async function drawSolo(tournamentId: string): Promise<{ draw?: SoloDraw; error?: string }> {
   await requireAdmin();

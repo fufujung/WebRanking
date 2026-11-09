@@ -11,6 +11,19 @@ import { getPendingDiscord } from "@/lib/discordPending";
 import { getMember } from "@/lib/member";
 import { siteSettings } from "@/lib/settings";
 import { switchDiscordAccount, verifyDiscordMembership, testLogin } from "./actions";
+import { testAccounts, testLoginEnabled } from "@/lib/testAccounts";
+
+function TestAccountForm({ next }: { next: string }) {
+  return <form action={testLogin}>
+    <input type="hidden" name="next" value={next} />
+    <label htmlFor="test-account">บัญชีทดสอบ</label>
+    <select id="test-account" name="account" defaultValue={testAccounts[0].id}>
+      {testAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+    </select>
+    <button type="submit" className="btn tr-auth-button">เข้าสู่ระบบบัญชีทดสอบ</button>
+    <p className="tr-auth-hint">ใช้เบราว์เซอร์หรือโปรไฟล์แยกกันเพื่อเข้าสู่ระบบหลายบัญชีพร้อมกัน</p>
+  </form>;
+}
 
 export const metadata = {
   title: "เข้าสู่ระบบด้วย Discord",
@@ -47,7 +60,7 @@ export default async function LoginPage({
   const success = Boolean(member && sp.verified === "1");
   const enabled = discordEnabled();
   const host = (await headers()).get("host") ?? "";
-  const testEnabled = process.env.NODE_ENV === "development" && process.env.TEST_LOGIN_ENABLED === "1" && /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host);
+  const testEnabled = testLoginEnabled(host);
   const testRequested = testEnabled && sp.test === "client";
   if (member && !success && !testRequested) redirect(next === "/login" ? "/me" : next);
   const requiresMembership = membershipConfigured();
@@ -72,10 +85,7 @@ export default async function LoginPage({
         <>
           <h1 id="auth-title">บัญชีทดสอบ Client</h1>
           <p className="muted">เข้าสู่ระบบในมุมมองผู้เล่นทั่วไปบนเครื่องนี้ โดยออกจากระบบแอดมินในเบราว์เซอร์นี้</p>
-          <form action={testLogin}>
-            <input type="hidden" name="next" value={next} />
-            <button type="submit" className="btn tr-auth-button">เข้าสู่ระบบบัญชีทดสอบ Client</button>
-          </form>
+          <TestAccountForm next={next} />
         </>
       ) : success && member ? (
         <>
@@ -191,11 +201,7 @@ export default async function LoginPage({
               </p>
             </>
           )}
-          {testEnabled && <form action={testLogin}>
-            <input type="hidden" name="next" value={next} />
-            <button type="submit" className="btn tr-auth-button">เข้าสู่ระบบบัญชีทดสอบ Client</button>
-            <p className="tr-auth-hint">บัญชีผู้เล่นสำหรับทดสอบบนเครื่องนี้ การเข้าสู่ระบบจะออกจากแอดมิน</p>
-          </form>}
+          {testEnabled && <TestAccountForm next={next} />}
           <p className="tr-auth-hint">
             เราจะใช้ชื่อและรูปโปรไฟล์ Discord ของคุณ
           </p>

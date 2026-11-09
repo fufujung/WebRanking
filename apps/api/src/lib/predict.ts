@@ -184,13 +184,13 @@ const step = <T>(fn: (tx: Tx) => Promise<T>) => prisma.$transaction(fn, { timeou
 async function syncTournament(tournamentId: string) {
   const t = await prisma.tournament.findUnique({
     where: { id: tournamentId },
-    select: { id: true, format: true, bestOf: true, finalBestOf: true, bracketStatus: true, entries: { select: { teamId: true, placement: true } }, bracketMatches: true, markets: true },
+    select: { id: true, format: true, special: true, status: true, rosterMin: true, _count: { select: { matches: true } }, bestOf: true, finalBestOf: true, bracketStatus: true, entries: { select: { teamId: true, placement: true, _count: { select: { roster: true } } } }, bracketMatches: true, markets: true },
   });
   if (!t) return;
   const markets = new Map(t.markets.map((m) => [m.key, m]));
   const live = new Set<string>();
   /** The market of a match (or of one game in it), made or brought up to date with its teams and start time. */
-  const ensure = async (tx: Tx, kind: "MATCH" | "GAME", key: string, teams: string[], locksAt: Date | null) => {
+  const ensure = async (tx: Tx, kind: "MATCH" | "GAME" | "CUSTOM", key: string, teams: string[], locksAt: Date | null) => {
     live.add(key);
     let m = markets.get(key);
     if (!m) return tx.market.create({ data: { tournamentId, kind, key, teamIds: JSON.stringify(teams), locksAt } });
@@ -225,6 +225,18 @@ async function syncTournament(tournamentId: string) {
 
   // The champion: open while teams sign up and the bracket is drafted, closed once play starts.
   const teams = t.entries.map((e) => e.teamId);
+  // A two-side special event needs no bracket setup to accept predictions.
+  // Its organizer closes the pair and settles it explicitly using the existing custom-pair controls.
+  const specialPair = markets.get("SPECIAL_PAIR");
+  if (t.special && !t.format && teams.length === 2 && t.entries.every((e) => e._count.roster >= t.rosterMin)) {
+    const manualPair = t.markets.some((m) => m.kind === "CUSTOM" && m.key !== "SPECIAL_PAIR");
+    if (specialPair || !manualPair) await step(async (tx) => {
+      const pair = await ensure(tx, "CUSTOM", "SPECIAL_PAIR", teams, null);
+      if (pair.status === "OPEN" && (t.status !== "UPCOMING" || t._count.matches > 0)) await tx.market.update({ where: { id: pair.id }, data: { status: "CLOSED" } });
+    });
+  } else if (specialPair && specialPair.status !== "REFUNDED") {
+    await step((tx) => applyOutcome(tx, specialPair.id, { kind: "refund" }));
+  }
   const champMarket = markets.get("CHAMPION");
   await step(async (tx) => {
     let champ = champMarket;
@@ -298,24 +310,6 @@ export function marketOpen(m: { kind: string; status: string; locksAt: Date | nu
   return m.locksAt !== null || t.bracketStatus === "LIVE";
 }
 
-/** Discord accounts that play in the tournament for these teams: they may not predict their own games. */
-async function playersOf(tx: Tx, tournamentId: string, teamIds: string[]) {
-  const entries = await tx.tournamentEntry.findMany({
-    where: { tournamentId, teamId: { in: teamIds } },
-    select: { captainDiscordId: true, memberDiscordIds: true, roster: { select: { discordId: true, player: { select: { discordId: true } } } } },
-  });
-  const ids = new Set<string>();
-  for (const e of entries) {
-    if (e.captainDiscordId) ids.add(e.captainDiscordId);
-    for (const x of parseIds(e.memberDiscordIds)) ids.add(x);
-    for (const r of e.roster) {
-      if (r.discordId) ids.add(r.discordId);
-      if (r.player.discordId) ids.add(r.player.discordId);
-    }
-  }
-  return ids;
-}
-
 export const betInput = profileInput.extend({
   marketId: z.string().trim().min(1).max(40),
   teamId: z.string().trim().min(1).max(40),
@@ -344,9 +338,6 @@ export async function placeBet(discordId: string, body: unknown, now = new Date(
       }
       const teams = parseIds(m.teamIds);
       if (!teams.includes(input.teamId)) throw fail(400, "Pick one of the teams", "เลือกทีมที่อยู่ในแมตช์นี้", { field: "teamId" });
-      if ((await playersOf(tx, m.tournamentId, teams)).has(discordId)) {
-        throw fail(403, "Players cannot predict their own games", m.kind === "CHAMPION" ? "คุณลงแข่งรายการนี้ ทายแชมป์ไม่ได้" : "คุณลงแข่งแมตช์นี้ ทายแมตช์ของตัวเองไม่ได้");
-      }
       const p = await predictor(tx, discordId, input);
       const old = await tx.bet.findUnique({ where: { marketId_discordId: { marketId: m.id, discordId } } });
       const spendable = p.coins + (old?.amount ?? 0);
@@ -454,7 +445,8 @@ export async function deleteCustomMarket(marketId: string) {
       if (m.kind !== "CUSTOM") throw fail(409, "Only hand-made pairs can be deleted", "ลบได้เฉพาะคู่ที่สร้างเอง");
       await applyOutcome(tx, m.id, { kind: "refund" });
       await tx.bet.deleteMany({ where: { marketId } });
-      await tx.market.delete({ where: { id: marketId } });
+      // Keep a tombstone so a deleted automatic pair is not recreated on the next read.
+      if (m.key !== "SPECIAL_PAIR") await tx.market.delete({ where: { id: marketId } });
     }),
   );
 }
@@ -617,7 +609,7 @@ export async function predictionTournaments(now = new Date(), filters: { search?
       ...(filters.search ? { name: { contains: filters.search } } : {}),
       AND: [
         // Events without a bracket show up once the organizer sets up a pair to predict.
-        { OR: [{ format: { not: null } }, { markets: { some: { kind: "CUSTOM" } } }] },
+        { OR: [{ format: { not: null } }, { special: true }, { markets: { some: { kind: "CUSTOM" } } }] },
         {
           OR: [
             { bracketStatus: { in: ["NONE", "DRAFT", "LIVE"] }, status: { not: "COMPLETED" } },

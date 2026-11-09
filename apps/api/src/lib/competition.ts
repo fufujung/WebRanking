@@ -33,6 +33,7 @@ import {
 } from "./bracket.js";
 import { bracketResultInput, matchInput, normaliseName, registrationInput, rosterInput, seedingInput } from "./validate.js";
 import { teamSummary } from "./selects.js";
+import { assertTwoTeamCapacity } from "./specialTeams.js";
 
 type Tx = Prisma.TransactionClient;
 
@@ -322,6 +323,7 @@ export async function register(tournamentId: string, body: unknown, memberDiscor
         if (captainElsewhere) throw fail(409, "This captain already leads another team", `คุณเป็นหัวหน้าทีม ${captainElsewhere.team.name} อยู่แล้ว`);
       }
       const entry = await tx.tournamentEntry.create({ data: { tournamentId, teamId: team.id, captainDiscordId: input.captainDiscordId ?? null, memberDiscordIds: JSON.stringify(members) } });
+      await assertTwoTeamCapacity(tx, tournamentId, []);
       const roster = picked ? picked.map((p) => ({ playerId: p.id, discordId: p.discordId, uid: p.uid, server: p.server })) : await resolveRoster(tx, team.id, input.players);
       await assertOnSeason(tx, t, roster.map((r) => r.playerId));
       await replaceRoster(tx, entry.id, roster);
@@ -432,6 +434,10 @@ export function seed(tournamentId: string, body: unknown) {
     if (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") throw fail(409, "The bracket has already started", "เริ่มแข่งไปแล้ว จัดสายใหม่ไม่ได้ (ต้องรีเซ็ตสายก่อน)");
     const entries = await prisma.tournamentEntry.findMany({ where: { tournamentId }, include: { team: true }, orderBy: { createdAt: "asc" } });
     if (entries.length < 2) throw fail(409, "At least 2 teams are needed", "ต้องมีอย่างน้อย 2 ทีมจึงจะจัดสายได้");
+    if (t.special) {
+      if (entries.length !== 2) throw fail(409, "Two teams required", "เล่นเก่งปากเก่งต้องมี 2 ทีมเท่านั้น");
+      for (const e of entries) if (await prisma.rosterPlayer.count({ where: { entryId: e.id } }) < t.rosterMin) throw fail(409, "Incomplete special teams", `เติมผู้เล่นทั้งสองทีมให้ครบขั้นต่ำทีมละ ${t.rosterMin} คนก่อนจัดสาย`);
+    }
     const ids = entries.map((e) => e.teamId);
     let order: string[];
     let positions: (string | null)[] | undefined;

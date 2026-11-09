@@ -207,7 +207,7 @@ export async function drawTeams(tournamentId: string) {
   if (view.signups.length < t.teamSize * 2) {
     throw fail(409, "Not enough players for two teams", `ต้องมีผู้ลงทะเบียนอย่างน้อย ${t.teamSize * 2} คน (ตอนนี้ ${view.signups.length} คน)`);
   }
-  const playing = view.signups.length - (view.signups.length % t.teamSize);
+  const playing = t.special ? t.teamSize * 2 : view.signups.length - (view.signups.length % t.teamSize);
   // The latest sign-ups are reserves when the numbers don't divide evenly.
   const pool = view.signups.slice(0, playing);
   const reserves = view.signups.slice(playing);
@@ -234,6 +234,7 @@ export async function confirmTeams(tournamentId: string, body: unknown) {
   if (t.bracketStatus === "LIVE" || t.bracketStatus === "DONE") throw fail(409, "The tournament has started", "เริ่มแข่งแล้ว เปลี่ยนทีมไม่ได้ (ต้องรีเซ็ตสายก่อน)");
   const signups = await prisma.soloSignup.findMany({ where: { tournamentId }, include: { player: true }, orderBy: { createdAt: "asc" } });
   const byId = new Map(signups.map((s) => [s.playerId, s]));
+  if (t.special && input.teams.length !== 2) throw fail(409, "Special events have two teams", "เล่นเก่งปากเก่งมีได้ 2 ทีมเท่านั้น");
   const all = input.teams.flat();
   if (new Set(all).size !== all.length) throw fail(400, "A player is in two teams", "มีผู้เล่นอยู่สองทีม");
   if (input.teams.some((team) => team.length !== t.teamSize)) throw fail(400, `Every team needs ${t.teamSize} players`, `ทุกทีมต้องมี ${t.teamSize} คน`);

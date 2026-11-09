@@ -1,4 +1,5 @@
 import Link from "@/components/LoadingLink";
+import { LiveRefresh } from "@/components/LiveRefresh";
 import { fetchAll } from "@/lib/fetchAll";
 import type { Status, Tournament } from "@/lib/types";
 import { fmtDate, formatLabel, statusLabel } from "@/lib/format";
@@ -24,6 +25,7 @@ export default async function AdminTournaments({ searchParams }: { searchParams:
   const rows = all.filter((t) => (!status || t.status === status) && (!q || t.name.toLowerCase().includes(q) || t.game?.toLowerCase().includes(q)));
   return (
     <>
+      <LiveRefresh />
       <ListHead title="ทัวร์นาเมนต์" sub={`${all.length} รายการ · จัดสาย เปิดรับสมัคร และบันทึกผลจากที่นี่`} action={{ href: "/admin/tournaments/new", label: "+ สร้างทัวร์นาเมนต์" }} />
       {sp.deleted && <div className="success" style={{ marginBottom: 16 }}>ย้ายไปถังขยะแล้ว กู้คืนได้ภายใน 30 วันที่ <Link href="/admin/trash">ถังขยะ</Link></div>}
       <div className="list-bar">
@@ -69,6 +71,7 @@ export default async function AdminTournaments({ searchParams }: { searchParams:
                     <span className="row-actions">
                       <Link className="btn btn-sm btn-primary" href={`/admin/matches/new?tournamentId=${t.id}`}>บันทึกผล</Link>
                       <Link className="btn btn-sm" href={`/admin/tournaments/${t.id}`}>จัดการ</Link>
+                      <Link className="btn btn-sm" href={`/admin/tournaments/${t.id}#settings`}>แก้ไขรายละเอียด</Link>
                       <DeleteButton kind="tournaments" id={t.id} label={`ทัวร์นาเมนต์ ${t.name} พร้อมแมตช์ทั้งหมดในรายการ`} />
                     </span>
                   </td>

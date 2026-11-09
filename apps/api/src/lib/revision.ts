@@ -9,6 +9,7 @@ import type { RequestHandler } from "express";
 let revision = 0;
 
 export const currentRevision = () => revision;
+export const noteAutomaticChange = () => { revision++; };
 
 export const countChanges: RequestHandler = (req, res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS" && !/^\/predict\/members\//.test(req.path) && !/^\/tournaments\/[^/]+\/drafts\//.test(req.path)) {

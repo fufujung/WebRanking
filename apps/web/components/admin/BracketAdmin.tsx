@@ -74,6 +74,8 @@ export function BracketAdmin({ tournamentId, format, bracket, entries }: { tourn
       {started && bracket && <LiveBracket tournamentId={tournamentId} bracket={bracket} act={act} pending={pending} />}
       <Message state={state} />
       {status !== "NONE" && (
+        <section className="mt" aria-label="จบรายการและรีเซ็ตสาย">
+        <h3>จบรายการและรีเซ็ตสาย</h3>
         <div className="row">
           {status === "LIVE" && !confirmReset && (
             <button
@@ -87,7 +89,7 @@ export function BracketAdmin({ tournamentId, format, bracket, entries }: { tourn
           )}
           {!confirmReset ? (
             <button type="button" className="btn btn-sm btn-danger" disabled={pending} onClick={() => setConfirmReset(true)}>
-              ลบสายทั้งหมด
+              รีเซ็ตสายการแข่งขัน
             </button>
           ) : (
             <>
@@ -109,6 +111,7 @@ export function BracketAdmin({ tournamentId, format, bracket, entries }: { tourn
             </>
           )}
         </div>
+        </section>
       )}
     </div>
   );

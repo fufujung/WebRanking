@@ -291,8 +291,12 @@ describe("tournaments", () => {
 
     const teams = submit(`mg:t3m:${ids.cup}`, { rosterMin: "2", rosterMax: "4", maxTeams: "", lateMinutes: "10", game: "Street Rivals" });
     await bot.onModal(teams);
+    assert.match(said(last(teams)), /เปลี่ยนเกม/, "registered teams lock the event's game");
+    const safeTeams = submit(`mg:t3m:${ids.cup}`, { rosterMin: "2", rosterMax: "4", maxTeams: "", lateMinutes: "10", game: "" });
+    await bot.onModal(safeTeams);
+    assert.match(said(last(safeTeams)), /✅ บันทึกแล้ว/);
     t = await prisma.tournament.findUniqueOrThrow({ where: { id: ids.cup } });
-    assert.deepEqual([t.rosterMin, t.rosterMax, t.maxTeams, t.lateMinutes, t.game], [2, 4, null, 10, "Street Rivals"]);
+    assert.deepEqual([t.rosterMin, t.rosterMax, t.maxTeams, t.lateMinutes, t.game], [2, 4, null, 10, null]);
     const tooMany = submit(`mg:t3m:${ids.cup}`, { rosterMin: "2", rosterMax: "40", lateMinutes: "10" });
     await bot.onModal(tooMany);
     assert.match(said(last(tooMany)), /❌/);

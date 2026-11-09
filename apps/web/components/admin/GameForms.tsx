@@ -99,18 +99,18 @@ export function GameSelect({ games, value, label = "เกม" }: { games: Game[
 }
 
 /** The tournament's game: pick one, or type a new name to add it. */
-export function TournamentGameField({ games, value, legacyName }: { games: Game[]; value?: string | null; legacyName?: string | null }) {
-  const initial = value ?? (games.length === 0 ? "new" : games.length === 1 ? games[0].id : "");
+export function TournamentGameField({ games, value, legacyName, disabled = false }: { disabled?: boolean; games: Game[]; value?: string | null; legacyName?: string | null }) {
+  const initial = value !== undefined ? (value ?? "") : (games.length === 0 ? "new" : games.length === 1 ? games[0].id : "");
   const [pick, setPick] = useState(initial);
   return (
     <label>
       เกม
-      <select name="gameId" value={pick} onChange={(e) => setPick(e.target.value)}>
+      <select name="gameId" disabled={disabled} value={pick} onChange={(e) => setPick(e.target.value)}>
         <option value="">ไม่ระบุ</option>
         {games.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
         <option value="new">+ เกมใหม่…</option>
       </select>
-      {pick === "new" && <input name="game" maxLength={100} defaultValue={value ? "" : (legacyName ?? "")} placeholder="ชื่อเกมใหม่" aria-label="ชื่อเกมใหม่" autoFocus={games.length > 0} />}
+      {pick === "new" && <input name="game" disabled={disabled} maxLength={100} defaultValue={value ? "" : (legacyName ?? "")} placeholder="ชื่อเกมใหม่" aria-label="ชื่อเกมใหม่" autoFocus={games.length > 0} />}
     </label>
   );
 }

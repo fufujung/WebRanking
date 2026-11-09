@@ -14,7 +14,7 @@ const STATE: Record<Market["status"], string> = { OPEN: "เปิดรับ�
  * and set up pairs by hand ("ทีม A vs ทีม B") for events without a bracket, then pick their winner.
  * Discord's cards follow within seconds.
  */
-export function PredictControls({ tournamentId, markets, teams }: { tournamentId: string; markets: Market[]; teams: { id: string; name: string }[] }) {
+export function PredictControls({ tournamentId, markets, teams, specialPair = false }: { tournamentId: string; markets: Market[]; teams: { id: string; name: string }[]; specialPair?: boolean }) {
   const [state, setState] = useState<FormState>();
   const [pending, start] = useTransition();
   const act = (fn: () => Promise<FormState>) =>
@@ -30,6 +30,7 @@ export function PredictControls({ tournamentId, markets, teams }: { tournamentId
 
   return (
     <div className="stack">
+      {specialPair && <p className="muted small">เล่นเก่งปากเก่งที่ไม่ใช้สายแข่งจะเปิดคู่ทายให้อัตโนมัติเมื่อจัดผู้เล่นครบขั้นต่ำทั้ง 2 ทีม กดปิดรับก่อนเริ่มเล่น แล้วเลือกทีมที่ชนะเพื่อแจกเหรียญ หรือยกเลิกเพื่อคืนเหรียญ</p>}
       <div className="card stack">
         <div className="row between">
           <strong>คู่ที่ให้ทาย ({markets.length})</strong>
@@ -42,7 +43,7 @@ export function PredictControls({ tournamentId, markets, teams }: { tournamentId
             </button>
           </div>
         </div>
-        {!markets.length && <p className="muted small" style={{ margin: 0 }}>ยังไม่มีคู่ให้ทาย สร้างสายแข่ง หรือสร้างคู่เองด้านล่าง</p>}
+        {!markets.length && <p className="muted small" style={{ margin: 0 }}>{specialPair ? "ยังไม่มีคู่ให้ทาย ไปที่จัดทีม 2 ฝั่ง เติมผู้เล่นให้ครบขั้นต่ำแล้วบันทึก หรือสร้างคู่เองด้านล่าง" : "ยังไม่มีคู่ให้ทาย สร้างสายแข่ง หรือสร้างคู่เองด้านล่าง"}</p>}
         {markets.map((m) => {
           const done = m.status === "SETTLED" || m.status === "REFUNDED";
           return (
