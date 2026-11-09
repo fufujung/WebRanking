@@ -184,16 +184,19 @@ model Tournament {
 /// A season of the special "เล่นเก่งปากเก่ง" events in one game, with the list of players allowed to play in it.
 /// The special MMR carries on from season to season; a season only groups events, stats and players.
 model SpecialSeason {
-  id        String    @id @default(cuid())
-  name      String
-  gameId    String?
-  startDate DateTime
-  endDate   DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id          String    @id @default(cuid())
+  name        String
+  gameId      String?
+  startDate   DateTime
+  endDate     DateTime?
+  /// Substitutes can sign up for this season (on the website and in Discord) while this is on.
+  reserveOpen Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   game        Game?             @relation(fields: [gameId], references: [id], onDelete: SetNull)
   players     SeasonPlayer[]
+  reserves    SeasonReserve[]
   tournaments Tournament[]
   stories     TournamentStory[]
 
@@ -248,6 +251,20 @@ model SoloSignup {
 
 /// A standing substitute for the special "เล่นเก่งปากเก่ง" events. The list is always open and serves every event.
 /// Facebook and phone are private: only admins and organizers see them.
+/// A substitute signed up for one season. Their details (position, rank, contacts) live on ReservePlayer, entered once.
+model SeasonReserve {
+  id        String   @id @default(cuid())
+  seasonId  String
+  playerId  String
+  createdAt DateTime @default(now())
+
+  season  SpecialSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  reserve ReservePlayer @relation(fields: [playerId], references: [playerId], onDelete: Cascade)
+
+  @@unique([seasonId, playerId])
+  @@index([playerId])
+}
+
 model ReservePlayer {
   id        String   @id @default(cuid())
   playerId  String   @unique
@@ -259,7 +276,8 @@ model ReservePlayer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  player  Player          @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  seasons SeasonReserve[]
 
   @@index([discordId])
 }

@@ -472,6 +472,29 @@ export async function removeReserve(playerId: string): Promise<FormState> {
   return { ok: "เอาออกจากรายชื่อแล้ว" };
 }
 
+/** Opens or closes a season for substitute sign-ups (web and Discord). */
+export async function setSeasonReserveOpen(seasonId: string, open: boolean): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/special/seasons/${encodeURIComponent(seasonId)}`, { method: "PATCH", json: { reserveOpen: open } });
+  });
+  if (result) return result;
+  revalidatePath("/admin/reserve");
+  revalidatePath("/special");
+  revalidatePath("/me");
+  return { ok: open ? "เปิดรับตัวสำรองซีซั่นนี้แล้ว" : "ปิดรับตัวสำรองซีซั่นนี้แล้ว" };
+}
+
+/** Puts a substitute on a season's list, or takes them off it. */
+export async function setReserveSeason(seasonId: string, playerId: string, on: boolean): Promise<FormState> {
+  const result = await run(async () => {
+    await api(`/special/seasons/${encodeURIComponent(seasonId)}/reserve/${encodeURIComponent(playerId)}`, { method: on ? "PUT" : "DELETE" });
+  });
+  if (result) return result;
+  revalidatePath("/admin/reserve");
+  revalidatePath("/special");
+  return { ok: on ? "เพิ่มเข้าซีซั่นแล้ว" : "เอาออกจากซีซั่นแล้ว" };
+}
+
 // Deletes
 // After a delete, go back to the list the item was in.
 const deletable = { guilds: "/admin/guilds", teams: "/admin/teams", players: "/admin/players", tournaments: "/admin/tournaments", matches: "/admin/matches", ads: "/admin/ads" } as const;

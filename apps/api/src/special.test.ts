@@ -1,4 +1,4 @@
-/** The special "เล่นเก่งปากเก่ง" events: the always-open substitutes list and the separate MMR and stats. */
+/** The special "เล่นเก่งปากเก่ง" events: the substitutes of each season and the separate MMR and stats. */
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
@@ -68,6 +68,11 @@ describe("special events (เล่นเก่งปากเก่ง)", () =>
   let dewPlayer: string;
 
   test("members sign up with character, UID, Facebook, optional phone and position; contact stays private", async () => {
+    // Sign-ups go to a season that takes substitutes; with only one open it needs no choice.
+    const closed = await call("POST", `/members/${bank}/reserve/check`, { uid: "100100", name: "Bank", position: "GUARD", facebook: "Bank OT" });
+    assert.equal(closed.status, 409, "no season takes substitutes yet");
+    assert.match(closed.body.details.th, /ยังไม่เปิดรับตัวสำรอง/);
+    await ok("POST", "/special/seasons", { name: "ซีซั่น 1", startDate: "2026-01-01", reserveOpen: true });
     bankPlayer = (await ok("POST", `/players/discord/${bank}/claim`, { uid: "100100", name: "Bank" })).id;
     dewPlayer = (await ok("POST", `/players/discord/${dew}/claim`, { uid: "200200", name: "Dew" })).id;
 
@@ -364,6 +369,102 @@ describe("story posts (ต้นเรื่อง)", () => {
     // Deleting the season takes its posts with it.
     await ok("DELETE", `/special/seasons/${season.id}`);
     assert.equal(await prisma.tournamentStory.count({ where: { seasonId: season.id } }), 0);
+  });
+});
+
+describe("substitutes sign up season by season", () => {
+  test("members pick an open season, keep their details for the next, and leave one season at a time", async () => {
+    const game = (await ok("POST", "/games", { name: "Season Game" })).id;
+    await ok("PATCH", `/games/${game}`, { ranks: ["A", "B"].map((name) => ({ name, iconUrl: null })) });
+    // Only this game's seasons count: the open season of no game from the first tests is closed here.
+    for (const x of (await ok("GET", "/special/seasons")).data.filter((x: any) => !x.gameId && x.reserveOpen)) await ok("PATCH", `/special/seasons/${x.id}`, { reserveOpen: false });
+    const s1 = await ok("POST", "/special/seasons", { name: "S1", gameId: game, startDate: "2026-02-01", reserveOpen: true });
+    const s2 = await ok("POST", "/special/seasons", { name: "S2", gameId: game, startDate: "2026-06-01", reserveOpen: true });
+    const kai = "919191919191919191";
+    const kaiChar = (await ok("POST", `/players/discord/${kai}/claim`, { uid: "S-1", name: "Kai", gameId: game })).id;
+    const form = { playerId: kaiChar, position: "GUARD", facebook: "Kai", rank: "A" };
+
+    // Two open seasons: the member has to choose, and the answer lists them.
+    const choose = await call("POST", `/members/${kai}/reserve`, form);
+    assert.equal(choose.status, 400);
+    assert.deepEqual(choose.body.details.seasons.map((x: any) => x.name), ["S2", "S1"]);
+    assert.equal(await prisma.reservePlayer.count({ where: { playerId: kaiChar } }), 0, "nothing saved");
+
+    const joined = (await ok("POST", `/members/${kai}/reserve`, { ...form, seasonId: s1.id })).data;
+    assert.deepEqual([joined.joinedSeason.name, joined.seasons.map((x: any) => x.name)], ["S1", ["S1"]]);
+    // Signing up again for the next season keeps the first one.
+    assert.deepEqual((await ok("POST", `/members/${kai}/reserve`, { ...form, seasonId: s2.id })).data.seasons.map((x: any) => x.name), ["S2", "S1"]);
+    assert.deepEqual((await ok("GET", `/members/${kai}/reserve?gameId=${game}`)).data.seasons.map((x: any) => x.name), ["S2", "S1"]);
+
+    // Each season shows its own substitutes; the board of a season too.
+    const names = async (q: string) => (await ok("GET", `/special/reserve?${q}`)).data.map((r: any) => r.player.name);
+    const dee = "929292929292929292";
+    const deeChar = (await ok("POST", `/players/discord/${dee}/claim`, { uid: "S-2", name: "Dee", gameId: game })).id;
+    await ok("POST", `/members/${dee}/reserve`, { playerId: deeChar, position: "CENTER", facebook: "Dee", rank: "B", seasonId: s2.id });
+    assert.deepEqual(await names(`seasonId=${s1.id}`), ["Kai"]);
+    assert.deepEqual(await names(`seasonId=${s2.id}`), ["Kai", "Dee"]);
+    assert.deepEqual(await names(`gameId=${game}`), ["Kai", "Dee"], "without a season: everyone of the game");
+    const board = await ok("GET", `/special?seasonId=${s1.id}`);
+    assert.deepEqual(board.reserve.map((r: any) => r.player.name), ["Kai"]);
+    assert.deepEqual(board.reserveSeasons.map((x: any) => x.name), ["S2", "S1"]);
+
+    // A closed season takes no sign-ups; a season of another game neither.
+    await ok("PATCH", `/special/seasons/${s1.id}`, { reserveOpen: false });
+    const shut = await call("POST", `/members/${dee}/reserve`, { playerId: deeChar, position: "CENTER", facebook: "Dee", rank: "B", seasonId: s1.id });
+    assert.equal(shut.status, 409);
+    assert.match(shut.body.details.th, /ปิดรับตัวสำรอง/);
+    assert.equal((await call("POST", `/members/${dee}/reserve/check`, { playerId: deeChar, position: "CENTER", facebook: "Dee", seasonId: s1.id })).status, 409, "the Discord form is stopped before the rank question");
+    const other = await ok("POST", "/special/seasons", { name: "Other", gameId: (await ok("POST", "/games", { name: "Other Game" })).id, startDate: "2026-06-01", reserveOpen: true });
+    assert.equal((await call("POST", `/members/${dee}/reserve`, { playerId: deeChar, position: "CENTER", facebook: "Dee", rank: "B", seasonId: other.id })).status, 400);
+    // Someone on the list who names no season only edits their details, even with no season open for them.
+    const edited = (await ok("POST", `/members/${dee}/reserve`, { playerId: deeChar, position: "ALL", facebook: "Dee", rank: "B" })).data;
+    assert.deepEqual([edited.joinedSeason, edited.position, edited.seasons.map((x: any) => x.name)], [null, "ALL", ["S2"]]);
+    // A newcomer with one open season left gets it without asking.
+    const eve = "949494949494949494";
+    const eveChar = (await ok("POST", `/players/discord/${eve}/claim`, { uid: "S-3", name: "Eve", gameId: game })).id;
+    assert.equal((await ok("POST", `/members/${eve}/reserve`, { playerId: eveChar, position: "ALL", facebook: "Eve", rank: "A" })).data.joinedSeason.name, "S2");
+    await ok("DELETE", `/members/${eve}/reserve?gameId=${game}`);
+
+    // Leaving one season keeps the details and the other season.
+    assert.equal((await call("DELETE", `/members/${kai}/reserve?gameId=${game}&seasonId=${s2.id}`)).status, 204);
+    assert.equal((await call("DELETE", `/members/${kai}/reserve?gameId=${game}&seasonId=${s2.id}`)).status, 404);
+    assert.deepEqual(await names(`seasonId=${s2.id}`), ["Dee"]);
+    assert.deepEqual((await ok("GET", `/members/${kai}/reserve?gameId=${game}`)).data.seasons.map((x: any) => x.name), ["S1"]);
+
+    // Organizers put anyone on a season's list (even a closed one) or take them off; read keys cannot.
+    await ok("PUT", `/special/seasons/${s2.id}/reserve/${kaiChar}`);
+    await ok("PUT", `/special/seasons/${s2.id}/reserve/${kaiChar}`);
+    assert.deepEqual(await names(`seasonId=${s2.id}`), ["Kai", "Dee"]);
+    await ok("DELETE", `/special/seasons/${s1.id}/reserve/${kaiChar}`);
+    assert.deepEqual(await names(`seasonId=${s1.id}`), []);
+    assert.equal((await call("PUT", `/special/seasons/${s1.id}/reserve/${kaiChar}`, undefined, reader)).status, 403);
+    assert.equal((await call("PUT", `/special/seasons/${other.id}/reserve/${kaiChar}`)).status, 400, "another game's season");
+    assert.equal((await call("PUT", `/special/seasons/nope/reserve/${kaiChar}`)).status, 404);
+    assert.equal((await ok("GET", "/special/seasons")).data.find((x: any) => x.id === s2.id).reserves, 2);
+
+    // Deleting a season takes only its list; the details stay.
+    await ok("DELETE", `/special/seasons/${s2.id}`);
+    assert.equal(await prisma.reservePlayer.count({ where: { playerId: { in: [kaiChar, deeChar] } } }), 2);
+  });
+
+  test("once, everyone already on the list joins the latest season of their game, which opens", async () => {
+    const { backfillReserveSeasons } = await import("./lib/special.js");
+    const game = (await ok("POST", "/games", { name: "Backfill Game" })).id;
+    const old = await prisma.specialSeason.create({ data: { name: "Old", gameId: game, startDate: new Date("2025-01-01") } });
+    const latest = await prisma.specialSeason.create({ data: { name: "Latest", gameId: game, startDate: new Date("2026-03-01") } });
+    const p = await prisma.player.create({ data: { name: "Old timer", uid: "B-1", gameId: game } });
+    await prisma.reservePlayer.create({ data: { playerId: p.id, discordId: "939393939393939393", rank: "x" } });
+    await prisma.siteSetting.deleteMany({ where: { key: "reserveSeasonsBackfilled" } });
+    await prisma.seasonReserve.deleteMany({ where: { playerId: p.id } });
+
+    assert.ok((await backfillReserveSeasons()) >= 1);
+    assert.deepEqual((await prisma.seasonReserve.findMany({ where: { playerId: p.id } })).map((r) => r.seasonId), [latest.id]);
+    assert.equal((await prisma.specialSeason.findUnique({ where: { id: latest.id } }))!.reserveOpen, true);
+    assert.equal((await prisma.specialSeason.findUnique({ where: { id: old.id } }))!.reserveOpen, false);
+    // Only once: someone who later leaves stays out.
+    await prisma.seasonReserve.deleteMany({ where: { playerId: p.id } });
+    assert.equal(await backfillReserveSeasons(), 0);
+    assert.equal(await prisma.seasonReserve.count({ where: { playerId: p.id } }), 0);
   });
 });
 

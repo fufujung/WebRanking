@@ -86,13 +86,17 @@ export function EditMyPlayer({ player }: { player: Player }) {
   );
 }
 
-/** Sign up as a substitute for the special "เล่นเก่งปากเก่ง" events, or change the details. */
+/**
+ * Sign up as a substitute for a season of the special "เล่นเก่งปากเก่ง" events, or change the details.
+ * The details are entered once and kept: signing up for the next season only needs the season picked.
+ */
 export function ReserveForm({
   characters,
   current,
   ranks,
   game,
   anchor,
+  openSeasons,
 }: {
   characters: Pick<Player, "id" | "name" | "uid">[];
   current: ReservePlayer | null;
@@ -100,31 +104,62 @@ export function ReserveForm({
   /** The game this list is for: each game keeps its own list. */
   game: { id: string; name: string } | null;
   anchor?: boolean;
+  /** Seasons taking substitutes now, newest first. */
+  openSeasons: { id: string; name: string }[];
 }) {
   const [state, onSubmit, pending] = useSubmit(saveMyReserve);
   const [left, setLeft] = useState<MeState>();
   const [leaving, setLeaving] = useState(false);
-  const leave = async () => {
-    if (!confirm("ถอนชื่อออกจากรายชื่อตัวสำรอง?")) return;
+  const joined = current?.seasons ?? [];
+  const toJoin = openSeasons.filter((s) => !joined.some((j) => j.id === s.id));
+  const leave = async (season?: { id: string; name: string }) => {
+    if (!confirm(season ? `ถอนชื่อจากซีซั่น ${season.name}?` : "ถอนชื่อออกจากรายชื่อตัวสำรองทุกซีซั่น?")) return;
     setLeaving(true);
-    setLeft(await leaveMyReserve(game?.id ?? null));
+    setLeft(await leaveMyReserve(game?.id ?? null, season?.id ?? null));
     setLeaving(false);
   };
+  if (!current && !openSeasons.length)
+    return (
+      <section className="card" id={anchor ? "reserve" : undefined} data-game={game?.id ?? ""} style={{ marginBottom: 24 }}>
+        <h2 style={{ marginTop: 0 }}> ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง{game ? <span className="muted"> · {game.name}</span> : null}</h2>
+        <p className="muted" style={{ margin: 0 }}>ตอนนี้ยังไม่เปิดรับตัวสำรองซีซั่นไหน รอผู้จัดประกาศเปิดรับซีซั่นใหม่นะ</p>
+      </section>
+    );
   return (
     <form onSubmit={onSubmit} className="form card" id={anchor ? "reserve" : undefined} data-game={game?.id ?? ""} style={{ marginBottom: 24 }}>
       <div>
         <h2 style={{ margin: 0 }}> ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง{game ? <span className="muted"> · {game.name}</span> : null}</h2>
         <p className="muted small" style={{ margin: 0 }}>
-          เปิดรับตลอด ใช้ได้ทุกงาน ผู้จัดจะสุ่มคนจากรายชื่อนี้ไปช่วยแข่ง สถิติและ MMR ของรายการนี้แยกจากรายการหลัก
-          Facebook และเบอร์โทรเห็นเฉพาะผู้จัด
+          สมัครแยกแต่ละซีซั่น ผู้จัดจะสุ่มคนจากรายชื่อของซีซั่นนั้นไปช่วยแข่ง ข้อมูลกรอกครั้งเดียวแล้วใช้ต่อได้ทุกซีซั่น
+          สถิติและ MMR ของรายการนี้แยกจากรายการหลัก Facebook และเบอร์โทรเห็นเฉพาะผู้จัด
         </p>
       </div>
       {current && (
         <div className="notice small">
           ลงชื่อไว้แล้วด้วย <strong>{current.player.nickname || current.player.name}</strong>
           {current.rank ? ` · แรงค์ ${current.rank}` : " · ยังไม่ได้เลือกแรงค์ เลือกด้านล่างแล้วกดบันทึก"}
+          <div className="row" style={{ marginTop: 6, gap: 6 }} data-my-seasons>
+            {joined.length ? "ซีซั่นที่สมัครแล้ว:" : "ยังไม่ได้สมัครซีซั่นไหน"}
+            {joined.map((s) => (
+              <span key={s.id} className="badge" data-season={s.id}>
+                {s.name}
+                <button type="button" className="link-btn" disabled={leaving} onClick={() => leave(s)} aria-label={`ถอนชื่อจากซีซั่น ${s.name}`} style={{ marginLeft: 6 }}>✕</button>
+              </span>
+            ))}
+          </div>
         </div>
       )}
+      {toJoin.length > 0 ? (
+        <label>
+          สมัครซีซั่น{current ? " (ไม่เลือก = แก้ข้อมูลอย่างเดียว)" : " *"}
+          <select name="seasonId" required={!current} defaultValue={current ? "" : toJoin[0].id}>
+            {current && <option value="">ไม่สมัครเพิ่ม แก้ข้อมูลอย่างเดียว</option>}
+            {toJoin.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </label>
+      ) : current && openSeasons.length === 0 ? (
+        <p className="muted small" style={{ margin: 0 }}>ตอนนี้ยังไม่เปิดรับซีซั่นใหม่ แก้ข้อมูลของคุณได้ตามปกติ</p>
+      ) : null}
       <div className="form-row">
         <label>
           ตัวละคร *
@@ -153,8 +188,8 @@ export function ReserveForm({
       {(state?.error || left?.error) && <div className="error">{state?.error ?? left?.error}</div>}
       {(state?.ok || left?.ok) && <div className="success">{left?.ok ?? state?.ok}</div>}
       <div className="row">
-        <button className="btn btn-primary" disabled={pending}>{pending ? "กำลังบันทึก…" : current ? "บันทึกการแก้ไข" : "ลงชื่อตัวสำรอง"}</button>
-        {current && <button type="button" className="btn" disabled={leaving} onClick={leave}>ถอนชื่อ</button>}
+        <button className="btn btn-primary" disabled={pending}>{pending ? "กำลังบันทึก…" : current ? "บันทึก" : "ลงชื่อตัวสำรอง"}</button>
+        {current && <button type="button" className="btn" disabled={leaving} onClick={() => leave()}>ถอนชื่อทุกซีซั่น</button>}
       </div>
     </form>
   );

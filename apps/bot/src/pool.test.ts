@@ -148,6 +148,8 @@ function form(userId: string, f: Form) {
 let server: Server;
 let api: ReturnType<typeof createApi>;
 let pool: InstanceType<typeof PoolManager>;
+let season1 = "";
+let gameId = "";
 // Draws are predictable: the "random" numbers repeat a fixed cycle.
 let r = 0;
 const cycle = [0.1, 0.7, 0.3, 0.9, 0.5, 0.2, 0.8];
@@ -186,6 +188,9 @@ before(async () => {
   // The game's in-game ranks on the website are the list people pick from.
   const game = await api.post<{ id: string }>("/games", { name: "Street Rivals" });
   await api.patch(`/games/${game.id}`, { ranks: ["ฟ้า", "ทอง", "แดง", "โซน"].map((name) => ({ name, iconUrl: null })) });
+  // Substitutes sign up season by season: one season is taking them.
+  season1 = (await api.post<{ id: string }>("/special/seasons", { name: "ซีซั่น 1", gameId: game.id, startDate: "2026-01-01T00:00:00.000Z", reserveOpen: true })).id;
+  gameId = game.id;
   pool = new PoolManager({ api, dataDir, siteUrl: "https://ranking.example", log: () => {}, random: () => cycle[r++ % cycle.length] });
 });
 
@@ -205,8 +210,9 @@ test("setting up the room carries the old list over to the website", async () =>
   const panel = [...messages.values()].at(-1)!;
   assert.deepEqual(panel.ids, [[`tp:reg:${GUILD}`, `tp:out:${GUILD}`, `tp:list:${GUILD}`]]);
   assert.match(panel.text, /ลงชื่อตัวสำรอง: รายการเล่นเก่งปากเก่ง/);
-  assert.match(panel.text, /เปิดรับลงชื่อตลอด/);
-  assert.match(panel.text, /ลงชื่อแล้ว \*\*1\*\* คน/);
+  assert.match(panel.text, /ตอนนี้เปิดรับตัวสำรอง: \*\*ซีซั่น 1\*\* สมัครแยกแต่ละซีซั่น/);
+  assert.match(panel.text, /ลงชื่อ ซีซั่น 1 แล้ว \*\*0\*\* คน/, "the old list stays on the website but isn't signed up for a season");
+  assert.match(reply(setup), /เปิดรับ: \*\*ซีซั่น 1\*\*/);
   assert.equal(panel.payload.embeds[0].url, "https://ranking.example/special");
 
   const old = (await api.get<{ data: any[] }>("/special/reserve/private")).data;
@@ -250,7 +256,7 @@ test("people sign up with name, UID, Facebook, optional phone and position, then
   for (let n = 1; n <= 6; n++) await signUp(u(n), { name: `Zone${n}`, uid: `90000000${n}`, position: positions[n - 1], phone: n === 1 ? "081-234-5678" : "" }, "โซน");
   const { form: first, pick } = await signUp(u(7), { name: "Blue1", uid: "800000001", position: "FORWARD", facebook: "https://www.facebook.com/blue1" }, "ฟ้า");
   assert.match(reply(first), /อีกขั้นเดียว: \*\*เลือกแรงค์ของคุณ\*\*/, "the rank is required, so it is asked for before saving");
-  assert.match(reply(pick), /ลงชื่อแล้ว: \*\*Blue1\*\* \(UID 800000001\) · บอลรอง · แรงค์ ฟ้า/);
+  assert.match(reply(pick), /ลงชื่อ \*\*ซีซั่น 1\*\* แล้ว: \*\*Blue1\*\* \(UID 800000001\) · บอลรอง · แรงค์ ฟ้า[\s\S]*ซีซั่นที่สมัคร: \*\*ซีซั่น 1\*\*/);
 
   // The form alone saves nothing: without a rank there is no sign-up.
   const halfway = form(u(9), { name: "Half", uid: "900000009", position: "GUARD" });
@@ -262,9 +268,9 @@ test("people sign up with name, UID, Facebook, optional phone and position, then
   const copy = form(u(8), { name: "Copycat", uid: "900000001", position: "GUARD" });
   await pool.onModal(copy);
   assert.match(reply(copy), /ผูกกับบัญชี Discord อื่น/);
-  assert.match(panel.text, /ลงชื่อแล้ว \*\*8\*\* คน/);
+  assert.match(panel.text, /ลงชื่อ ซีซั่น 1 แล้ว \*\*7\*\* คน/);
   assert.match(panel.text, /บอลหลัก \*\*2\*\* · บอลรอง \*\*2\*\* · เซนเตอร์ \*\*2\*\* · All Around \*\*1\*\*/);
-  assert.match(panel.text, /ฟ้า \*\*1\*\* · ทอง \*\*1\*\* · แดง \*\*0\*\* · โซน \*\*6\*\*/);
+  assert.match(panel.text, /ฟ้า \*\*1\*\* · ทอง \*\*0\*\* · แดง \*\*0\*\* · โซน \*\*6\*\*/);
 
   // Editing re-uses the same form, filled in with their own details; the rank is kept.
   const again = press(`tp:reg:${GUILD}`, u(7), panel);
@@ -283,7 +289,7 @@ test("people sign up with name, UID, Facebook, optional phone and position, then
   // Their own details, privately.
   const mine = press(`tp:list:${GUILD}`, u(1), panel);
   await pool.onButton(mine, nobody);
-  assert.match(reply(mine), /Zone1[\s\S]*FB: Zone1 FB · โทร 081-234-5678/);
+  assert.match(reply(mine), /Zone1[\s\S]*FB: Zone1 FB · โทร 081-234-5678\nซีซั่นที่สมัคร: \*\*ซีซั่น 1\*\*/);
 
   // The website shows the list without contact details; the position is the player's position there too.
   const pub = (await api.get<{ data: any[] }>("/special/reserve")).data;
@@ -393,15 +399,26 @@ test("organizers list with contact details, remove people; people leave; /pool r
   assert.match(reply(notOrg), /สำหรับผู้จัด/);
   const list = command("list", { rank: "โซน" }, ORG);
   await pool.onCommand(list, organizer);
-  assert.match(reply(list), /ตัวสำรอง แรงค์ โซน\*\* \(6 คน\)/);
+  assert.match(reply(list), /ตัวสำรอง ซีซั่น 1 แรงค์ โซน\*\* \(6 คน\)/);
   assert.match(reply(list), /\*\*Zone1\*\* \(UID 900000001\) · บอลหลัก · แรงค์ โซน\n　FB: Zone1 FB · โทร 081-234-5678/);
   const guards = command("list", { position: "GUARD" }, ORG);
   await pool.onCommand(guards, organizer);
   assert.match(reply(guards), /\(3 คน\)/, "two Guards and the All Around");
 
+  // Leaving: one season (the details stay), or the whole list.
   const leave = press(`tp:out:${GUILD}`, u(6));
   await pool.onButton(leave, nobody);
-  assert.match(reply(leave), /ถอนชื่อแล้ว/);
+  assert.match(reply(leave), /จะถอนชื่อจากซีซั่นไหน/);
+  const outMenu = leave.replies.at(-1).components[0].toJSON().components[0];
+  assert.equal(outMenu.custom_id, `tp:outs:${GUILD}`);
+  assert.deepEqual(outMenu.options.map((o: any) => o.value), [season1, "*"]);
+  const outSeason = choose(outMenu.custom_id, u(6), [season1], new Msg("private", {}));
+  await pool.onSelect(outSeason, nobody);
+  assert.match(reply(outSeason), /ถอนชื่อจาก \*\*ซีซั่น 1\*\* แล้ว/);
+  assert.ok((await api.get<{ data: any }>(`/members/${u(6)}/reserve`)).data, "the details stay");
+  const outAll = choose(outMenu.custom_id, u(6), ["*"], new Msg("private", {}));
+  await pool.onSelect(outAll, nobody);
+  assert.match(reply(outAll), /ถอนชื่อทุกซีซั่นแล้ว/);
   const twice = press(`tp:out:${GUILD}`, u(6));
   await pool.onButton(twice, nobody);
   assert.match(reply(twice), /ยังไม่ได้ลงชื่อ/);
@@ -433,4 +450,74 @@ test("organizers list with contact details, remove people; people leave; /pool r
   assert.match(embed.url, /^https:\/\/ranking\.example\/special\?game=\w+$/, "the room's own game");
   const main = await api.get<{ data: any[] }>("/rankings/mmr");
   assert.equal(main.data.length, 0, "the main ladder is untouched");
+});
+
+test("with several seasons open people pick one; draws and lists use the newest; closed seasons take nobody new", async () => {
+  const season2 = (await api.post<{ id: string }>("/special/seasons", { name: "ซีซั่น 2", gameId, startDate: "2026-06-01T00:00:00.000Z", reserveOpen: true })).id;
+  // A newcomer: the form, then the season, then the rank.
+  const f = form(u(9), { name: "Newbie", uid: "900000019", position: "FORWARD" });
+  await pool.onModal(f);
+  assert.match(reply(f), /เลือกซีซั่นที่จะสมัคร/);
+  const menu = f.replies.at(-1).components[0].toJSON().components[0];
+  assert.equal(menu.custom_id, `tp:season:${GUILD}`);
+  assert.deepEqual(menu.options.map((o: any) => o.value), [season2, season1], "newest first, no 'details only' for a newcomer");
+  const pickS = choose(menu.custom_id, u(9), [season2], new Msg("private", {}));
+  await pool.onSelect(pickS, nobody);
+  assert.match(reply(pickS), /เลือกแรงค์ของคุณ/);
+  const pickR = choose(`tp:rank:${GUILD}`, u(9), ["แดง"], new Msg("private", {}));
+  await pool.onSelect(pickR, nobody);
+  assert.match(reply(pickR), /ลงชื่อ \*\*ซีซั่น 2\*\* แล้ว: \*\*Newbie\*\*[\s\S]*ซีซั่นที่สมัคร: \*\*ซีซั่น 2\*\*$/m);
+
+  // Someone already on the list joins the new season too (or may only change the details).
+  const z1 = form(u(1), { name: "Zone1", uid: "900000001", position: "GUARD" });
+  await pool.onModal(z1);
+  const z1menu = z1.replies.at(-1).components[0].toJSON().components[0];
+  assert.deepEqual(z1menu.options.map((o: any) => o.value), [season2, season1, "-"]);
+  assert.equal(z1menu.options[1].description, "สมัครแล้ว (แก้ข้อมูล)");
+  const z1pick = choose(z1menu.custom_id, u(1), [season2], new Msg("private", {}));
+  await pool.onSelect(z1pick, nobody);
+  assert.match(reply(z1pick), /ลงชื่อ \*\*ซีซั่น 2\*\* แล้ว[\s\S]*ซีซั่นที่สมัคร: \*\*ซีซั่น 2\*\*, \*\*ซีซั่น 1\*\*/);
+  const z2 = form(u(2), { name: "Zone2", uid: "900000002", position: "GUARD" });
+  await pool.onModal(z2);
+  const z2pick = choose(`tp:season:${GUILD}`, u(2), ["-"], new Msg("private", {}));
+  await pool.onSelect(z2pick, nobody);
+  assert.match(reply(z2pick), /แก้ข้อมูลแล้ว[\s\S]*ซีซั่นที่สมัคร: \*\*ซีซั่น 1\*\*$/m);
+
+  const panel = [...messages.values()].find((m) => m.ids[0]?.[0] === `tp:reg:${GUILD}`)!;
+  assert.match(panel.text, /เปิดรับตัวสำรอง: \*\*ซีซั่น 2\*\*, \*\*ซีซั่น 1\*\*/);
+  assert.match(panel.text, /ลงชื่อ ซีซั่น 2 แล้ว \*\*2\*\* คน/);
+
+  // Lists and draws: the newest open season unless one is picked.
+  const list = command("list", {}, ORG);
+  await pool.onCommand(list, organizer);
+  assert.match(reply(list), /ตัวสำรอง ซีซั่น 2\*\* \(2 คน\)/);
+  const list1 = command("list", { season: "ซีซั่น 1" }, ORG);
+  await pool.onCommand(list1, organizer);
+  assert.match(reply(list1), /ตัวสำรอง ซีซั่น 1\*\* \(5 คน\)/);
+  const nope = command("list", { season: "ซีซั่น 9" }, ORG);
+  await pool.onCommand(nope, organizer);
+  assert.match(reply(nope), /ไม่พบซีซั่น "ซีซั่น 9"/);
+  const draw = command("draw", { count: 2 }, ORG);
+  await pool.onCommand(draw, organizer);
+  const d = Object.values(pool.pools.get(GUILD)!.draws).at(-1)!;
+  assert.equal(d.seasonId, season2);
+  assert.deepEqual(d.sides[0].players.sort(), [u(1), u(9)].sort());
+  assert.match(draw.last.text, /สุ่มผู้เล่นทุกแรงค์ 2 คน · ซีซั่น 2/);
+  await pool.onButton(press(`tp:no:${d.id}`, ADMIN, draw.last), admin);
+  const tooMany = command("draw", { count: 3 }, ORG);
+  await pool.onCommand(tooMany, organizer);
+  assert.match(reply(tooMany), /มีคนว่างให้สุ่มแค่ 2 คน/);
+
+  // Every season closed: nobody new signs up, people on the list still edit their details.
+  await api.patch(`/special/seasons/${season1}`, { reserveOpen: false });
+  await api.patch(`/special/seasons/${season2}`, { reserveOpen: false });
+  const late = form(u(8), { name: "Late", uid: "900000018", position: "GUARD" });
+  await pool.onModal(late);
+  assert.match(reply(late), /ยังไม่เปิดรับตัวสำรองซีซั่นไหน/);
+  assert.equal((await api.get<{ data: any }>(`/members/${u(8)}/reserve`)).data, null);
+  const edit = form(u(2), { name: "Zone2", uid: "900000002", position: "CENTER" });
+  await pool.onModal(edit);
+  assert.match(reply(edit), /แก้ข้อมูลแล้ว: \*\*Zone2\*\*[\s\S]*เซนเตอร์/);
+  await pool.onButton(press(`tp:reg:${GUILD}`, u(2), panel), nobody);
+  assert.match(panel.text, /ยังไม่เปิดรับตัวสำรองซีซั่นไหน/);
 });

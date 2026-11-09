@@ -7,6 +7,7 @@ import { backfillPlayerRanks } from "./lib/playerRegistration.js";
 import { startDrawPoller } from "./lib/draws.js";
 import { tuneDatabase } from "./lib/db.js";
 import { runStartup } from "./lib/lifecycle.js";
+import { backfillReserveSeasons } from "./lib/special.js";
 
 if (!process.env.DATABASE_URL?.trim()) {
   console.error("API configuration error: DATABASE_URL is missing. Set it in apps/api/.env or the process environment before starting the API. See apps/api/.env.example.");
@@ -27,6 +28,8 @@ void runStartup(async () => {
   const n = await backfillPlayerUids();
   if (n) console.log(`Linked ${n} player(s) to the UID from their tournament roster`);
   await backfillPlayerRanks();
+  const moved = await backfillReserveSeasons();
+  if (moved) console.log(`Put ${moved} substitute(s) on the latest season's list`);
   await recomputeRatings();
 });
 

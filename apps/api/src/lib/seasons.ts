@@ -22,6 +22,8 @@ export const seasonInput = z.object({
   gameId: z.string().trim().max(40).nullish().transform((v) => v || null),
   startDate: z.coerce.date(),
   endDate: z.coerce.date().nullish().transform((v) => v ?? null),
+  /** Substitutes may sign up for this season. */
+  reserveOpen: z.boolean().optional(),
 });
 
 const rosterRow = z.object({
@@ -60,14 +62,26 @@ const datesOk = (s: { startDate: Date; endDate: Date | null }) => {
 
 const playerSelect = { id: true, name: true, nickname: true, avatarUrl: true, uid: true, server: true, role: true, specialMmr: true, gameId: true, team: teamSummary } as const;
 
+/** A season of this game (or of no game in particular). */
+export const forGame = (gameId: string | null | undefined) => (gameId ? { OR: [{ gameId }, { gameId: null }] } : {});
+
+/** The seasons substitutes can sign up for now, newest first. */
+export async function openReserveSeasons(gameId?: string | null) {
+  return prisma.specialSeason.findMany({
+    where: { reserveOpen: true, ...forGame(gameId) },
+    orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
+    select: { id: true, name: true, gameId: true },
+  });
+}
+
 /** Every season (of one game with gameId), newest first, with how many players and events it has. */
 export async function listSeasons(gameId?: string | null) {
   const rows = await prisma.specialSeason.findMany({
     where: gameId ? { gameId } : {},
     orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
-    include: { _count: { select: { players: true, tournaments: true } } },
+    include: { _count: { select: { players: true, tournaments: true, reserves: true } } },
   });
-  return rows.map(({ _count, ...s }) => ({ ...s, players: _count.players, events: _count.tournaments }));
+  return rows.map(({ _count, ...s }) => ({ ...s, players: _count.players, events: _count.tournaments, reserves: _count.reserves }));
 }
 
 /** The season running now: the latest one that has started. An ended season stays current until the next one starts. */

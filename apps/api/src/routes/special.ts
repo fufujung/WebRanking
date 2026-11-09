@@ -2,11 +2,11 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { seasonStories, seasonsWithStories, setStories, specialStories } from "../lib/stories.js";
-import { editReserve, importReserve, removeReserve, reserveList, reserveRanks, specialBoard } from "../lib/special.js";
-import { addSeasonPlayers, createSeason, deleteSeason, listSeasons, removeSeasonPlayer, seasonView, updateSeason } from "../lib/seasons.js";
+import { editReserve, importReserve, removeReserve, reserveGame, reserveList, reserveRanks, setReserveSeason, specialBoard } from "../lib/special.js";
+import { addSeasonPlayers, createSeason, deleteSeason, listSeasons, openReserveSeasons, removeSeasonPlayer, seasonView, updateSeason } from "../lib/seasons.js";
 
 /**
- * The special "เล่นเก่งปากเก่ง" events: the separate MMR and stats board, and the standing list of substitutes.
+ * The special "เล่นเก่งปากเก่ง" events: the separate MMR and stats board, and the substitutes of each season.
  * The public list has no contact details; /reserve/private (admin key) adds Facebook, phone and Discord.
  */
 export const special = Router();
@@ -24,9 +24,10 @@ special.get("/stories", async (req, res) => {
   res.json({ data, seasons });
 });
 
-/** Seasons: each lists the players (name + UID) allowed to play in its events. */
+/** Seasons: each lists the players (name + UID) allowed to play in its events. ?open=true: only the seasons taking substitutes now. */
 special.get("/seasons", async (req, res) => {
-  const q = z.object({ gameId: z.string().trim().min(1).max(40).optional() }).parse(req.query);
+  const q = z.object({ gameId: z.string().trim().min(1).max(40).optional(), open: z.enum(["true", "false"]).optional() }).parse(req.query);
+  if (q.open === "true") return void res.json({ data: await openReserveSeasons(await reserveGame(q.gameId)) });
   res.json({ data: await listSeasons(q.gameId) });
 });
 
@@ -72,15 +73,28 @@ special.get("/ranks", async (req, res) => {
   res.json({ data: await reserveRanks(q.gameId) });
 });
 
-const gameQuery = z.object({ gameId: z.string().trim().min(1).max(40).optional() });
+const gameQuery = z.object({ gameId: z.string().trim().min(1).max(40).optional(), seasonId: z.string().trim().min(1).max(40).optional() });
 
-/** One game's list with ?gameId= (each game keeps its own), or every game's. */
+/** One game's list with ?gameId= (each game keeps its own), or every game's; ?seasonId= keeps one season's substitutes. */
 special.get("/reserve", async (req, res) => {
-  res.json({ data: await reserveList(false, gameQuery.parse(req.query).gameId) });
+  const q = gameQuery.parse(req.query);
+  res.json({ data: await reserveList(false, q.gameId, q.seasonId) });
 });
 
 special.get("/reserve/private", requireAdmin, async (req, res) => {
-  res.json({ data: await reserveList(true, gameQuery.parse(req.query).gameId) });
+  const q = gameQuery.parse(req.query);
+  res.json({ data: await reserveList(true, q.gameId, q.seasonId) });
+});
+
+/** An organizer adds a substitute to a season's list (open for sign-ups or not) or takes them off it. */
+special.put("/seasons/:id/reserve/:playerId", requireAdmin, async (req, res) => {
+  await setReserveSeason(String(req.params.id), String(req.params.playerId), true);
+  res.status(204).end();
+});
+
+special.delete("/seasons/:id/reserve/:playerId", requireAdmin, async (req, res) => {
+  await setReserveSeason(String(req.params.id), String(req.params.playerId), false);
+  res.status(204).end();
 });
 
 special.patch("/reserve/:playerId", requireAdmin, async (req, res) => {
