@@ -220,6 +220,7 @@ const poolCommand: ApplicationCommandData = {
         { type: O.String, name: "position", description: "เฉพาะตำแหน่งนี้ (All Around ถูกสุ่มได้ทุกตำแหน่ง)", choices: positionChoices },
         { type: O.User, name: "player_a", description: "คนที่ 1 (หัวหน้าทีม A)" },
         { type: O.User, name: "player_b", description: "คนที่ 2 (หัวหน้าทีม B)" },
+        { type: O.String, name: "season", description: "สุ่มจากคนที่สมัครซีซั่นนี้ (ไม่ใส่ = ซีซั่นล่าสุดที่เปิดรับ)", autocomplete: true },
       ],
     },
     {
@@ -229,6 +230,7 @@ const poolCommand: ApplicationCommandData = {
       options: [
         { type: O.String, name: "rank", description: "เฉพาะแรงค์นี้", autocomplete: true },
         { type: O.String, name: "position", description: "เฉพาะตำแหน่งนี้", choices: positionChoices },
+        { type: O.String, name: "season", description: "คนที่สมัครซีซั่นนี้ (ไม่ใส่ = ซีซั่นล่าสุดที่เปิดรับ)", autocomplete: true },
       ],
     },
     { type: O.Subcommand, name: "remove", description: "เอาผู้เล่นออกจากรายชื่อ (ผู้จัด)", options: [{ type: O.User, name: "user", description: "ผู้เล่น", required: true }] },

@@ -77,6 +77,8 @@ export default async function SpecialPage({
     players: board.reserve.filter((r) => r.position === p),
   }));
   const noPosition = board.reserve.filter((r) => !r.position);
+  // Missing in a board cached before seasons took substitutes (the first visit after an update).
+  const openSeasons = board.reserveSeasons ?? [];
 
   return (
     <div className="public-page-flow">
@@ -138,7 +140,10 @@ export default async function SpecialPage({
             <DiscordJoin href={discordInvite} />
             <span className="muted small">
               {me ? "" : "เข้าสู่ระบบด้วย Discord แล้วกรอกฟอร์มได้เลย · "}
-              หรือลงชื่อในห้องลงชื่อของ Discord · เปิดรับตลอด ใช้ได้ทุกงาน
+              หรือลงชื่อในห้องลงชื่อของ Discord ·{" "}
+              {openSeasons.length
+                ? `เปิดรับตัวสำรอง: ${openSeasons.map((x) => x.name).join(", ")}`
+                : "ตอนนี้ยังไม่เปิดรับตัวสำรองซีซั่นใหม่"}
             </span>
           </div>
         </div>
@@ -322,9 +327,9 @@ export default async function SpecialPage({
         )}
       </section>}
         reserve={<section id="reserve" className="mt">
-        <h2>ตัวสำรอง ({board.reserve.length} คน)</h2>
+        <h2>ตัวสำรอง{board.season ? ` · ${board.season.name}` : " ทุกซีซั่น"} ({board.reserve.length} คน)</h2>
         {board.reserve.length === 0 ? (
-          <Empty>ยังไม่มีใครลงชื่อ</Empty>
+          <Empty>{board.season ? "ยังไม่มีใครสมัครซีซั่นนี้" : "ยังไม่มีใครลงชื่อ"}</Empty>
         ) : (
           <div className="grid grid-2 reserve-grid">
             {[

@@ -597,6 +597,8 @@ export interface ReservePlayer {
   facebook?: string | null;
   phone?: string | null;
   discordId?: string | null;
+  /** The seasons this substitute signed up for, newest first. */
+  seasons?: { id: string; name: string }[];
 }
 
 /** A season of the special events: the players allowed to play in its events. The special MMR carries on across seasons. */
@@ -609,6 +611,10 @@ export interface SpecialSeason {
   /** How many players and events (in a list). */
   players?: number;
   events?: number;
+  /** Substitutes can sign up for this season. */
+  reserveOpen?: boolean;
+  /** How many substitutes signed up (in a list). */
+  reserves?: number;
 }
 
 export interface SeasonView extends Omit<SpecialSeason, "players" | "events"> {
@@ -637,6 +643,8 @@ export interface SpecialBoard {
   stats: (Player & { rank: number; mmr: number; tier: Tier; stats: PlayerStats })[];
   events: (Tournament & { matches: number })[];
   reserve: ReservePlayer[];
+  /** Seasons taking substitutes now, newest first. */
+  reserveSeasons?: { id: string; name: string; gameId: string | null }[];
   rules: MmrLadder["rules"];
 }
 

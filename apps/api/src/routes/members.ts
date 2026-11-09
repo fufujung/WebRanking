@@ -83,8 +83,9 @@ members.delete("/:discordId/solo/:tournamentId", async (req, res) => {
   res.json(await leaveSolo(who(req.params.discordId), String(req.params.tournamentId)));
 });
 
-/** The standing "เล่นเก่งปากเก่ง" substitutes list: the member's own sign-up (with their own contact details), join or edit, and leave. */
+/** The "เล่นเก่งปากเก่ง" substitutes, season by season: the member's own sign-up (with their own contact details and seasons), join or edit, and leave. */
 const gameQuery = z.object({ gameId: z.string().trim().min(1).max(40).optional() });
+const leaveQuery = gameQuery.extend({ seasonId: z.string().trim().min(1).max(40).optional() });
 /** The member's sign-up in one game (?gameId=, default: the busiest game). */
 members.get("/:discordId/reserve", async (req, res) => {
   res.json({ data: await myReserve(who(req.params.discordId), gameQuery.parse(req.query).gameId) });
@@ -101,8 +102,10 @@ members.post("/:discordId/reserve/check", async (req, res) => {
   await checkReserve(who(req.params.discordId), req.body);
   res.status(204).end();
 });
+/** ?seasonId= leaves one season and keeps the details; without it the member leaves the list altogether. */
 members.delete("/:discordId/reserve", async (req, res) => {
-  await leaveReserve(who(req.params.discordId), gameQuery.parse(req.query).gameId);
+  const q = leaveQuery.parse(req.query);
+  await leaveReserve(who(req.params.discordId), q.gameId, q.seasonId);
   res.status(204).end();
 });
 

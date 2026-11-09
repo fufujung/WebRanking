@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, qs } from "@/lib/api";
 import { explain } from "@/lib/explain";
 import { endMemberSession, getMember } from "@/lib/member";
 import type { Player } from "@/lib/types";
@@ -178,30 +178,31 @@ export async function passGuildLeader(playerId: string, memberId: string) {
   return guildCall("leader", { playerId, memberId }, "เปลี่ยนหัวหน้ากิลด์แล้ว");
 }
 
-// The "เล่นเก่งปากเก่ง" substitutes list: always open. The API checks the character is this account's.
+// The "เล่นเก่งปากเก่ง" substitutes, season by season. The API checks the character is this account's and the season is open.
 export async function saveMyReserve(_: MeState, form: FormData): Promise<MeState> {
   const m = await member();
   try {
     await api(`/members/${m.id}/reserve`, {
       method: "POST",
-      json: { playerId: text(form, "playerId"), position: text(form, "position") || null, facebook: text(form, "facebook"), phone: text(form, "phone") || null, rank: text(form, "rank") || null },
+      json: { playerId: text(form, "playerId"), position: text(form, "position") || null, facebook: text(form, "facebook"), phone: text(form, "phone") || null, rank: text(form, "rank") || null, seasonId: text(form, "seasonId") || undefined },
     });
   } catch (e) {
     return { error: explain(e) };
   }
   revalidatePath("/me");
   revalidatePath("/special");
-  return { ok: "บันทึกแล้ว คุณอยู่ในรายชื่อตัวสำรองแล้ว" };
+  return { ok: text(form, "seasonId") ? "สมัครแล้ว คุณอยู่ในรายชื่อตัวสำรองของซีซั่นนี้แล้ว" : "บันทึกข้อมูลแล้ว" };
 }
 
-export async function leaveMyReserve(gameId: string | null): Promise<MeState> {
+/** Leaves one season (the details stay for the next one), or the whole list when no season is given. */
+export async function leaveMyReserve(gameId: string | null, seasonId?: string | null): Promise<MeState> {
   const m = await member();
   try {
-    await api(`/members/${m.id}/reserve${typeof gameId === "string" && gameId ? `?gameId=${encodeURIComponent(gameId)}` : ""}`, { method: "DELETE" });
+    await api(`/members/${m.id}/reserve${qs({ gameId: typeof gameId === "string" ? gameId : undefined, seasonId: typeof seasonId === "string" ? seasonId : undefined })}`, { method: "DELETE" });
   } catch (e) {
     return { error: explain(e) };
   }
   revalidatePath("/me");
   revalidatePath("/special");
-  return { ok: "ถอนชื่อแล้ว" };
+  return { ok: seasonId ? "ถอนชื่อจากซีซั่นนี้แล้ว" : "ถอนชื่อแล้ว" };
 }

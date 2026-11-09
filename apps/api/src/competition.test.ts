@@ -62,7 +62,7 @@ let n = 0;
 const discord = () => String(100000000000000000n + BigInt(++n));
 
 async function newTournament(extra: Record<string, unknown> = {}) {
-  return ok("POST", "/tournaments", { name: `Cup ${++n}`, startDate: "2026-11-01T12:00:00Z", format: "SINGLE_ELIMINATION", registrationOpen: true, rosterMin: 3, rosterMax: 4, ...extra });
+  return ok("POST", "/tournaments", { name: `Cup ${++n}`, startDate: "2030-11-01T12:00:00Z", format: "SINGLE_ELIMINATION", registrationOpen: true, rosterMin: 3, rosterMax: 4, ...extra });
 }
 
 async function registerTeam(tid: string, name: string, captain = discord()) {
@@ -224,7 +224,7 @@ describe("seeding and starting", () => {
     b = await ok("POST", `/tournaments/${t.id}/bracket/start`);
     assert.equal(b.status, "LIVE");
     assert.equal(b.registrationOpen, false);
-    assert.ok(b.matches.filter((m: any) => m.status === "READY").every((m: any) => m.scheduledAt === "2026-11-01T12:00:00.000Z"), "ready matches get the start time");
+    assert.ok(b.matches.filter((m: any) => m.status === "READY").every((m: any) => m.scheduledAt === "2030-11-01T12:00:00.000Z"), "ready matches get the start time");
     const detail = await ok("GET", `/tournaments/${t.id}`);
     assert.equal(detail.status, "ONGOING");
 

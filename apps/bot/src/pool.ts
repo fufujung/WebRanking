@@ -1,6 +1,6 @@
 /**
- * The substitutes list for the special "เล่นเก่งปากเก่ง" events: a sign-up room that is always open and
- * serves every event. People sign up once with character name, UID, Facebook, phone (optional) and
+ * The substitutes list for the special "เล่นเก่งปากเก่ง" events, season by season: people sign up in the room
+ * for a season that takes substitutes (opened on the website), with character name, UID, Facebook, phone (optional) and
  * position, then pick their in-game rank (required; the game's ranks on the website, the same list as solo tournaments). The list lives on the website (so it shows there too); Facebook
  * and phone are only shown to organizers. Organizers draw players at random (by rank and/or position) to
  * fill two sides (e.g. A vs B), draw again, swap one player and confirm; the draws stay in the bot's data folder.
@@ -50,8 +50,16 @@ export interface PoolPlayer {
   phone: string | null;
 }
 
+/** A season of the special events, newest first wherever a list of them is given. */
+export interface SeasonRef {
+  id: string;
+  name: string;
+}
+
 /** A sign-up as the API returns it (GET /special/reserve/private or /members/{id}/reserve). */
 interface ReserveRow {
+  /** The seasons this person signed up for, newest first. */
+  seasons?: SeasonRef[];
   playerId: string;
   discordId?: string | null;
   position: SoloPosition | null;
@@ -81,6 +89,9 @@ export interface Draw {
   /** People who said they can't play this one, or were swapped out: not drawn again for it. */
   excluded: string[];
   status: "OPEN" | "CONFIRMED" | "CANCELLED";
+  /** The season whose substitutes are drawn; null/missing = everyone on the list (no season open then). */
+  seasonId?: string | null;
+  seasonName?: string | null;
   channelId: string;
   messageId: string | null;
   createdBy: string;
@@ -123,6 +134,8 @@ interface PendingForm {
   position: string | undefined;
   facebook: string;
   phone: string | null;
+  /** The season to sign up for: undefined = not chosen yet (several are open), null = only change the details. */
+  seasonId?: string | null;
   at: number;
 }
 const PENDING_MS = 15 * 60_000;
@@ -132,7 +145,8 @@ const rankText = (r: string | null) => (r ? `แรงค์ ${r}` : "ยัง�
 const playerLine = (id: string, p?: PoolPlayer) => (p ? `${mention(id)} · **${p.name}** (UID ${p.uid ?? "-"}) · ${positionText(p.position)} · ${rankText(p.rank)}` : mention(id));
 /** What organizers see in /pool list: the public line plus Facebook and phone. */
 const privateLine = (id: string, p: PoolPlayer) => `${playerLine(id, p)}\n　FB: ${p.facebook ? p.facebook.replace(/[`*_~|]/g, "") : "-"}${p.phone ? ` · โทร ${p.phone}` : ""}`;
-const drawTitle = (d: Draw) => [d.rank ? `แรงค์ ${d.rank}` : null, d.position ? positionText(d.position) : null].filter(Boolean).join(" ") || "ทุกแรงค์";
+const drawTitle = (d: Pick<Draw, "rank" | "position">) => [d.rank ? `แรงค์ ${d.rank}` : null, d.position ? positionText(d.position) : null].filter(Boolean).join(" ") || "ทุกแรงค์";
+const seasonNames = (xs: SeasonRef[] | undefined) => (xs?.length ? xs.map((x) => `**${x.name}**`).join(", ") : null);
 
 function toPlayer(r: ReserveRow): PoolPlayer {
   return {
@@ -168,9 +182,30 @@ export class PoolManager {
 
   // ---------- The list (on the website) ----------
 
-  /** ?gameId= for this room's game. */
-  private game(pool: PoolConfig | undefined) {
-    return pool?.gameId ? `?gameId=${encodeURIComponent(pool.gameId)}` : "";
+  /** ?gameId= for this room's game, plus any other query values. */
+  private game(pool: PoolConfig | undefined, more: Record<string, string | null | undefined> = {}) {
+    const q = new URLSearchParams();
+    if (pool?.gameId) q.set("gameId", pool.gameId);
+    for (const [k, v] of Object.entries(more)) if (v) q.set(k, v);
+    const text = q.toString();
+    return text ? `?${text}` : "";
+  }
+
+  /** The seasons of the room's game taking substitutes now, newest first. */
+  async openSeasons(pool?: PoolConfig): Promise<SeasonRef[]> {
+    const { data } = await this.api.get<{ data: SeasonRef[] }>(`/special/seasons${this.game(pool, { open: "true" })}`);
+    return data.map((x) => ({ id: x.id, name: x.name }));
+  }
+
+  /** The season the room's draws and lists use: the one picked, else the newest open one; null = none open (the whole list). */
+  private async drawSeason(pool: PoolConfig, picked?: string | null): Promise<SeasonRef | null> {
+    if (picked) {
+      const { data } = await this.api.get<{ data: SeasonRef[] }>(`/special/seasons${this.game(pool)}`);
+      const s = data.find((x) => x.id === picked) ?? data.find((x) => x.name.toLowerCase() === picked.toLowerCase());
+      if (!s) throw new Error(`ไม่พบซีซั่น "${picked}"`);
+      return { id: s.id, name: s.name };
+    }
+    return (await this.openSeasons(pool))[0] ?? null;
   }
 
   /** The ranks to pick from: the room's game's in-game ranks on the website, lowest first. */
@@ -179,10 +214,10 @@ export class PoolManager {
     return data.map((r) => r.name);
   }
 
-  /** Everyone signed up, by Discord account. The old list in pool.json is carried over to the website first. */
-  async players(pool?: PoolConfig): Promise<Players> {
+  /** Everyone signed up (for one season with seasonId), by Discord account. The old list in pool.json is carried over to the website first. */
+  async players(pool?: PoolConfig, seasonId?: string | null): Promise<Players> {
     await this.carryOver();
-    const { data } = await this.api.get<{ data: ReserveRow[] }>(`/special/reserve/private${this.game(pool)}`);
+    const { data } = await this.api.get<{ data: ReserveRow[] }>(`/special/reserve/private${this.game(pool, { seasonId })}`);
     return Object.fromEntries(data.filter((r) => r.discordId).map((r) => [r.discordId!, toPlayer(r)]));
   }
 
@@ -200,7 +235,8 @@ export class PoolManager {
 
   // ---------- Messages ----------
 
-  panel(pool: PoolConfig, players: Players, ranks: string[]) {
+  /** The room's message: the seasons taking substitutes, and how many signed up for the newest of them. */
+  panel(pool: PoolConfig, players: Players, ranks: string[], open: SeasonRef[] = []) {
     const list = Object.values(players);
     const byPosition = (["GUARD", "FORWARD", "CENTER", "ALL"] as const).map((p) => `${POSITION_SHORT[p]} **${list.filter((x) => x.position === p).length}**`);
     const byRank = ranks.map((r) => `${r} **${list.filter((p) => p.rank === r).length}**`);
@@ -210,7 +246,9 @@ export class PoolManager {
       url: isPublicUrl(board) ? board : undefined,
       color: RED,
       description: [
-        "ห้องนี้เปิดรับลงชื่อตลอด ใช้ได้ทุกงาน กด 📝 **ลงชื่อ / แก้ข้อมูล** แล้วกรอก:",
+        open.length
+          ? `ตอนนี้เปิดรับตัวสำรอง: ${seasonNames(open)} สมัครแยกแต่ละซีซั่น กด 📝 **ลงชื่อ / แก้ข้อมูล** แล้วกรอก:`
+          : "ตอนนี้ยังไม่เปิดรับตัวสำรองซีซั่นไหน (ผู้จัดเปิดได้ที่หน้าแอดมินบนเว็บ) คนที่ลงชื่อไว้แล้วกด 📝 แก้ข้อมูลได้ ข้อมูลที่ต้องกรอก:",
         "• ชื่อตัวละคร และ UID",
         "• Facebook (เบอร์โทรไม่ใส่ก็ได้) ผู้จัดเท่านั้นที่เห็น",
         "• ตำแหน่ง: บอลหลัก, บอลรอง, เซนเตอร์ หรือ All Around แล้วเลือกแรงค์ (ต้องเลือก)",
@@ -218,7 +256,7 @@ export class PoolManager {
         "เวลามีงาน ผู้จัดจะสุ่มคนจากรายชื่อนี้ ถ้าถูกเลือกบอทจะแท็กชื่อคุณ ถ้าไม่สะดวก กด 🙋 **ไม่สะดวก** ใต้ประกาศ บอทจะสุ่มคนใหม่แทน",
         "สถิติและ MMR ของรายการนี้แยกจากรายการหลัก ดูได้ด้วย `/pool rank` หรือที่หน้าเว็บ",
         "",
-        `ลงชื่อแล้ว **${list.length}** คน`,
+        open.length ? `ลงชื่อ ${open[0].name} แล้ว **${list.length}** คน` : `ลงชื่อไว้ **${list.length}** คน`,
         byPosition.join(" · "),
         byRank.join(" · "),
       ].join("\n"),
@@ -244,7 +282,7 @@ export class PoolManager {
     }));
     const status = d.status === "CONFIRMED" ? "✅ ยืนยันทีมแล้ว" : d.status === "CANCELLED" ? "❌ ยกเลิกแล้ว" : "รอผู้จัดยืนยัน";
     const embed: APIEmbed = {
-      title: `🎲 สุ่มผู้เล่น${drawTitle(d)} ${d.count} คน`,
+      title: `🎲 สุ่มผู้เล่น${drawTitle(d)} ${d.count} คน${d.seasonName ? ` · ${d.seasonName}` : ""}`.slice(0, 256),
       color: d.status === "CONFIRMED" ? GREEN : d.status === "CANCELLED" ? GREY : RED,
       description: [note, status].filter(Boolean).join("\n"),
       fields,
@@ -307,6 +345,14 @@ export class PoolManager {
         .setPlaceholder("เลือกแรงค์ของคุณ")
         .addOptions(ranks.slice(0, 25).map((r) => ({ label: r.slice(0, 100), value: r.slice(0, 100), default: current === r }))),
     );
+  }
+
+  /** After the form, when several seasons are open: which one to sign up for (someone already on the list may skip it). */
+  private seasonPicker(pool: PoolConfig, open: SeasonRef[], joined: SeasonRef[], onList: boolean) {
+    const mine = new Set(joined.map((x) => x.id));
+    const options = open.slice(0, 24).map((x) => ({ label: x.name.slice(0, 100), value: x.id, description: mine.has(x.id) ? "สมัครแล้ว (แก้ข้อมูล)" : undefined }));
+    if (onList) options.push({ label: "ไม่สมัครเพิ่ม แก้ข้อมูลอย่างเดียว", value: "-", description: undefined });
+    return new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId(`tp:season:${pool.guildId}`).setPlaceholder("เลือกซีซั่นที่จะสมัคร").addOptions(options));
   }
 
   // ---------- Drawing ----------
@@ -376,9 +422,11 @@ export class PoolManager {
     const channel = await client.channels.fetch(pool.channelId).catch(() => null);
     const msg = channel?.isTextBased() ? await channel.messages.fetch(pool.panelMessageId).catch(() => null) : null;
     if (!msg) return;
-    const list = players ?? (await this.players(pool).catch(() => null));
+    const open = await this.openSeasons(pool).catch(() => null);
+    if (!open) return;
+    const list = players ?? (await this.players(pool, open[0]?.id).catch(() => null));
     const ranks = await this.ranks(pool).catch(() => null);
-    if (list && ranks) await msg.edit(this.panel(pool, list, ranks)).catch(() => null);
+    if (list && ranks) await msg.edit(this.panel(pool, list, ranks, open)).catch(() => null);
   }
 
   // ---------- Commands ----------
@@ -415,28 +463,40 @@ export class PoolManager {
         };
         await i.deferReply({ ephemeral: true });
         this.pools.set(next.guildId, next);
-        const [players, ranks] = await Promise.all([this.players(next), this.ranks(next)]);
+        const open = await this.openSeasons(next);
+        const [players, ranks] = await Promise.all([this.players(next, open[0]?.id), this.ranks(next)]);
         const channel = await i.client.channels.fetch(channelId).catch(() => null);
         if (!channel?.isSendable()) return void (await i.editReply("บอทส่งข้อความในห้องนั้นไม่ได้ ตรวจสิทธิ์ View Channel / Send Messages"));
         const old = next.panelMessageId && channel.isTextBased() ? await channel.messages.fetch(next.panelMessageId).catch(() => null) : null;
-        if (old) await old.edit(this.panel(next, players, ranks));
-        else next.panelMessageId = (await channel.send(this.panel(next, players, ranks))).id;
+        if (old) await old.edit(this.panel(next, players, ranks, open));
+        else next.panelMessageId = (await channel.send(this.panel(next, players, ranks, open))).id;
         this.pools.set(next.guildId, { ...this.pools.get(next.guildId)!, panelMessageId: next.panelMessageId });
         const gone = Object.values(players).filter((p) => !p.rank || !ranks.includes(p.rank));
         const warn = gone.length ? `\n⚠️ มี ${gone.length} คนที่ยังไม่มีแรงค์ในรายการ จะไม่ถูกสุ่มตามแรงค์จนกว่าจะกด 📝 แล้วเลือกแรงค์` : "";
-        return void (await i.editReply(`✅ ตั้งห้องลงชื่อตัวสำรองที่ <#${channelId}> แล้ว${next.gameName ? ` เกม: **${next.gameName}**` : ""} แรงค์ให้เลือก: ${ranks.join(", ")} (แก้รายการแรงค์ได้ที่หน้าแอดมินบนเว็บ > เกม)${warn}`));
+        const seasons = open.length ? `\nเปิดรับ: ${seasonNames(open)}` : "\n⚠️ ตอนนี้ยังไม่เปิดรับตัวสำรองซีซั่นไหน เปิดได้ที่หน้าแอดมินบนเว็บ > ตัวสำรอง";
+        return void (await i.editReply(`✅ ตั้งห้องลงชื่อตัวสำรองที่ <#${channelId}> แล้ว${next.gameName ? ` เกม: **${next.gameName}**` : ""} แรงค์ให้เลือก: ${ranks.join(", ")} (แก้รายการแรงค์ได้ที่หน้าแอดมินบนเว็บ > เกม)${seasons}${warn}`));
       }
       if (!pool) return void (await i.reply({ ephemeral: true, content: "ยังไม่ได้ตั้งห้องลงชื่อ ใช้ `/pool setup` ก่อน" }));
       if (!this.isOrganizer(pool, i.user.id, info)) return void (await i.reply({ ephemeral: true, content: "คำสั่งนี้สำหรับผู้จัด" }));
       // The draw is posted in the room; list and remove answer privately.
       if (sub !== "draw") await i.deferReply({ ephemeral: true });
-      const players = await this.players(pool);
       const say = (content: string) => (i.deferred ? i.editReply(content) : i.reply({ ephemeral: true, content }));
+      // list and draw use one season's substitutes (picked, or the newest open one); remove takes a person off the whole list.
+      let season: SeasonRef | null = null;
+      if (sub !== "remove") {
+        try {
+          season = await this.drawSeason(pool, i.options.getString("season")?.trim() || null);
+        } catch (e) {
+          if (e instanceof ApiError) throw e;
+          return void (await say(`❌ ${(e as Error).message}`));
+        }
+      }
+      const players = await this.players(pool, season?.id);
       if (sub === "list") {
         const rank = i.options.getString("rank")?.replace(/^แรงค์/, "").trim() || null;
         const position = (i.options.getString("position") as SoloPosition | null) ?? null;
         const people = Object.entries(players).filter(([, p]) => this.fits({ rank, position }, p));
-        const head = `**ตัวสำรอง${rank || position ? ` ${drawTitle({ rank, position } as Draw)}` : ""}** (${people.length} คน) · Facebook และเบอร์เห็นเฉพาะผู้จัด`;
+        const head = `**ตัวสำรอง${season ? ` ${season.name}` : " (ทุกซีซั่น)"}${rank || position ? ` ${drawTitle({ rank, position })}` : ""}** (${people.length} คน) · Facebook และเบอร์เห็นเฉพาะผู้จัด`;
         const lines = people.map(([id, p]) => privateLine(id, p));
         let text = head;
         for (const l of lines) {
@@ -477,6 +537,8 @@ export class PoolManager {
         sides: a && b ? [{ leaderId: a, players: [] }, { leaderId: b, players: [] }] : [{ leaderId: null, players: [] }],
         excluded: [],
         status: "OPEN",
+        seasonId: season?.id ?? null,
+        seasonName: season?.name ?? null,
         channelId: i.channelId,
         messageId: null,
         createdBy: i.user.id,
@@ -529,6 +591,11 @@ export class PoolManager {
       const { data } = await this.api.get<{ data: { id: string; name: string }[] }>("/games").catch(() => ({ data: [] as { id: string; name: string }[] }));
       return void (await i.respond(data.filter((g) => g.name.toLowerCase().includes(typedGame)).slice(0, 25).map((g) => ({ name: g.name.slice(0, 100), value: g.id }))));
     }
+    if (i.options.getFocused(true).name === "season") {
+      const typedSeason = String(i.options.getFocused()).trim().toLowerCase();
+      const { data } = await this.api.get<{ data: (SeasonRef & { reserveOpen?: boolean })[] }>(`/special/seasons${this.game(pool)}`).catch(() => ({ data: [] as (SeasonRef & { reserveOpen?: boolean })[] }));
+      return void (await i.respond(data.filter((x) => x.name.toLowerCase().includes(typedSeason)).slice(0, 25).map((x) => ({ name: `${x.name}${x.reserveOpen ? " (เปิดรับ)" : ""}`.slice(0, 100), value: x.id }))));
+    }
     const typed = String(i.options.getFocused()).replace(/^แรงค์/, "").trim().toLowerCase();
     const ranks = (await this.ranks(pool).catch(() => [] as string[])).filter((r) => r.toLowerCase().includes(typed));
     await i.respond(ranks.slice(0, 25).map((r) => ({ name: r.slice(0, 100), value: r.slice(0, 100) })));
@@ -547,18 +614,20 @@ export class PoolManager {
           return void (await i.showModal(this.registerModal(pool, mine ?? undefined)));
         }
         await i.deferReply({ ephemeral: true });
+        const row = await this.mineRow(i.user.id, pool);
         if (action === "out") {
-          try {
-            await this.api.delete(`/members/${i.user.id}/reserve${this.game(pool)}`);
-          } catch (e) {
-            if (e instanceof ApiError && e.status === 404) return void (await i.editReply("คุณยังไม่ได้ลงชื่อ"));
-            throw e;
-          }
-          await i.editReply("🚪 ถอนชื่อแล้ว จะไม่ถูกสุ่มอีก (ลงชื่อใหม่ได้ทุกเมื่อ)");
-          return void (await this.refreshPanel(i.client, pool));
+          if (!row) return void (await i.editReply("คุณยังไม่ได้ลงชื่อ"));
+          // One season at a time (the details stay for the next one), or off the list altogether.
+          const options = (row.seasons ?? []).slice(0, 24).map((x) => ({ label: `ถอนชื่อจาก ${x.name}`.slice(0, 100), value: x.id, description: "ข้อมูลยังอยู่ สมัครซีซั่นอื่นได้" }));
+          options.push({ label: "ถอนชื่อทุกซีซั่น (ลบข้อมูลทั้งหมด)", value: "*", description: "ต้องกรอกใหม่ถ้าจะลงชื่ออีก" });
+          return void (await i.editReply({
+            content: "จะถอนชื่อจากซีซั่นไหน?",
+            components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(new StringSelectMenuBuilder().setCustomId(`tp:outs:${pool.guildId}`).setPlaceholder("เลือกซีซั่น").addOptions(options))],
+          }));
         }
-        const mine = await this.mine(i.user.id, pool);
-        return void (await i.editReply(mine ? `คุณลงชื่อไว้:\n${privateLine(i.user.id, mine)}\nกด 📝 เพื่อแก้ไข` : "คุณยังไม่ได้ลงชื่อ กด 📝 ลงชื่อ / แก้ข้อมูล"));
+        const mine = row && toPlayer(row);
+        const where = row && (seasonNames(row.seasons) ? `ซีซั่นที่สมัคร: ${seasonNames(row.seasons)}` : "ยังไม่ได้สมัครซีซั่นไหน กด 📝 เพื่อสมัคร");
+        return void (await i.editReply(mine ? `คุณลงชื่อไว้:\n${privateLine(i.user.id, mine)}\n${where}\nกด 📝 เพื่อแก้ไข` : "คุณยังไม่ได้ลงชื่อ กด 📝 ลงชื่อ / แก้ข้อมูล"));
       }
       const found = this.findDraw(id);
       if (!found) return void (await i.reply({ ephemeral: true, content: "ไม่พบการสุ่มนี้แล้ว" }));
@@ -566,7 +635,7 @@ export class PoolManager {
       if (d.status !== "OPEN") return void (await i.reply({ ephemeral: true, content: d.status === "CONFIRMED" ? "ยืนยันทีมไปแล้ว" : "การสุ่มนี้ถูกยกเลิกแล้ว" }));
       if (action === "busy") {
         if (!d.sides.some((s) => s.players.includes(i.user.id))) return void (await i.reply({ ephemeral: true, content: "ปุ่มนี้สำหรับคนที่ถูกสุ่มเท่านั้น" }));
-        const players = await this.players(pool);
+        const players = await this.players(pool, d.seasonId);
         const name = players[i.user.id]?.name ?? d.names?.[i.user.id] ?? "ผู้เล่น";
         const swapped = this.swap(pool, players, d, i.user.id, null);
         if ("error" in swapped) return void (await i.reply({ ephemeral: true, content: `รับทราบครับ แต่${swapped.error} ผู้จัดจะหาคนแทนให้` }));
@@ -574,7 +643,7 @@ export class PoolManager {
         return void (await i.update(this.drawMessage(players, d, `🙋 ${name} ไม่สะดวก สุ่ม ${players[swapped.in]?.name ?? ""} มาแทนแล้ว`)));
       }
       if (!this.isOrganizer(pool, i.user.id, info)) return void (await i.reply({ ephemeral: true, content: "ปุ่มนี้สำหรับผู้จัด" }));
-      const players = await this.players(pool);
+      const players = await this.players(pool, d.seasonId);
       if (action === "re") {
         const before = d.sides.map((s) => s.players);
         const problem = this.fill(pool, players, d);
@@ -600,13 +669,15 @@ export class PoolManager {
     const [, action, id, out] = i.customId.split(":");
     try {
       if (action === "rank") return void (await this.pickRank(i as StringSelectMenuInteraction, id));
+      if (action === "season") return void (await this.pickSeason(i as StringSelectMenuInteraction, id));
+      if (action === "outs") return void (await this.leave(i as StringSelectMenuInteraction, id));
       const found = this.findDraw(id);
       if (!found) return void (await i.reply({ ephemeral: true, content: "ไม่พบการสุ่มนี้แล้ว" }));
       const { pool, draw: d } = found;
       if (d.status !== "OPEN") return void (await i.reply({ ephemeral: true, content: "การสุ่มนี้ปิดแล้ว" }));
       if (!this.isOrganizer(pool, i.user.id, info)) return void (await i.reply({ ephemeral: true, content: "เปลี่ยนตัวได้เฉพาะผู้จัด" }));
       const value = (i as StringSelectMenuInteraction).values[0];
-      const players = await this.players(pool);
+      const players = await this.players(pool, d.seasonId);
       const nameOf = (pid: string) => players[pid]?.name ?? d.names?.[pid] ?? pid;
       if (action === "sw") {
         // Step 1: who goes out. Step 2 (private): who comes in, at random or by hand.
@@ -635,9 +706,14 @@ export class PoolManager {
     }
   }
 
-  /** The member's own sign-up with their contact details, or null. */
-  private async mine(discordId: string, pool: PoolConfig): Promise<PoolPlayer | null> {
+  /** The member's own sign-up with their contact details and seasons, or null. */
+  private async mineRow(discordId: string, pool: PoolConfig): Promise<ReserveRow | null> {
     const { data } = await this.api.get<{ data: ReserveRow | null }>(`/members/${discordId}/reserve${this.game(pool)}`);
+    return data;
+  }
+
+  private async mine(discordId: string, pool: PoolConfig): Promise<PoolPlayer | null> {
+    const data = await this.mineRow(discordId, pool);
     return data ? toPlayer(data) : null;
   }
 
@@ -663,21 +739,24 @@ export class PoolManager {
     }
     try {
       await i.deferReply({ ephemeral: true });
-      const [before, ranks] = await Promise.all([this.mine(i.user.id, pool), this.ranks(pool)]);
-      const form: PendingForm = { uid, name, position, facebook: text("facebook"), phone: text("phone") || null, at: Date.now() };
-      if (!before?.rank || !ranks.includes(before.rank)) {
-        // The rank is required but doesn't fit in the form: check the form now, save it once the rank is picked.
-        await this.api.post(`/members/${i.user.id}/reserve/check`, { uid, name, gameId: pool.gameId ?? undefined, position, facebook: form.facebook, phone: form.phone });
+      const [before, ranks, open] = await Promise.all([this.mineRow(i.user.id, pool), this.ranks(pool), this.openSeasons(pool)]);
+      // One season open: that one. None: someone on the list only changes the details (a newcomer is told sign-ups are closed). Several: they pick.
+      const seasonId = open.length === 1 ? open[0].id : open.length === 0 ? (before ? null : undefined) : undefined;
+      const form: PendingForm = { uid, name, position, facebook: text("facebook"), phone: text("phone") || null, seasonId, at: Date.now() };
+      const needsRank = !before?.rank || !ranks.includes(before.rank);
+      const needsSeason = open.length > 1;
+      if (needsRank || needsSeason) {
+        // What doesn't fit in the form comes after it: check the form now, save it once the season and rank are picked.
+        await this.api.post(`/members/${i.user.id}/reserve/check`, { uid, name, gameId: pool.gameId ?? undefined, position, facebook: form.facebook, phone: form.phone, seasonId: seasonId ?? open[0]?.id });
         this.pending.set(i.user.id, form);
+        if (needsSeason) {
+          return void (await i.editReply({ content: `📝 อีกขั้น: **เลือกซีซั่นที่จะสมัคร** (เปิดรับ ${open.length} ซีซั่น สมัครทีละซีซั่น)`, components: [this.seasonPicker(pool, open, before?.seasons ?? [], Boolean(before))] }));
+        }
         return void (await i.editReply({ content: "📝 อีกขั้นเดียว: **เลือกแรงค์ของคุณ** ด้านล่าง แล้วระบบจะบันทึกการลงชื่อให้", components: [this.rankPicker(pool, ranks, null)] }));
       }
       // The website checks the form first, then links (or creates) the character with this UID.
-      const me = await this.save(i.user.id, pool, form, before.rank);
-      const renamed = me.name !== name ? `\n(UID ${uid} อยู่ในระบบแล้วในชื่อ **${me.name}** ถ้าชื่อผิดให้แจ้งผู้จัด)` : "";
-      await i.editReply({
-        content: `✅ แก้ข้อมูลแล้ว: **${me.name}** (UID ${me.uid}) · ${positionText(me.position)} · ${rankText(me.rank)}${renamed}\nเปลี่ยนแรงค์ได้ด้านล่าง`,
-        components: [this.rankPicker(pool, ranks, me.rank)],
-      });
+      const me = await this.save(i.user.id, pool, form, before!.rank!, before!.seasons);
+      await i.editReply({ content: `${this.savedText(me, form)}\nเปลี่ยนแรงค์ได้ด้านล่าง`, components: [this.rankPicker(pool, ranks, me.player.rank)] });
       await this.refreshPanel(i.client, pool);
     } catch (e) {
       const msg = `❌ ${thaiError(e)} กด 📝 อีกครั้ง`;
@@ -686,9 +765,71 @@ export class PoolManager {
     }
   }
 
-  private async save(discordId: string, pool: PoolConfig, f: PendingForm, rank: string) {
-    const { data } = await this.api.post<{ data: ReserveRow }>(`/members/${discordId}/reserve`, { uid: f.uid, name: f.name, gameId: pool.gameId ?? undefined, position: f.position, facebook: f.facebook, phone: f.phone, rank });
-    return toPlayer(data);
+  /** Saves the form; `had` are the seasons signed up for before, so re-saving one only reads as an edit. */
+  private async save(discordId: string, pool: PoolConfig, f: PendingForm, rank: string, had: SeasonRef[] = []) {
+    const { data } = await this.api.post<{ data: ReserveRow & { joinedSeason?: SeasonRef | null } }>(`/members/${discordId}/reserve`, {
+      uid: f.uid,
+      name: f.name,
+      gameId: pool.gameId ?? undefined,
+      position: f.position,
+      facebook: f.facebook,
+      phone: f.phone,
+      rank,
+      seasonId: f.seasonId ?? undefined,
+    });
+    const joined = data.joinedSeason && !had.some((x) => x.id === data.joinedSeason!.id) ? data.joinedSeason : null;
+    return { player: toPlayer(data), joined, seasons: data.seasons ?? [] };
+  }
+
+  /** What the member sees once the form is saved. */
+  private savedText(me: Awaited<ReturnType<PoolManager["save"]>>, f: PendingForm) {
+    const p = me.player;
+    const renamed = p.name !== f.name ? `\n(UID ${f.uid} อยู่ในระบบแล้วในชื่อ **${p.name}** ถ้าชื่อผิดให้แจ้งผู้จัด)` : "";
+    const head = me.joined ? `✅ ลงชื่อ **${me.joined.name}** แล้ว` : "✅ แก้ข้อมูลแล้ว";
+    const seasons = seasonNames(me.seasons) ? `\nซีซั่นที่สมัคร: ${seasonNames(me.seasons)}` : "\nยังไม่ได้สมัครซีซั่นไหน";
+    return `${head}: **${p.name}** (UID ${p.uid}) · ${positionText(p.position)} · ${rankText(p.rank)}${renamed}${seasons}`;
+  }
+
+  /** The season picked after the form; then the rank when it is still missing, else the form is saved. */
+  private async pickSeason(i: StringSelectMenuInteraction, guildId: string) {
+    const pool = this.pools.get(guildId);
+    if (!pool) return void (await i.update({ content: "ยังไม่ได้ตั้งห้องลงชื่อ", components: [] }));
+    const form = this.pending.get(i.user.id);
+    if (!form || Date.now() - form.at >= PENDING_MS) {
+      this.pending.delete(i.user.id);
+      return void (await i.update({ content: "ฟอร์มหมดเวลาแล้ว กด 📝 ลงชื่อ / แก้ข้อมูล อีกครั้ง", components: [] }));
+    }
+    form.seasonId = i.values[0] === "-" ? null : i.values[0];
+    const [before, ranks] = await Promise.all([this.mineRow(i.user.id, pool), this.ranks(pool)]);
+    if (!before?.rank || !ranks.includes(before.rank)) {
+      return void (await i.update({ content: "📝 อีกขั้นเดียว: **เลือกแรงค์ของคุณ** ด้านล่าง แล้วระบบจะบันทึกการลงชื่อให้", components: [this.rankPicker(pool, ranks, null)] }));
+    }
+    const me = await this.save(i.user.id, pool, form, before.rank, before.seasons);
+    this.pending.delete(i.user.id);
+    await i.update({ content: `${this.savedText(me, form)}\nถ้าถูกสุ่มไปช่วยแข่ง บอทจะแท็กชื่อคุณ`, components: [] });
+    await this.refreshPanel(i.client, pool);
+  }
+
+  /** Leaves the season picked, or the whole list with "*". */
+  private async leave(i: StringSelectMenuInteraction, guildId: string) {
+    const pool = this.pools.get(guildId);
+    if (!pool) return void (await i.update({ content: "ยังไม่ได้ตั้งห้องลงชื่อ", components: [] }));
+    const value = i.values[0];
+    const row = await this.mineRow(i.user.id, pool);
+    if (!row) return void (await i.update({ content: "คุณยังไม่ได้ลงชื่อ", components: [] }));
+    const season = row.seasons?.find((x) => x.id === value);
+    if (value !== "*" && !season) return void (await i.update({ content: "คุณไม่ได้สมัครซีซั่นนี้แล้ว", components: [] }));
+    try {
+      await this.api.delete(`/members/${i.user.id}/reserve${this.game(pool, { seasonId: season?.id })}`);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return void (await i.update({ content: "คุณยังไม่ได้ลงชื่อ", components: [] }));
+      throw e;
+    }
+    await i.update({
+      content: season ? `🚪 ถอนชื่อจาก **${season.name}** แล้ว จะไม่ถูกสุ่มในซีซั่นนี้ (ข้อมูลยังอยู่ กด 📝 สมัครใหม่ได้)` : "🚪 ถอนชื่อทุกซีซั่นแล้ว จะไม่ถูกสุ่มอีก (ลงชื่อใหม่ได้ทุกเมื่อ)",
+      components: [],
+    });
+    await this.refreshPanel(i.client, pool);
   }
 
   private async pickRank(i: StringSelectMenuInteraction, guildId: string) {
@@ -697,10 +838,10 @@ export class PoolManager {
     if (!pool) return void (await i.update({ content: "ยังไม่ได้ตั้งห้องลงชื่อ", components: [] }));
     const form = this.pending.get(i.user.id);
     if (form && Date.now() - form.at < PENDING_MS) {
-      const me = await this.save(i.user.id, pool, form, rank);
+      const had = (await this.mineRow(i.user.id, pool))?.seasons ?? [];
+      const me = await this.save(i.user.id, pool, form, rank, had);
       this.pending.delete(i.user.id);
-      const renamed = me.name !== form.name ? `\n(UID ${form.uid} อยู่ในระบบแล้วในชื่อ **${me.name}** ถ้าชื่อผิดให้แจ้งผู้จัด)` : "";
-      await i.update({ content: `✅ ลงชื่อแล้ว: **${me.name}** (UID ${me.uid}) · ${positionText(me.position)} · ${rankText(me.rank)}${renamed}\nถ้าถูกสุ่มไปช่วยแข่ง บอทจะแท็กชื่อคุณ`, components: [] });
+      await i.update({ content: `${this.savedText(me, form)}\nถ้าถูกสุ่มไปช่วยแข่ง บอทจะแท็กชื่อคุณ`, components: [] });
       return void (await this.refreshPanel(i.client, pool));
     }
     this.pending.delete(i.user.id);

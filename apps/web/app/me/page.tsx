@@ -6,6 +6,7 @@ import type {
   MyCharacter,
   PendingLink,
   ReservePlayer,
+  SpecialSeason,
   GameRank,
   Wallet,
 } from "@/lib/types";
@@ -81,6 +82,7 @@ export default async function MePage({
     api<Wallet>(`/predict/members/${me.id}`),
     api<{ pending: PendingLink[] }>(`/players/discord/${me.id}`),
   ]);
+  const { data: seasons } = await api<{ data: SpecialSeason[] }>("/special/seasons");
   // เล่นเก่งปากเก่ง keeps a list per game (UIDs and names differ between games): one form for each game the member plays.
   const byGame = [
     ...new Map(mine.map((c) => [c.game?.id ?? "", c.game])).values(),
@@ -97,6 +99,10 @@ export default async function MePage({
           `/special/ranks${qs({ gameId: game?.id })}`,
         )
       ).data,
+      // Seasons taking substitutes for this game (or for any game).
+      openSeasons: seasons
+        .filter((s) => s.reserveOpen && (!s.gameId || !game || s.gameId === game.id))
+        .map(({ id, name }) => ({ id, name })),
     })),
   );
   return (
@@ -244,6 +250,7 @@ export default async function MePage({
             characters={f.characters}
             current={f.current}
             ranks={f.ranks}
+            openSeasons={f.openSeasons}
           />
         ))
       ) : (
