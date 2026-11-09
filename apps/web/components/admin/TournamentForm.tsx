@@ -102,7 +102,7 @@ export function TournamentForm({ tournament, games, seasons = [], participantsLo
             <label>ผู้เล่นต่อทีม ขั้นต่ำ<input type="number" name="rosterMin" min={1} max={10} defaultValue={tournament?.rosterMin ?? 3} /></label>
             <label>ผู้เล่นต่อทีม สูงสุด<input type="number" name="rosterMax" min={1} max={10} defaultValue={tournament?.rosterMax ?? 5} /></label>
           </div>}
-          <label>รับสูงสุด (ทีม){special ? <input name="maxTeams" value="2" readOnly /> : <input type="number" name="maxTeams" min={2} max={256} defaultValue={tournament?.maxTeams ?? ""} placeholder="ไม่จำกัด" />}</label>
+          <label>รับสูงสุด (ทีม){special ? <input value={tournament?.maxTeams ?? 2} readOnly /> : <input type="number" name="maxTeams" min={2} max={256} defaultValue={tournament?.maxTeams ?? ""} placeholder="ไม่จำกัด" />}</label>
           {special && <p className="muted small">เล่นเก่งปากเก่งมี 2 ทีม ตั้งชื่อทีมและเติมช่องผู้เล่นได้ที่แท็บจัดทีม 2 ฝั่ง</p>}
           <div className="row" style={{ flexWrap: "wrap", gap: 16 }}>
             {!started && tournament?.status !== "COMPLETED" && <input type="hidden" name="registrationOpenPresent" value="1" />}

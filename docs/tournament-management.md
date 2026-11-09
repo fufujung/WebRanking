@@ -13,6 +13,7 @@ The workspace includes teams, solo draws, rosters, brackets and schedules, predi
 - LIVE/DONE brackets lock format, third-place/reset rules, best-of settings and late allowance. Details and event dates remain editable; changing event dates never moves match schedules.
 - Bracket lifecycle actions control event status. Started brackets and completed events cannot open registration.
 - Capacity cannot fall below existing teams or solo players' team capacity. Tightened roster limits cannot exclude existing rosters. A new season must include all registered players.
+- Detail-only edits preserve legacy status and capacity, including completed events without a finished bracket and special events with historical teams beyond the new two-team limit. Status/capacity transitions are validated when those settings change. Special-event settings display capacity without resubmitting an implicit capacity change.
 - Draft shape changes clear the draft and seeds so the organizer can seed again. Existing rating recomputation for special events remains in place.
 
 ## เล่นเก่งปากเก่ง: two-side editor

@@ -42,7 +42,7 @@ tournaments.get("/", async (req, res) => {
     }),
     prisma.tournament.count({ where }),
   ]);
-  const data = rows.map(({ _count, ...t }) => ({ ...t, maxTeams: t.special ? 2 : t.maxTeams, teamCount: _count.entries, matchCount: _count.matches }));
+  const data = rows.map(({ _count, ...t }) => ({ ...t, maxTeams: t.special && _count.entries <= 2 ? 2 : t.maxTeams, teamCount: _count.entries, matchCount: _count.matches }));
   res.json({ data, total, limit: q.limit, offset: q.offset });
 });
 
@@ -79,7 +79,7 @@ tournaments.get("/:id", async (req, res) => {
   });
   res.json({
     ...t,
-    maxTeams: t.special ? 2 : t.maxTeams,
+    maxTeams: t.special && entries.length <= 2 ? 2 : t.maxTeams,
     teams: entries.sort((a, b) => (a.placement ?? Infinity) - (b.placement ?? Infinity) || a.name.localeCompare(b.name)),
     standings: table,
   });
@@ -102,7 +102,11 @@ tournaments.patch("/:id", requireAdmin, async (req, res) => {
     if (input.game !== undefined || input.gameId !== undefined) Object.assign(input, await tournamentGame(tx, input));
     Object.assign(input, await tournamentSeason(tx, input, existing));
     const next = { ...existing, ...input };
-    if (next.special) { input.maxTeams = 2; next.maxTeams = 2; }
+    if (next.special && !existing.special) { input.maxTeams = 2; next.maxTeams = 2; }
+    const capacityChanged = next.maxTeams !== existing.maxTeams || (next.special && !existing.special);
+    if (next.special && capacityChanged && next.maxTeams !== 2) {
+      throw fail(409, "Special events have two teams", "เล่นเก่งปากเก่งกำหนดความจุใหม่ได้ 2 ทีมเท่านั้น");
+    }
     const occupied = existing.entries.length > 0 || existing.soloSignups.length > 0 || existing._count.matches > 0 || existing.bracketStatus === "LIVE" || existing.bracketStatus === "DONE";
     if (occupied && (["gameId", "game", "entryMode", "teamSize"] as const).some((k) => next[k] !== existing[k])) {
       throw fail(409, "Tournament has participants or results", "มีทีม ผู้สมัคร หรือผลการแข่งขันแล้ว เปลี่ยนเกม โหมดสมัคร และขนาดทีมสุ่มไม่ได้");
@@ -113,13 +117,14 @@ tournaments.patch("/:id", requireAdmin, async (req, res) => {
     }
     const allowedStatus = existing.bracketStatus === "LIVE" ? "ONGOING" : existing.bracketStatus === "DONE" ? "COMPLETED" :
       (existing.status === "ONGOING" || (next.startDate <= new Date() && next.status === "ONGOING")) ? "ONGOING" : "UPCOMING";
-    if (next.format && next.status !== allowedStatus) {
+    const statusChanged = next.status !== existing.status;
+    if (statusChanged && next.format && next.status !== allowedStatus) {
       throw fail(409, "Use bracket lifecycle actions", "รายการที่ใช้สายต้องเริ่มหรือจบผ่านเมนูสายการแข่งขัน");
     }
-    if (next.registrationOpen && (started || next.status === "COMPLETED")) {
+    if ((statusChanged || next.registrationOpen !== existing.registrationOpen) && next.registrationOpen && (started || next.status === "COMPLETED")) {
       throw fail(409, "Registration cannot reopen", "รายการที่เริ่มสายหรือจบแล้วเปิดรับสมัครไม่ได้");
     }
-    if (next.maxTeams !== null && (existing.entries.length > next.maxTeams || (next.entryMode === "SOLO" && existing.soloSignups.length > next.maxTeams * next.teamSize))) {
+    if (capacityChanged && next.maxTeams !== null && (existing.entries.length > next.maxTeams || (next.entryMode === "SOLO" && existing.soloSignups.length > next.maxTeams * next.teamSize))) {
       throw fail(409, "Capacity is below participation", "จำนวนทีมสูงสุดน้อยกว่าทีมหรือผู้สมัครปัจจุบัน");
     }
     if ((input.rosterMin !== undefined || input.rosterMax !== undefined) && existing.entries.some((e) =>

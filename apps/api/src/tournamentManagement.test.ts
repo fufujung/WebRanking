@@ -89,6 +89,55 @@ test("bracket lifecycle controls status; live and done rules stay locked while d
   assert.equal((await call("PATCH", `/tournaments/${free.id}`, { status: "COMPLETED" })).status, 200);
 });
 
+test("completed formatted events preserve unchanged status when editing details", async () => {
+  for (const bracketStatus of ["NONE", "DRAFT"]) {
+    const t = await event({ format: "SINGLE_ELIMINATION", status: "COMPLETED", bracketStatus, registrationOpen: true });
+    for (const patch of [{ description: "Updated description" }, { location: "Online", status: "COMPLETED" }]) {
+      const result = await call("PATCH", `/tournaments/${t.id}`, patch);
+      assert.equal(result.status, 200, JSON.stringify(result.body));
+      assert.equal(result.body.status, "COMPLETED");
+      assert.equal(result.body.bracketStatus, bracketStatus);
+      assert.equal(result.body.registrationOpen, true, "an unchanged legacy flag does not block detail edits");
+    }
+    assert.equal((await call("PATCH", `/tournaments/${t.id}`, { status: "ONGOING" })).status, 409, "actual status transitions remain validated");
+    await call("PATCH", `/tournaments/${t.id}`, { registrationOpen: false });
+    assert.equal((await call("PATCH", `/tournaments/${t.id}`, { registrationOpen: true })).status, 409, "registration cannot be reopened");
+  }
+});
+
+test("legacy special events retain historical teams and capacity during detail edits", async () => {
+  for (const maxTeams of [null, 2, 8]) {
+    const t = await event({ special: true, format: "SINGLE_ELIMINATION", status: "COMPLETED", bracketStatus: "DRAFT", maxTeams });
+    for (let i = 0; i < 3; i++) {
+      const team = await prisma.team.create({ data: { name: `Legacy ${t.id} ${i}` } });
+      await prisma.tournamentEntry.create({ data: { tournamentId: t.id, teamId: team.id } });
+    }
+    const slot = await prisma.bracketMatch.create({ data: { tournamentId: t.id, code: "W1-0", stage: "W", round: 1, position: 0, number: 1 } });
+    const detail = await call("GET", `/tournaments/${t.id}`);
+    assert.equal(detail.body.maxTeams, maxTeams, "reads expose the stored legacy capacity");
+    for (const patch of [{ name: "Updated legacy name" }, { location: "New venue", maxTeams, status: "COMPLETED" }]) {
+      const result = await call("PATCH", `/tournaments/${t.id}`, patch);
+      assert.equal(result.status, 200, JSON.stringify(result.body));
+      assert.equal(result.body.maxTeams, maxTeams);
+    }
+    assert.equal(await prisma.tournamentEntry.count({ where: { tournamentId: t.id } }), 3);
+    assert.ok(await prisma.bracketMatch.findUnique({ where: { id: slot.id } }));
+    assert.equal((await call("PATCH", `/tournaments/${t.id}`, { maxTeams: maxTeams === 2 ? 6 : 2 })).status, 409, "capacity changes must obey new rules and current participation");
+    const third = await prisma.team.create({ data: { name: `Extra legacy ${t.id}` } });
+    assert.equal((await call("POST", `/tournaments/${t.id}/entries`, { teamId: third.id })).status, 409, "historical teams do not permit additional teams");
+  }
+});
+
+test("converting an existing oversized event to special still enforces two teams", async () => {
+  const t = await event({ maxTeams: 2 });
+  for (let i = 0; i < 3; i++) {
+    const team = await prisma.team.create({ data: { name: `Conversion ${t.id} ${i}` } });
+    await prisma.tournamentEntry.create({ data: { tournamentId: t.id, teamId: team.id } });
+  }
+  assert.equal((await call("PATCH", `/tournaments/${t.id}`, { special: true })).status, 409);
+  assert.equal((await prisma.tournament.findUniqueOrThrow({ where: { id: t.id } })).special, false);
+});
+
 test("changing draft shape removes draft slots and seeds only", async () => {
   const t = await event({ format: "SINGLE_ELIMINATION", bracketStatus: "DRAFT" });
   await prisma.bracketMatch.create({ data: { tournamentId: t.id, code: "W1-0", stage: "W", round: 1, position: 0, number: 1 } });

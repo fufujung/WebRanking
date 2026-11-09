@@ -46,7 +46,10 @@ try {
     const t=await prisma.tournament.create({data:{name:'Browser Cup',startDate:new Date('2027-01-01'),description:'Original'}});
     const live=await prisma.tournament.create({data:{name:'Live Cup',startDate:new Date('2027-01-01'),format:'SINGLE_ELIMINATION',bracketStatus:'LIVE',status:'ONGOING'}});
     const special=await prisma.tournament.create({data:{name:'Special browser cup',special:true,gameId:game.id,startDate:new Date('2027-01-01'),format:null}});
-    const server=createApp().listen(0,'127.0.0.1',()=>console.log('FIXTURE '+JSON.stringify({key,id:t.id,liveId:live.id,specialId:special.id,port:server.address().port})));
+    const completed=await prisma.tournament.create({data:{name:'Completed settings regression',status:'COMPLETED',registrationOpen:true,startDate:new Date('2027-01-01'),format:'SINGLE_ELIMINATION'}});
+    const legacy=await prisma.tournament.create({data:{name:'Legacy special settings regression',special:true,gameId:game.id,status:'COMPLETED',bracketStatus:'DRAFT',maxTeams:8,startDate:new Date('2027-01-01'),format:'SINGLE_ELIMINATION'}});
+    for(let i=0;i<3;i++) {const team=await prisma.team.create({data:{name:'Legacy browser team '+i,gameId:game.id}});await prisma.tournamentEntry.create({data:{tournamentId:legacy.id,teamId:team.id}});}
+    const server=createApp().listen(0,'127.0.0.1',()=>console.log('FIXTURE '+JSON.stringify({key,id:t.id,liveId:live.id,specialId:special.id,completedId:completed.id,legacyId:legacy.id,port:server.address().port})));
   `], path.join(root, "apps/api"));
   const fixture = await new Promise((resolve, reject) => {
     let buffer = "";
@@ -153,6 +156,20 @@ try {
   await page.goto(`${base}/tournaments/${fixture.id}`);
   await page.getByText("กำลังแข่ง", { exact: true }).first().waitFor({ timeout: 30000 });
   console.log("Passed: an open tournament page automatically updates to ongoing at the scheduled time.");
+  for (const id of [fixture.completedId, fixture.legacyId]) {
+    await page.goto(`${base}/admin/tournaments/${id}#settings`);
+    await settings.waitFor({ state: "visible" });
+    await settings.locator('[name="description"]').fill("Updated historical details");
+    await settings.locator('[name="location"]').fill("Historical venue updated");
+    await settings.getByRole("button", { name: "บันทึกการแก้ไข" }).click();
+    await page.waitForURL(/saved=1#settings$/);
+    await page.locator(".success").waitFor();
+    const detail = await fetch(`http://127.0.0.1:${fixture.port}/api/v1/tournaments/${id}`, { headers: { "X-API-Key": fixture.key } }).then((r) => r.json());
+    assert.equal(detail.status, "COMPLETED");
+    assert.equal(detail.description, "Updated historical details");
+    if (id === fixture.legacyId) { assert.equal(detail.teams.length, 3); assert.equal(detail.maxTeams, 8); assert.equal(detail.bracketStatus, "DRAFT"); }
+  }
+  console.log("Passed: full settings forms save completed events and legacy special events without changing status, capacity or historical teams.");
 } catch (error) {
   console.error(`Server logs: ${path.join(tmp, "servers.log")}`);
   throw error;
