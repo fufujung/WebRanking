@@ -79,6 +79,56 @@ const wallet = (who: string) => ok("GET", `/predict/members/${who}`);
 const bet = (who: string, marketId: string, teamId: string, amount: number) => call("POST", `/predict/members/${who}/bets`, { marketId, teamId, amount });
 const soon = () => new Date(Date.now() + 3600_000).toISOString();
 
+test("free-form special events automatically accept picks for two full teams and settle/refund through admin controls", async () => {
+  const t = await newTournament({ special: true, format: null, startDate: soon() });
+  const a = await registerTeam(t.id, "Special predict A");
+  assert.equal((await markets(t.id)).markets.length, 0, "one team cannot be predicted");
+  const b = await registerTeam(t.id, "Special predict B");
+  const list = (await ok("GET", "/predict/tournaments")).data;
+  assert.equal(list.find((row: any) => row.id === t.id)?.open, 1);
+  assert.equal(list.find((row: any) => row.id === t.id)?.special, true);
+  const pair = (await markets(t.id)).markets.find((m: any) => m.key === "SPECIAL_PAIR");
+  assert.equal(pair.kind, "CUSTOM");
+  assert.equal(pair.open, true);
+  assert.equal(pair.options.length, 2);
+  const fan = a.captainDiscordId, fan2 = discord();
+  await wallet(fan); await wallet(fan2);
+  assert.equal((await bet(fan, pair.id, b.id, 30)).status, 200, "competitor may pick the opposing side");
+  assert.equal((await bet(fan, pair.id, a.id, 30)).status, 200);
+  assert.equal((await bet(fan2, pair.id, b.id, 10)).status, 200);
+  assert.equal((await call("POST", `/predict/markets/${pair.id}/settle`, { winnerTeamId: a.id }, reader)).status, 403);
+  assert.equal((await call("PUT", `/tournaments/${t.id}/special-teams`, { teams: [
+    { teamId: a.id, name: "Special predict A", slots: [{ name: "Replacement" }, null, null] },
+    { teamId: b.id, name: "Special predict B", slots: [null, null, null] },
+  ] })).status, 409, "lineups cannot change while stakes exist");
+  await ok("PATCH", `/tournaments/${t.id}`, { status: "ONGOING" });
+  assert.equal((await markets(t.id)).markets.find((m: any) => m.id === pair.id).open, false);
+  assert.equal((await bet(discord(), pair.id, a.id, 5)).status, 409);
+  assert.equal((await bet(fan, pair.id, a.id, 5)).status, 409, "competitors follow the same closing rules");
+  const before = (await wallet(fan)).coins;
+  await ok("POST", `/predict/markets/${pair.id}/settle`, { winnerTeamId: a.id });
+  assert.equal((await wallet(fan)).coins, before + 40);
+  assert.equal((await markets(t.id)).markets.find((m: any) => m.id === pair.id).status, "SETTLED", "sync preserves manual settlement");
+  await ok("DELETE", `/predict/markets/${pair.id}`);
+  assert.equal((await markets(t.id)).markets.filter((m: any) => m.open).length, 0);
+  assert.equal(await prisma.market.count({ where: { tournamentId: t.id } }), 1, "cancelled auto pair is not recreated");
+});
+
+test("special prediction drafts require complete rosters and keep bracket markets separate", async () => {
+  const t = await newTournament({ special: true, format: null });
+  const draft = await ok("PUT", `/tournaments/${t.id}/special-teams`, { teams: [
+    { name: "Draft predict A", slots: [{ name: "Draft P1" }, null, null] },
+    { name: "Draft predict B", slots: [null, null, null] },
+  ] });
+  assert.equal((await markets(t.id)).markets.length, 0);
+  await ok("PUT", `/tournaments/${t.id}/special-teams`, { teams: draft.teams.map((team: any, side: number) => ({ ...team, slots: [0, 1, 2].map((i) => ({ name: `Draft side ${side} player ${i}` })) })) });
+  assert.equal((await markets(t.id)).markets.filter((m: any) => m.open).length, 1);
+  await ok("PATCH", `/tournaments/${t.id}`, { format: "SINGLE_ELIMINATION" });
+  const bracketMarkets = (await markets(t.id)).markets;
+  assert.equal(bracketMarkets.some((m: any) => m.key === "SPECIAL_PAIR" && m.open), false);
+  assert.equal(bracketMarkets.some((m: any) => m.kind === "CHAMPION" && m.open), true);
+});
+
 describe("predictions", () => {
   const alice = discord();
   const bob = discord();
@@ -109,7 +159,7 @@ describe("predictions", () => {
     assert.equal(idle.live, false);
   });
 
-  test("a match opens once both teams and a start time are known; players cannot pick their own game", async () => {
+  test("a match opens once both teams and a start time are known; competitors may predict their event", async () => {
     const t = await newTournament();
     const capA = discord();
     const a = await registerTeam(t.id, "Aces", capA);
@@ -131,8 +181,9 @@ describe("predictions", () => {
     // Champion picks before the start.
     assert.equal((await bet(carol, champ.id, b.id, 20)).status, 200);
     const own = await bet(capA, champ.id, b.id, 10);
-    assert.equal(own.status, 403);
-    assert.match(own.body.details.th, /ทายแชมป์ไม่ได้/);
+    assert.equal(own.status, 200);
+    assert.equal((await bet(capA, champ.id, a.id, 15)).status, 200, "competitor can switch to their own team");
+    await ok("DELETE", `/predict/members/${capA}/bets/${champ.id}`);
 
     await ok("POST", `/tournaments/${t.id}/bracket/start`);
     await ok("POST", `/tournaments/${t.id}/bracket/schedule`, { match: "M1", scheduledAt: soon() });
@@ -142,8 +193,11 @@ describe("predictions", () => {
     assert.equal(match.open, true);
 
     const mine = await bet(capA, match.id, b.id, 10);
-    assert.equal(mine.status, 403);
-    assert.match(mine.body.details.th, /ทายแมตช์ของตัวเองไม่ได้/);
+    assert.equal(mine.status, 200);
+    await ok("DELETE", `/predict/members/${capA}/bets/${match.id}`);
+    const game = view.markets.find((m: any) => m.kind === "GAME");
+    assert.equal((await bet(capA, game.id, a.id, 10)).status, 200, "competitors may predict individual games too");
+    await ok("DELETE", `/predict/members/${capA}/bets/${game.id}`);
     const broke = await bet(alice, match.id, a.id, 100000);
     assert.equal(broke.status, 400);
     assert.match(broke.body.details.th, /เหรียญไม่พอ/);

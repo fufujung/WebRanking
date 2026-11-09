@@ -50,24 +50,14 @@ export default async function RootLayout({
           <div className="container header-inner">
             <Brand />
             <PublicNavigation />
-            <Link
-              href="/me"
-              className={`btn tr-login-link${member ? "" : " btn-discord"}`}
-            >
-              {member ? (
-                <>
-                  {member.avatar && (
-                    <img src={member.avatar} alt="" width="24" height="24" />
-                  )}
-                  {member.name}
-                </>
-              ) : (
+            {!member && (
+              <Link href="/me" className="btn tr-login-link btn-discord">
                 <>
                   <DiscordMark />
                   เข้าสู่ระบบด้วย Discord
                 </>
-              )}
-            </Link>
+              </Link>
+            )}
             {member && (
               <Link
                 href="/me"

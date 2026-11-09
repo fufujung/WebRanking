@@ -2,7 +2,7 @@ import { Router } from "express";
 import { adoptGame, tournamentGame } from "../lib/games.js";
 import { z } from "zod";
 import { prisma } from "../lib/db.js";
-import { fail, HttpError, notFound } from "../lib/errors.js";
+import { fail, notFound } from "../lib/errors.js";
 import { recomputeRatings } from "../lib/elo.js";
 import { standings } from "../lib/stats.js";
 import { datesInOrder, entryInput, rosterSizeOk, searchQuery, tournamentInput, tournamentStatus } from "../lib/validate.js";
@@ -16,10 +16,11 @@ import { confirmTeams, drawTeams, removeSignup, soloView } from "../lib/solo.js"
 import { tournamentSeason } from "../lib/seasons.js";
 import { setStories, tournamentStories } from "../lib/stories.js";
 import { deleteDraft, draftRef, saveDraft, tournamentDrafts } from "../lib/drafts.js";
+import { assertTwoTeamCapacity, saveSpecialTeams, specialTeamsView } from "../lib/specialTeams.js";
 
 export const tournaments = Router();
 
-const badDates = () => new HttpError(400, "endDate must be on or after startDate");
+const badDates = () => fail(400, "endDate must be on or after startDate", "วันจบต้องไม่อยู่ก่อนวันเวลาเริ่ม");
 const badRoster = () => fail(400, "rosterMin must not be more than rosterMax", "จำนวนผู้เล่นขั้นต่ำต้องไม่มากกว่าขั้นสูงสุด");
 
 tournaments.get("/", async (req, res) => {
@@ -41,7 +42,7 @@ tournaments.get("/", async (req, res) => {
     }),
     prisma.tournament.count({ where }),
   ]);
-  const data = rows.map(({ _count, ...t }) => ({ ...t, teamCount: _count.entries, matchCount: _count.matches }));
+  const data = rows.map(({ _count, ...t }) => ({ ...t, maxTeams: t.special ? 2 : t.maxTeams, teamCount: _count.entries, matchCount: _count.matches }));
   res.json({ data, total, limit: q.limit, offset: q.offset });
 });
 
@@ -51,6 +52,7 @@ tournaments.post("/", requireAdmin, async (req, res) => {
   if (!rosterSizeOk(input)) throw badRoster();
   const game = await tournamentGame(prisma, input);
   const data = { ...input, ...game };
+  if (data.special || data.seasonId) data.maxTeams = 2;
   res.status(201).json(await prisma.tournament.create({ data: { ...data, ...(await tournamentSeason(prisma, data)) }, include: { season: { select: { id: true, name: true } } } }));
 });
 
@@ -77,6 +79,7 @@ tournaments.get("/:id", async (req, res) => {
   });
   res.json({
     ...t,
+    maxTeams: t.special ? 2 : t.maxTeams,
     teams: entries.sort((a, b) => (a.placement ?? Infinity) - (b.placement ?? Infinity) || a.name.localeCompare(b.name)),
     standings: table,
   });
@@ -84,28 +87,64 @@ tournaments.get("/:id", async (req, res) => {
 
 tournaments.patch("/:id", requireAdmin, async (req, res) => {
   const input = tournamentInput.partial().parse(req.body);
-  const existing = await prisma.tournament.findUnique({ where: { id: String(req.params.id) } });
-  if (!existing) throw notFound("Tournament");
-  if (!datesInOrder({ ...existing, ...input })) throw badDates();
-  if (!rosterSizeOk({ ...existing, ...input })) throw badRoster();
-  const shapeChanged = (["format", "thirdPlaceMatch", "grandFinalReset"] as const).some((k) => input[k] !== undefined && input[k] !== existing[k]);
-  if (shapeChanged && (existing.bracketStatus === "LIVE" || existing.bracketStatus === "DONE")) {
-    throw fail(409, "The bracket has started; its format can no longer change", "เริ่มแข่งแล้ว เปลี่ยนรูปแบบการแข่งไม่ได้ (ต้องรีเซ็ตสายก่อน)");
-  }
-  if (input.game !== undefined || input.gameId !== undefined) Object.assign(input, await tournamentGame(prisma, input));
-  Object.assign(input, await tournamentSeason(prisma, input, existing));
-  const updated = await prisma.$transaction(async (tx) => {
+  const { updated, specialChanged } = await prisma.$transaction(async (tx) => {
+    const existing = await tx.tournament.findUnique({
+      where: { id: String(req.params.id) },
+      include: { entries: { include: { roster: true } }, soloSignups: true, _count: { select: { matches: true } } },
+    });
+    if (!existing) throw notFound("Tournament");
+    if (!datesInOrder({ ...existing, ...input })) throw badDates();
+    if (!rosterSizeOk({ ...existing, ...input })) throw badRoster();
+    const shapeChanged = (["format", "thirdPlaceMatch", "grandFinalReset"] as const).some((k) => input[k] !== undefined && input[k] !== existing[k]);
+    if (shapeChanged && (existing.bracketStatus === "LIVE" || existing.bracketStatus === "DONE")) {
+      throw fail(409, "The bracket has started; its format can no longer change", "เริ่มแข่งแล้ว เปลี่ยนรูปแบบการแข่งไม่ได้ (ต้องรีเซ็ตสายก่อน)");
+    }
+    if (input.game !== undefined || input.gameId !== undefined) Object.assign(input, await tournamentGame(tx, input));
+    Object.assign(input, await tournamentSeason(tx, input, existing));
+    const next = { ...existing, ...input };
+    if (next.special) { input.maxTeams = 2; next.maxTeams = 2; }
+    const occupied = existing.entries.length > 0 || existing.soloSignups.length > 0 || existing._count.matches > 0 || existing.bracketStatus === "LIVE" || existing.bracketStatus === "DONE";
+    if (occupied && (["gameId", "game", "entryMode", "teamSize"] as const).some((k) => next[k] !== existing[k])) {
+      throw fail(409, "Tournament has participants or results", "มีทีม ผู้สมัคร หรือผลการแข่งขันแล้ว เปลี่ยนเกม โหมดสมัคร และขนาดทีมสุ่มไม่ได้");
+    }
+    const started = existing.bracketStatus === "LIVE" || existing.bracketStatus === "DONE";
+    if (started && (["bestOf", "finalBestOf", "lateMinutes"] as const).some((k) => next[k] !== existing[k])) {
+      throw fail(409, "Scoring rules are locked", "เริ่มแข่งแล้ว เปลี่ยนกติกาคะแนนและเวลาเลทไม่ได้ ต้องรีเซ็ตสายก่อน");
+    }
+    const allowedStatus = existing.bracketStatus === "LIVE" ? "ONGOING" : existing.bracketStatus === "DONE" ? "COMPLETED" :
+      (existing.status === "ONGOING" || (next.startDate <= new Date() && next.status === "ONGOING")) ? "ONGOING" : "UPCOMING";
+    if (next.format && next.status !== allowedStatus) {
+      throw fail(409, "Use bracket lifecycle actions", "รายการที่ใช้สายต้องเริ่มหรือจบผ่านเมนูสายการแข่งขัน");
+    }
+    if (next.registrationOpen && (started || next.status === "COMPLETED")) {
+      throw fail(409, "Registration cannot reopen", "รายการที่เริ่มสายหรือจบแล้วเปิดรับสมัครไม่ได้");
+    }
+    if (next.maxTeams !== null && (existing.entries.length > next.maxTeams || (next.entryMode === "SOLO" && existing.soloSignups.length > next.maxTeams * next.teamSize))) {
+      throw fail(409, "Capacity is below participation", "จำนวนทีมสูงสุดน้อยกว่าทีมหรือผู้สมัครปัจจุบัน");
+    }
+    if ((input.rosterMin !== undefined || input.rosterMax !== undefined) && existing.entries.some((e) =>
+      (next.rosterMin > existing.rosterMin && e.roster.length < next.rosterMin) ||
+      (next.rosterMax < existing.rosterMax && e.roster.length > next.rosterMax))) {
+      throw fail(409, "Roster limits conflict with participants", "จำนวนผู้เล่นขั้นต่ำหรือสูงสุดขัดกับรายชื่อทีมปัจจุบัน กรุณาปรับรายชื่อก่อน");
+    }
+    if (next.seasonId !== existing.seasonId && next.seasonId) {
+      const players = [...new Set([...existing.soloSignups.map((s) => s.playerId), ...existing.entries.flatMap((e) => e.roster.map((p) => p.playerId))])];
+      const members = await tx.seasonPlayer.count({ where: { seasonId: next.seasonId, playerId: { in: players } } });
+      if (members !== players.length) throw fail(409, "Participants are missing from season", "มีผู้สมัครที่ไม่ได้อยู่ในซีซั่นนี้ กรุณาเพิ่มรายชื่อในซีซั่นก่อน");
+    }
+    const specialChanged = next.special !== existing.special;
     // A seeded draft no longer fits a new format: drop it so it is seeded again.
     if (shapeChanged && existing.bracketStatus === "DRAFT") {
       await tx.bracketMatch.deleteMany({ where: { tournamentId: existing.id } });
       await tx.tournamentEntry.updateMany({ where: { tournamentId: existing.id }, data: { seed: null } });
-      return tx.tournament.update({ where: { id: existing.id }, data: { ...input, bracketStatus: "NONE" } });
+      return { updated: await tx.tournament.update({ where: { id: existing.id }, data: { ...input, bracketStatus: "NONE" } }), specialChanged };
     }
-    return tx.tournament.update({ where: { id: existing.id }, data: input });
+    return { updated: await tx.tournament.update({ where: { id: existing.id }, data: input }), specialChanged };
   });
   await adoptGame(updated.id);
   // Moving an event in or out of the special list moves its results between the two ratings.
-  if (input.special !== undefined && input.special !== existing.special) await recomputeRatings();
+  if (specialChanged) await recomputeRatings();
+  await syncPredictions(updated.id);
   res.json(updated);
 });
 
@@ -113,6 +152,16 @@ tournaments.delete("/:id", requireAdmin, async (req, res) => {
   // Kept in the trash for 30 days (picks are refunded), see lib/trash.ts.
   await trashTournament(String(req.params.id));
   res.status(204).end();
+});
+
+tournaments.get("/:id/special-teams", requireAdmin, async (req, res) => {
+  res.json(await specialTeamsView(String(req.params.id)));
+});
+tournaments.put("/:id/special-teams", requireAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  const view = await saveSpecialTeams(id, req.body);
+  await syncPredictions(id);
+  res.json(view);
 });
 
 /** Registers a team in the tournament, or updates its final placement. */
@@ -125,6 +174,9 @@ tournaments.post("/:id/entries", requireAdmin, async (req, res) => {
   if (!tournament) throw notFound("Tournament");
   if (!team) throw notFound("Team");
   const exists = await prisma.tournamentEntry.findUnique({ where: { tournamentId_teamId: { tournamentId: tournament.id, teamId: team.id } } });
+  if (!exists && tournament.special && await prisma.tournamentEntry.count({ where: { tournamentId: tournament.id } }) >= 2) {
+    throw fail(409, "Special events have two teams", "เล่นเก่งปากเก่งมีได้ 2 ทีมเท่านั้น");
+  }
   if (!exists && (tournament.bracketStatus === "LIVE" || tournament.bracketStatus === "DONE")) {
     throw fail(409, "The bracket has started; new teams cannot join", "เริ่มแข่งแล้ว เพิ่มทีมใหม่ไม่ได้");
   }
@@ -136,10 +188,13 @@ tournaments.post("/:id/entries", requireAdmin, async (req, res) => {
       prisma.tournament.update({ where: { id: tournament.id }, data: { bracketStatus: "NONE" } }),
     ]);
   }
-  const entry = await prisma.tournamentEntry.upsert({
+  const entry = await prisma.$transaction(async (tx) => {
+    await assertTwoTeamCapacity(tx, tournament.id, [team.id]);
+    return tx.tournamentEntry.upsert({
     where: { tournamentId_teamId: { tournamentId: tournament.id, teamId: team.id } },
     create: { tournamentId: tournament.id, teamId: team.id, placement: input.placement ?? null },
     update: input.placement === undefined ? {} : { placement: input.placement },
+    });
   });
   await syncPredictions(tournament.id);
   res.status(201).json(entry);

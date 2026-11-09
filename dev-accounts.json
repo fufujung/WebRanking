@@ -1,0 +1,146 @@
+[
+  {
+    "id": "00000000000000000000",
+    "name": "Client 01",
+    "playerId": "dev-test-player-01",
+    "rank": "แม่ทัพไร้มงกุฎ"
+  },
+  {
+    "id": "00000000000000000001",
+    "name": "Client 02",
+    "playerId": "dev-test-player-02",
+    "rank": "แม่ทัพไร้มงกุฎ"
+  },
+  {
+    "id": "00000000000000000002",
+    "name": "Client 03",
+    "playerId": "dev-test-player-03",
+    "rank": "แม่ทัพไร้มงกุฎ"
+  },
+  {
+    "id": "00000000000000000003",
+    "name": "Client 04",
+    "playerId": "dev-test-player-04",
+    "rank": "แม่ทัพไร้มงกุฎ"
+  },
+  {
+    "id": "00000000000000000004",
+    "name": "Client 05",
+    "playerId": "dev-test-player-05",
+    "rank": "แม่ทัพไร้มงกุฎ"
+  },
+  {
+    "id": "00000000000000000005",
+    "name": "Client 06",
+    "playerId": "dev-test-player-06",
+    "rank": "แม่ทัพไร้มงกุฎ"
+  },
+  {
+    "id": "00000000000000000006",
+    "name": "Client 07",
+    "playerId": "dev-test-player-07",
+    "rank": "ซูเปอร์สตาร์ ม.ปลาย"
+  },
+  {
+    "id": "00000000000000000007",
+    "name": "Client 08",
+    "playerId": "dev-test-player-08",
+    "rank": "ซูเปอร์สตาร์ ม.ปลาย"
+  },
+  {
+    "id": "00000000000000000008",
+    "name": "Client 09",
+    "playerId": "dev-test-player-09",
+    "rank": "ซูเปอร์สตาร์ ม.ปลาย"
+  },
+  {
+    "id": "00000000000000000009",
+    "name": "Client 10",
+    "playerId": "dev-test-player-10",
+    "rank": "ซูเปอร์สตาร์ ม.ปลาย"
+  },
+  {
+    "id": "00000000000000000010",
+    "name": "Client 11",
+    "playerId": "dev-test-player-11",
+    "rank": "ซูเปอร์สตาร์ ม.ปลาย"
+  },
+  {
+    "id": "00000000000000000011",
+    "name": "Client 12",
+    "playerId": "dev-test-player-12",
+    "rank": "ซูเปอร์สตาร์ ม.ปลาย"
+  },
+  {
+    "id": "00000000000000000012",
+    "name": "Client 13",
+    "playerId": "dev-test-player-13",
+    "rank": "รุ่นแห่งปาฏิหาริย์"
+  },
+  {
+    "id": "00000000000000000013",
+    "name": "Client 14",
+    "playerId": "dev-test-player-14",
+    "rank": "รุ่นแห่งปาฏิหาริย์"
+  },
+  {
+    "id": "00000000000000000014",
+    "name": "Client 15",
+    "playerId": "dev-test-player-15",
+    "rank": "รุ่นแห่งปาฏิหาริย์"
+  },
+  {
+    "id": "00000000000000000015",
+    "name": "Client 16",
+    "playerId": "dev-test-player-16",
+    "rank": "รุ่นแห่งปาฏิหาริย์"
+  },
+  {
+    "id": "00000000000000000016",
+    "name": "Client 17",
+    "playerId": "dev-test-player-17",
+    "rank": "รุ่นแห่งปาฏิหาริย์"
+  },
+  {
+    "id": "00000000000000000017",
+    "name": "Client 18",
+    "playerId": "dev-test-player-18",
+    "rank": "รุ่นแห่งปาฏิหาริย์"
+  },
+  {
+    "id": "00000000000000000018",
+    "name": "Client 19",
+    "playerId": "dev-test-player-19",
+    "rank": "เจ้าแห่ง ZONE"
+  },
+  {
+    "id": "00000000000000000019",
+    "name": "Client 20",
+    "playerId": "dev-test-player-20",
+    "rank": "เจ้าแห่ง ZONE"
+  },
+  {
+    "id": "00000000000000000020",
+    "name": "Client 21",
+    "playerId": "dev-test-player-21",
+    "rank": "เจ้าแห่ง ZONE"
+  },
+  {
+    "id": "00000000000000000021",
+    "name": "Client 22",
+    "playerId": "dev-test-player-22",
+    "rank": "เจ้าแห่ง ZONE"
+  },
+  {
+    "id": "00000000000000000022",
+    "name": "Client 23",
+    "playerId": "dev-test-player-23",
+    "rank": "เจ้าแห่ง ZONE"
+  },
+  {
+    "id": "00000000000000000023",
+    "name": "Client 24",
+    "playerId": "dev-test-player-24",
+    "rank": "เจ้าแห่ง ZONE"
+  }
+]

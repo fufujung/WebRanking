@@ -20,7 +20,7 @@ if (freshDatabase || !fs.existsSync(webEnv)) {
   fs.writeFileSync(
     webEnv,
     [
-      `API_URL=http://localhost:${process.env.PORT ?? 4000}`,
+      `API_URL=http://127.0.0.1:${process.env.PORT ?? 4000}`,
       `API_KEY=${key}`,
       `ADMIN_PASSWORD=${adminPassword}`,
       `SESSION_SECRET=${randomBytes(32).toString("hex")}`,
@@ -50,7 +50,7 @@ if (freshDatabase || !botValue("API_KEY")) {
     [
       "# Paste the bot token from https://discord.com/developers/applications (Bot > Reset Token). Keep it secret.",
       `DISCORD_TOKEN=${botValue("DISCORD_TOKEN") ?? ""}`,
-      `API_URL=http://localhost:${process.env.PORT ?? 4000}`,
+      `API_URL=http://127.0.0.1:${process.env.PORT ?? 4000}`,
       `API_KEY=${key}`,
       "# Address of the website, used for links in Discord",
       `SITE_URL=${botValue("SITE_URL") || "http://localhost:3000"}`,

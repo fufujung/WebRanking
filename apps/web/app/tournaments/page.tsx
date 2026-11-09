@@ -1,4 +1,5 @@
 import Link from "@/components/LoadingLink";
+import { LiveRefresh } from "@/components/LiveRefresh";
 import { api, PUBLIC, qs } from "@/lib/api";
 import type { Overview, Page, Tournament } from "@/lib/types";
 import { CommunityTotals } from "@/components/public/CommunityTotals";
@@ -19,6 +20,7 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
   ]);
   return (
     <div className="public-page-flow">
+      <LiveRefresh />
       <div className="page-head"><div><h1>ทัวร์นาเมนต์</h1><p className="muted">ค้นหารายการ ดูการรับสมัคร ตารางแข่ง และผลการแข่งขัน</p></div><span className="muted">{page.total} รายการ</span></div>
       <CommunityTotals totals={overview?.totals ?? null} />
       <p className="small">รายการพิเศษและ MMR แยก ดูที่ <Link href="/special">เล่นเก่ง ปากเก่ง</Link></p>

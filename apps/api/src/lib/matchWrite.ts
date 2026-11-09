@@ -1,3 +1,4 @@
+import { assertTwoTeamCapacity } from "./specialTeams.js";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "./db.js";
@@ -85,6 +86,7 @@ async function resolvePlayers(tx: Tx, input: MatchInput, teamIds: { A: string; B
 }
 
 async function enrol(tx: Tx, tournamentId: string, teamIds: string[]) {
+  await assertTwoTeamCapacity(tx, tournamentId, teamIds);
   for (const teamId of teamIds) {
     await tx.tournamentEntry.upsert({
       where: { tournamentId_teamId: { tournamentId, teamId } },

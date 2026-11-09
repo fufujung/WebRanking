@@ -1,3 +1,4 @@
+import { SpecialTeamEditor, type SpecialTeamsView } from "@/components/admin/SpecialTeamEditor";
 import Link from "@/components/LoadingLink";
 import { notFound } from "next/navigation";
 import { api, apiOrNull, qs } from "@/lib/api";
@@ -50,6 +51,7 @@ export default async function EditTournament({
     allSeasons(),
   ]);
   if (!t) notFound();
+  const specialTeams = t.special ? await api<SpecialTeamsView>(`/tournaments/${t.id}/special-teams`) : null;
   const [bracket, solo] = await Promise.all([
     t.format ? apiOrNull<Bracket>(`/tournaments/${t.id}/bracket`) : null,
     t.entryMode === "SOLO"
@@ -116,11 +118,14 @@ export default async function EditTournament({
     {
       key: "register",
       icon: "📝",
-      label: "ลงทะเบียน / ทีม",
+      label: t.special ? "จัดทีม 2 ฝั่ง" : "ลงทะเบียน / ทีม",
       hint: "เพิ่มทีม ใส่อันดับ สร้างทีมจากรายชื่อ",
       count: t.teams.length,
-      aliases: ["pick", "teams"],
-      content: (
+      aliases: t.special ? ["pick", "teams", "draw", "solo", "roster"] : ["pick", "teams"],
+      content: t.special && specialTeams ? <>
+        <SpecialTeamEditor key={t.id} tournamentId={t.id} eventName={t.name} view={specialTeams} candidates={candidates} maxSlots={t.rosterMax} rosterMin={t.rosterMin} />
+        {t.teams.length > 2 && <EntryManager tournamentId={t.id} entries={t.teams} teams={teams} />}
+      </> : (
         <>
           <h2>ทีมที่ลงแข่ง ({t.teams.length})</h2>
           <p className="muted small">
@@ -238,6 +243,7 @@ export default async function EditTournament({
           <h2 id="predict"> ทายผล</h2>
           <PredictControls
             tournamentId={t.id}
+            specialPair={Boolean(t.special && !t.format)}
             markets={predictions?.markets ?? []}
             teams={entries.map((e) => ({ id: e.id, name: e.name }))}
           />
@@ -258,16 +264,43 @@ export default async function EditTournament({
       ),
     },
     {
+      key: "results",
+      icon: "",
+      label: "ผลการแข่งขัน",
+      hint: "ดูและแก้ไขผลกับสถิติที่บันทึกแล้ว",
+      count: t.matches.length,
+      content: (
+        <>
+          <h2>ผลการแข่งขัน</h2>
+          {t.matches.length === 0 ? <p className="muted">ยังไม่มีผลการแข่งขัน</p> : (
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>คู่แข่งขัน</th><th>ผล</th><th>จัดการ</th></tr></thead>
+                <tbody>{t.matches.map((m) => (
+                  <tr key={m.id}>
+                    <td>{m.teamA.name} / {m.teamB.name}</td>
+                    <td>{m.scoreA} : {m.scoreB}</td>
+                    <td><Link className="btn btn-sm" href={`/admin/matches/${m.id}`}>แก้ผลและสถิติ</Link></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </>
+      ),
+    },
+    {
       key: "settings",
       icon: "⚙️",
-      label: "ตั้งค่าทัวร์",
+      label: "รายละเอียดและตั้งค่า",
       hint: "ชื่อ วันที่ รูปแบบ จำนวนคน",
       content: (
         <>
-          <h2>ตั้งค่าทัวร์</h2>
+          <h2>รายละเอียดและตั้งค่า</h2>
           <TournamentForm
             key={t.gameId ?? ""}
             tournament={t}
+            participantsLocked={t.teams.length > 0 || t.matches.length > 0 || (solo?.signups.length ?? 0) > 0}
             games={games}
             seasons={seasons}
           />
@@ -277,7 +310,7 @@ export default async function EditTournament({
   ];
   // Open where the organizer most likely is: the bracket once it runs, otherwise teams / the solo draw.
   const initial =
-    started && t.format ? "bracket" : solo && !started ? "draw" : "register";
+    t.special && !started ? "register" : started && t.format ? "bracket" : solo && !started ? "draw" : "register";
   return (
     <>
       <div className="page-head">
@@ -292,11 +325,7 @@ export default async function EditTournament({
           >
             + บันทึกผลการแข่งในรายการนี้
           </Link>
-          <DeleteButton
-            kind="tournaments"
-            id={t.id}
-            label={`ทัวร์นาเมนต์ ${t.name} พร้อมแมตช์ทั้งหมดในรายการ`}
-          />
+          <Link className="btn btn-sm" href={`/admin/tournaments/${t.id}#settings`}>แก้ไขรายละเอียด</Link>
         </div>
       </div>
       {sp.saved && (
@@ -310,7 +339,12 @@ export default async function EditTournament({
         drawn={solo?.drawn ?? false}
         signups={solo?.signups.length ?? 0}
       />
-      <AdminTabs initial={initial} tabs={tabs} />
+      <AdminTabs initial={initial} tabs={t.special ? tabs.filter((tab) => tab.key !== "draw" && tab.key !== "roster") : tabs} />
+      <section className="mt" aria-label="ลบรายการ">
+        <h2>ลบรายการ</h2>
+        <p className="muted small">รายการและแมตช์จะถูกย้ายไปถังขยะ กู้คืนได้ภายใน 30 วัน เหรียญทายผลจะคืนทันที · <Link href="/admin/trash">เปิดถังขยะ</Link></p>
+        <DeleteButton kind="tournaments" id={t.id} label={`ทัวร์นาเมนต์ ${t.name} พร้อมแมตช์ทั้งหมดในรายการ`} />
+      </section>
     </>
   );
 }

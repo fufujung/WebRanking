@@ -1652,10 +1652,11 @@ describe("predictions in Discord", () => {
     assert.match(text(last(pick.replies)), /ทายแล้ว 50 เหรียญ · เหลือ 70 เหรียญ/);
     const wolves = card.buttons.find((x: any) => x.label === "Wolves");
     await bot.onModal(submitForm(wolves.custom_id.replace("pk:bet:", "pk:amt:"), other, ANNOUNCE, { amount: "30" }));
-    // A player cannot pick their own match.
+    // Competitors can predict their own match through the same Discord controls.
     const own = submitForm(wolves.custom_id.replace("pk:bet:", "pk:amt:"), person(602), ANNOUNCE, { amount: "10" });
     await bot.onModal(own);
-    assert.match(text(last(own.replies)), /ทายแมตช์ของตัวเองไม่ได้/);
+    assert.match(text(last(own.replies)), /ทายแล้ว 10 เหรียญ/);
+    await api.delete(`/predict/members/${person(602)}/bets/${wolves.custom_id.split(":")[2]}`);
 
     const mine = press(card.buttons.find((x: any) => x.custom_id.startsWith("pk:mine:")).custom_id, fan, card);
     await bot.onButton(mine);
