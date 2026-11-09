@@ -626,7 +626,7 @@ step("match deleted, page now shows not found");
     if (!d.message().includes("ถังขยะ")) problems.push("tournament delete confirm does not mention the trash: " + d.message());
     d.accept();
   });
-  await page.click(".page-head button:has-text('ลบ')");
+  await page.getByRole("region", { name: "ลบรายการ", exact: true }).getByRole("button", { name: "ลบ", exact: true }).click();
   await page.waitForURL(/\/admin\/tournaments\?deleted=1/);
   await page.click(".success a:has-text('ถังขยะ')");
   await page.waitForURL(base + "/admin/trash");
@@ -1343,20 +1343,21 @@ if (!(await page.locator(".tr-auth a.btn-discord").count())) {
   await rAdmin.goto(base + "/admin/tournaments/new");
   await rAdmin.check('input[name="special"]');
   if (!(await rAdmin.locator(`select[name="seasonId"] option[value="${seasonId}"]`).count())) throw new Error("the season is not offered on the tournament form");
-  // Organizers put a team together by ticking players from the season's list: nothing is typed.
+  // Special events use two sides; pick a season player without typing a new identity.
   const kt = await apiCall("POST", "/tournaments", { name: `Picked ${uniq}`, startDate: new Date(Date.now() + 86400_000).toISOString(), format: "SINGLE_ELIMINATION", rosterMin: 1, rosterMax: 3, special: true, seasonId });
   await rAdmin.goto(base + `/admin/tournaments/${kt.id}`);
-  const pickCard = rAdmin.locator(".pick-team-card");
-  // check() retries until the box is ticked, so a click before the page is interactive is not lost.
-  await pickCard.locator(`label.pick-row:has-text('Rookie${uniq}') input`).check();
-  await pickCard.locator("p:has-text('เลือกแล้ว 1/3')").waitFor();
-  await pickCard.locator('label:has-text("ชื่อทีม") input').fill(`Picked Team ${uniq}`);
-  await pickCard.locator("button:has-text('+ เพิ่มทีมนี้')").click();
-  await pickCard.locator(".success:has-text('เพิ่มทีม Picked Team')").waitFor();
+  const pickCard = rAdmin.locator('[data-topic-panel="register"]');
+  const pickedId = await pickCard.getByLabel("เลือกผู้เล่น A ช่อง 1", { exact: true }).locator("option", { hasText: `Rookie${uniq}` }).getAttribute("value");
+  await pickCard.getByLabel("เลือกผู้เล่น A ช่อง 1", { exact: true }).selectOption(pickedId);
+  await pickCard.getByLabel("ชื่อทีม A", { exact: true }).fill(`Picked Team ${uniq}`);
+  await pickCard.getByRole("button", { name: "บันทึกทีมทั้งสองฝั่ง", exact: true }).click();
+  await pickCard.getByRole("status").waitFor();
   const pickedRoster = (await apiCall("GET", `/tournaments/${kt.id}/bracket`)).teams.find((e) => e.name === `Picked Team ${uniq}`)?.roster ?? [];
   if (pickedRoster.map((r) => `${r.name} ${r.uid}`).join() !== `Rookie${uniq} 99${uniq}`) throw new Error(`the picked team's roster is wrong: ${JSON.stringify(pickedRoster)}`);
   await rAdmin.reload();
-  await rAdmin.locator(`.pick-row-taken:has-text('อยู่ทีม Picked Team ${uniq}')`).waitFor();
+  await pickCard.getByLabel("ผู้เล่น A ช่อง 1", { exact: true }).waitFor();
+  if (await pickCard.getByLabel("เลือกผู้เล่น A ช่อง 1", { exact: true }).inputValue() !== pickedId) throw new Error("the picked player was not retained after reload");
+  if (await pickCard.getByLabel("เลือกผู้เล่น B ช่อง 1", { exact: true }).locator(`option[value="${pickedId}"]`).count()) throw new Error("the same player can be selected on both sides");
   await rAdmin.screenshot({ path: OUT + "/pick-team.png", fullPage: true });
   await rAdmin.setViewportSize({ width: 375, height: 812 });
   await rAdmin.reload();
@@ -1383,9 +1384,9 @@ if (!(await page.locator(".tr-auth a.btn-discord").count())) {
   await rAdmin.locator(`section:has-text('Picked ${uniq}') a.story-card[href='https://fb.watch/e2e/']`).waitFor();
   await rAdmin.screenshot({ path: OUT + "/story.png", fullPage: true });
   step("organizer saved two Facebook posts as ต้นเรื่อง (another site is refused) and moved one up; the tournament page and /special/story list them in order");
-  step("organizer ticked a season player to make a team (name and UID filled from the list); the player then shows as taken; fits a phone");
+  step("organizer picked a season player in the two-side editor (name and UID preserved); duplicate selection is excluded; fits a phone");
   // A free-record event (no bracket): the organizer types a team's players in (name + UID), no team made beforehand.
-  const ft = await apiCall("POST", "/tournaments", { name: `Typed ${uniq}`, startDate: new Date(Date.now() + 86400_000).toISOString(), rosterMin: 1, rosterMax: 3, special: true });
+  const ft = await apiCall("POST", "/tournaments", { name: `Typed ${uniq}`, startDate: new Date(Date.now() + 86400_000).toISOString(), rosterMin: 1, rosterMax: 3 });
   await rAdmin.goto(base + `/admin/tournaments/${ft.id}`);
   const typedCard = rAdmin.locator(".pick-team-card");
   await typedCard.locator("textarea").fill(`Typed${uniq} 88${uniq}\n66${uniq}\tSheet${uniq}`);
