@@ -75,12 +75,26 @@ async function getJson(url) {
 async function download(asset) {
   // Only files GitHub Actions uploaded are trusted, never something added to the release by hand.
   if (asset.uploader?.login !== cfg.uploader) throw new Error(`${asset.name} was not uploaded by ${cfg.uploader}`);
-  const res = await fetch(asset.browser_download_url, {
-    headers: { "user-agent": "theranking-deploy" },
-    signal: AbortSignal.timeout(600_000),
-  });
-  if (!res.ok) throw new Error(`${asset.name}: HTTP ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+  // The download link sometimes answers 504 for a while; the API's own address for the same file
+  // (asset.url, with Accept: application/octet-stream) usually still works, so it is tried second.
+  const tries = [
+    [asset.browser_download_url, {}],
+    ...(asset.url ? [[asset.url, { accept: "application/octet-stream" }]] : []),
+  ];
+  const problems = [];
+  for (const [url, headers] of tries) {
+    try {
+      const res = await fetch(url, {
+        headers: { "user-agent": "theranking-deploy", ...headers },
+        signal: AbortSignal.timeout(600_000),
+      });
+      if (res.ok) return Buffer.from(await res.arrayBuffer());
+      problems.push(`HTTP ${res.status}`);
+    } catch (err) {
+      problems.push(err.message);
+    }
+  }
+  throw new Error(`${asset.name}: ${problems.join(", then ")}`);
 }
 
 // ---- stopping and starting the apps (deploy/run.mjs keeps each one running) ----

@@ -74,6 +74,8 @@ const supervisors = [];
 let github;
 let release = { assets: [] };
 const files = new Map();
+/** Files whose download link answers 504, as GitHub's sometimes does. */
+const brokenLinks = new Set();
 let config;
 let apiPort;
 let webPort;
@@ -146,6 +148,7 @@ function publish(tree, { uploader = "github-actions[bot]" } = {}) {
     assets: [manifest.bundle, "manifest.json"].map((name) => ({
       name,
       browser_download_url: base + name,
+      url: `http://127.0.0.1:${github.address().port}/api-asset/${name}`,
       uploader: { login: uploader },
     })),
   };
@@ -179,7 +182,12 @@ before(async () => {
   github = http
     .createServer((req, res) => {
       if (req.url === "/repos/fufujung/WebRanking/releases/tags/live-build") return res.end(JSON.stringify(release));
-      const file = files.get(req.url.replace("/download/", ""));
+      // The API's asset address only serves the file when asked for raw bytes, like GitHub's.
+      const viaApi = req.url.startsWith("/api-asset/");
+      if (viaApi && req.headers.accept !== "application/octet-stream") return res.writeHead(415).end();
+      const name = req.url.replace(viaApi ? "/api-asset/" : "/download/", "");
+      if (!viaApi && brokenLinks.has(name)) return res.writeHead(504).end();
+      const file = files.get(name);
       if (!file) return res.writeHead(404).end();
       res.end(file);
     })
@@ -260,6 +268,20 @@ test("deploy: a good build goes live and keeps secrets, database and uploads", a
   // A second run with the same build does nothing.
   assert.equal((await deployNow()).code, 0);
   assert.equal(fs.existsSync(path.join(appDir, "setup-runs.txt")), false);
+});
+
+test("deploy: when the download link answers 504 the file comes from the API's asset address", async () => {
+  const m = publish(site("v2")); // the same site again, so the tests after this one still start from v2
+  brokenLinks.add(m.bundle);
+  brokenLinks.add("manifest.json");
+  try {
+    const r = await deployNow();
+    assert.equal(r.code, 0, r.out);
+    assert.equal(await get(apiPort), "v2");
+    assert.equal(state().sha, m.sha);
+  } finally {
+    brokenLinks.clear();
+  }
 });
 
 test("deploy: a broken build is rolled back and not retried", async () => {
