@@ -89,7 +89,7 @@ describe("special seasons (เล่นเก่งปากเก่ง)", () =
     kite = (await ok("POST", "/players/discord/111111111111111111/claim", { uid: "81000108", name: "Kite", gameId: kuroko })).id;
     const ghostOfOtherGame = (await ok("POST", "/players", { name: "Dunker", uid: "99990000", gameId: dunk })).id;
     const res = await ok("POST", `/special/seasons/${season.id}/players`, {
-      text: ["Kite ตัวจริง 81000108", "UID: 7730586, Lynx", "", "Moss\t5550001", "Ghost", "12345678", "Dunker 99990000"].join("\n"),
+      text: ["Kite ตัวจริง 81000108", "UID: 7730586, Lynx", "", "Moss\t9990001", "Ghost", "12345678", "Dunker 99990000"].join("\n"),
     });
     assert.deepEqual(res.added.map((a: { name: string; created: boolean }) => [a.name, a.created]), [["Kite", false], ["Lynx", true], ["Moss", true]]);
     assert.deepEqual(res.problems.map((p: { line: number; reason: string }) => p.line), [5, 6, 7]);
@@ -181,6 +181,27 @@ describe("special seasons (เล่นเก่งปากเก่ง)", () =
     assert.equal(board.ranked[1].mmr, kiteNow);
     assert.ok(kiteNow > kiteBefore && kiteNow < 1000 + 100, "the season continues from the earlier MMR");
     assert.equal((await call("GET", "/special?seasonId=nope")).status, 404);
+  });
+
+  test("substitutes of the season join its list when they play; moving an event into a season brings its players", async () => {
+    const dated = await ok("POST", "/tournaments", { name: "Dated event", startDate: "2026-10-20", gameId: kuroko, seasonId: season.id, registrationOpen: true, rosterMin: 1 });
+    const before = await ok("POST", "/tournaments", { name: "Too early", startDate: "2026-09-02", gameId: kuroko, special: true, registrationOpen: true, rosterMin: 1 });
+    assert.equal(before.seasonId, null);
+
+    // A substitute who signed up for Season 1 may be put in its event, and joins the season's list.
+    const sub = (await ok("POST", "/players", { name: "Sub One", uid: "6620001", gameId: kuroko })).id;
+    await prisma.reservePlayer.create({ data: { playerId: sub, position: "GUARD", rank: "ฟ้า", seasons: { create: { seasonId: season.id } } } });
+    const reg = await ok("POST", `/tournaments/${dated.id}/registrations`, { teamName: "Subs", players: [{ name: "Sub One", uid: "6620001" }] });
+    assert.ok(reg.id);
+    assert.ok(await prisma.seasonPlayer.findFirst({ where: { seasonId: season.id, playerId: sub } }), "the substitute is now on Season 1's list");
+
+    // An event without a season moved into Season 1: its players join the list instead of being refused.
+    const stray = (await ok("POST", "/players", { name: "Stray", uid: "6620002", gameId: kuroko })).id;
+    await ok("POST", `/tournaments/${before.id}/registrations`, { teamName: "Strays", players: [{ name: "Stray", uid: "6620002" }] });
+    await ok("PATCH", `/tournaments/${before.id}`, { seasonId: season.id });
+    assert.ok(await prisma.seasonPlayer.findFirst({ where: { seasonId: season.id, playerId: stray } }));
+    const view = await ok("GET", `/special?seasonId=${season.id}`);
+    assert.ok(view.events.some((e: { id: string }) => e.id === before.id), "the event now shows in the season");
   });
 
   test("deleting a season keeps its events without a season", async () => {

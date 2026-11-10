@@ -246,7 +246,13 @@ export async function assertOnSeason(db: Db, t: { special: boolean; seasonId: st
   if (!t.special || !t.seasonId || !playerIds.length) return;
   const on = await db.seasonPlayer.findMany({ where: { seasonId: t.seasonId, playerId: { in: playerIds } }, select: { playerId: true } });
   const ok = new Set(on.map((r) => r.playerId));
-  const missing = [...new Set(playerIds.filter((id) => !ok.has(id)))];
+  let missing = [...new Set(playerIds.filter((id) => !ok.has(id)))];
+  if (!missing.length) return;
+  // Substitutes who signed up for this season belong to it: once they play, they join its list.
+  const reserves = await db.seasonReserve.findMany({ where: { seasonId: t.seasonId, playerId: { in: missing } }, select: { playerId: true } });
+  await addToSeason(db, t.seasonId, reserves.map((r) => r.playerId));
+  const added = new Set(reserves.map((r) => r.playerId));
+  missing = missing.filter((id) => !added.has(id));
   if (!missing.length) return;
   const [season, players] = await Promise.all([
     db.specialSeason.findUnique({ where: { id: t.seasonId }, select: { name: true } }),
@@ -257,6 +263,16 @@ export async function assertOnSeason(db: Db, t: { special: boolean; seasonId: st
     field: "season",
     missing: players.map((p) => ({ id: p.id, name: p.name, uid: p.uid })),
   });
+}
+
+/** Puts players on a season's list (those already on it are left alone). */
+export async function addToSeason(db: Db, seasonId: string, playerIds: string[]) {
+  const ids = [...new Set(playerIds)];
+  if (!ids.length) return 0;
+  const on = new Set((await db.seasonPlayer.findMany({ where: { seasonId, playerId: { in: ids } }, select: { playerId: true } })).map((r) => r.playerId));
+  const fresh = ids.filter((id) => !on.has(id));
+  for (const playerId of fresh) await db.seasonPlayer.create({ data: { seasonId, playerId } });
+  return fresh.length;
 }
 
 /** The ids of a season's players, or null for no season. */
