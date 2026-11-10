@@ -232,7 +232,8 @@ async function syncTournament(tournamentId: string) {
     const manualPair = t.markets.some((m) => m.kind === "CUSTOM" && m.key !== "SPECIAL_PAIR");
     if (specialPair || !manualPair) await step(async (tx) => {
       const pair = await ensure(tx, "CUSTOM", "SPECIAL_PAIR", teams, null);
-      if (pair.status === "OPEN" && (t.status !== "UPCOMING" || t._count.matches > 0)) await tx.market.update({ where: { id: pair.id }, data: { status: "CLOSED" } });
+      // Closed once the event starts, unless the organizer opened it again by hand.
+      if (pair.status === "OPEN" && !pair.reopenedAt && (t.status !== "UPCOMING" || t._count.matches > 0)) await tx.market.update({ where: { id: pair.id }, data: { status: "CLOSED" } });
     });
   } else if (specialPair && specialPair.status !== "REFUNDED") {
     await step((tx) => applyOutcome(tx, specialPair.id, { kind: "refund" }));
@@ -299,9 +300,15 @@ export function marketTitle(m: { kind: string; key: string; label?: string | nul
 }
 
 /** Can people still pick in this market right now? */
-export function marketOpen(m: { kind: string; status: string; locksAt: Date | null }, t: { bracketStatus: string }, now = new Date()) {
+/** The closing time still in force: none once an organizer opened the market again after it passed. */
+export function closingTime(m: { locksAt: Date | null; reopenedAt?: Date | null }) {
+  return m.locksAt && !(m.reopenedAt && m.reopenedAt >= m.locksAt) ? m.locksAt : null;
+}
+
+export function marketOpen(m: { kind: string; status: string; locksAt: Date | null; reopenedAt?: Date | null }, t: { bracketStatus: string }, now = new Date()) {
   if (m.status !== "OPEN") return false;
-  if (m.locksAt && now >= m.locksAt) return false;
+  const locksAt = closingTime(m);
+  if (locksAt && now >= locksAt) return false;
   if (m.kind === "CHAMPION") return t.bracketStatus === "NONE" || t.bracketStatus === "DRAFT";
   // A pair the organizer set up opens straight away, until they close it (or its closing time).
   if (m.kind === "CUSTOM") return true;
@@ -309,6 +316,9 @@ export function marketOpen(m: { kind: string; status: string; locksAt: Date | nu
   // match with no start time themselves before it is played.
   return m.locksAt !== null || t.bracketStatus === "LIVE";
 }
+
+/** Opening by hand also lifts a closing time that has passed; closing clears that. */
+const statusData = (status: string, now = new Date()) => ({ status, reopenedAt: status === "OPEN" ? now : null });
 
 export const betInput = profileInput.extend({
   marketId: z.string().trim().min(1).max(40),
@@ -378,7 +388,7 @@ export async function setMarketStatus(marketId: string, body: unknown) {
     const m = await prisma.market.findUnique({ where: { id: marketId } });
     if (!m) throw notFound("Market");
     if (m.status === "SETTLED" || m.status === "REFUNDED") throw fail(409, "The market is settled", "แมตช์นี้มีผลแล้ว");
-    return prisma.market.update({ where: { id: marketId }, data: { status } });
+    return prisma.market.update({ where: { id: marketId }, data: statusData(status) });
   });
 }
 
@@ -388,7 +398,13 @@ export async function setTournamentMarketsStatus(tournamentId: string, body: unk
   if (!(await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true } }))) throw notFound("Tournament");
   await syncPredictions(tournamentId);
   return serial(async () => {
-    const { count } = await prisma.market.updateMany({ where: { tournamentId, status: status === "OPEN" ? "CLOSED" : "OPEN" }, data: { status } });
+    // Opening all also opens markets that are OPEN but past their closing time ("ยังไม่เปิด / หมดเวลา").
+    const now = new Date();
+    const where =
+      status === "OPEN"
+        ? { tournamentId, OR: [{ status: "CLOSED" }, { status: "OPEN", locksAt: { lte: now } }] }
+        : { tournamentId, status: "OPEN" };
+    const { count } = await prisma.market.updateMany({ where, data: statusData(status, now) });
     return { changed: count };
   });
 }
@@ -410,6 +426,8 @@ export async function createCustomMarket(tournamentId: string, body: unknown) {
   if (!parsed.success) throw fail(400, "Validation failed", "เลือกสองทีมที่จะให้ทาย", { field: String(parsed.error.issues[0]?.path[0] ?? "") });
   const { teamAId, teamBId, label, locksAt } = parsed.data;
   if (teamAId === teamBId) throw fail(400, "Pick two different teams", "เลือกสองทีมที่ต่างกัน", { field: "teamBId" });
+  // A time already passed would close the pair the moment it is made.
+  if (locksAt && locksAt.getTime() <= Date.now()) throw fail(400, "The closing time has passed", "เวลาปิดรับเลยมาแล้ว เลือกเวลาในอนาคต หรือเว้นว่างไว้", { field: "locksAt" });
   const entries = await prisma.tournamentEntry.findMany({ where: { tournamentId, teamId: { in: [teamAId, teamBId] } }, select: { teamId: true } });
   if (!(await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { id: true } }))) throw notFound("Tournament");
   if (entries.length !== 2) throw fail(400, "Both teams must be in the tournament", "ทั้งสองทีมต้องอยู่ในรายการนี้", { field: "teamAId" });
@@ -495,7 +513,7 @@ export async function tournamentMarkets(tournamentId: string, discordId?: string
         round: slot?.round ?? null,
         status: m.status,
         open: marketOpen(m, t, now),
-        locksAt: m.locksAt,
+        locksAt: closingTime(m),
         winnerTeamId: m.winnerTeamId,
         score: m.kind === "MATCH" && slot && slot.status === "DONE" ? { a: slot.scoreA, b: slot.scoreB } : null,
         pool,

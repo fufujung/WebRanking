@@ -105,9 +105,14 @@ test("free-form special events automatically accept picks for two full teams and
   assert.equal((await markets(t.id)).markets.find((m: any) => m.id === pair.id).open, false);
   assert.equal((await bet(discord(), pair.id, a.id, 5)).status, 409);
   assert.equal((await bet(fan, pair.id, a.id, 5)).status, 409, "competitors follow the same closing rules");
+  // Opened again by hand after the event started: it stays open (the start no longer closes it).
+  await ok("PATCH", `/predict/markets/${pair.id}`, { status: "OPEN" });
+  assert.equal((await markets(t.id)).markets.find((m: any) => m.id === pair.id).open, true, "reopened by hand stays open");
+  assert.equal((await bet(fan2, pair.id, b.id, 5)).status, 200);
+  await ok("PATCH", `/predict/markets/${pair.id}`, { status: "CLOSED" });
   const before = (await wallet(fan)).coins;
   await ok("POST", `/predict/markets/${pair.id}/settle`, { winnerTeamId: a.id });
-  assert.equal((await wallet(fan)).coins, before + 40);
+  assert.equal((await wallet(fan)).coins, before + 35, "the second pick replaced fan2's 10 with 5");
   assert.equal((await markets(t.id)).markets.find((m: any) => m.id === pair.id).status, "SETTLED", "sync preserves manual settlement");
   await ok("DELETE", `/predict/markets/${pair.id}`);
   assert.equal((await markets(t.id)).markets.filter((m: any) => m.open).length, 0);
@@ -494,4 +499,33 @@ describe("organizer controls", () => {
     await newTournament();
     assert.ok((await ok("GET", "/revision")).revision > r0);
   });
+});
+
+test("a pair whose closing time has passed opens again with 'open all' (or on its own) and stays open", async () => {
+  const t = await newTournament({ format: null });
+  const a = await registerTeam(t.id, "Late A");
+  const b = await registerTeam(t.id, "Late B");
+  const past = new Date(Date.now() - 60_000).toISOString();
+  const refused = await call("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: a.id, teamBId: b.id, locksAt: past });
+  assert.equal(refused.status, 400, "a time already passed is refused");
+  assert.match(refused.body.details.th, /เวลาปิดรับเลยมาแล้ว/);
+  // A pair made earlier whose time has since passed (as on the live site):
+  const pair = await ok("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: a.id, teamBId: b.id, label: "late", locksAt: new Date(Date.now() + 1500).toISOString() });
+  await new Promise((r) => setTimeout(r, 1600));
+  const view = async () => (await markets(t.id)).markets.find((m: any) => m.id === pair.id);
+  assert.equal((await view()).open, false, "its time has passed");
+  assert.equal((await view()).status, "OPEN", "still OPEN, only past its time: the trap Bank hit");
+  const fan = discord();
+  await wallet(fan);
+  assert.equal((await bet(fan, pair.id, a.id, 5)).status, 409);
+  const res = await ok("POST", `/predict/tournaments/${t.id}/status`, { status: "OPEN" });
+  assert.equal(res.changed, 1);
+  assert.equal((await view()).open, true);
+  assert.equal((await view()).locksAt, null, "the passed time is no longer shown");
+  assert.equal((await bet(fan, pair.id, a.id, 5)).status, 200);
+  // Closing all closes it; opening one by hand lifts the time too.
+  await ok("POST", `/predict/tournaments/${t.id}/status`, { status: "CLOSED" });
+  assert.equal((await view()).open, false);
+  await ok("PATCH", `/predict/markets/${pair.id}`, { status: "OPEN" });
+  assert.equal((await view()).open, true);
 });
