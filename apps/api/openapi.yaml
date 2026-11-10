@@ -531,7 +531,7 @@ paths:
       summary: A tournament's markets (each match, each game of a BO3+ series, and the champion) with how the coins are split
       description: "Counts and percentages only; who picked what is never listed. Markets open, settle, refund and reopen with the bracket. kind MATCH = the series, GAME = one game of it (key `<match>#<n>`, settled from the recorded game scores; unplayed games and series without game scores are refunded), CHAMPION = the winner of the tournament."
       responses:
-        "200": { description: "{ tournament, markets: [{ id, kind, key, game, match, number, status, open, locksAt, winnerTeamId, score, pool, people, options: [{ team, coins, people, percent }], mine, topWinners }] }" }
+        "200": { description: "{ tournament, markets: [{ id, kind, key, title, bestOf, game, match, number, status, open, locksAt, winnerTeamId, score, pool, people, options: [{ team, coins, people, percent }], mine, topWinners }] }" }
         "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/predict/leaderboard:
     get:
@@ -637,7 +637,9 @@ paths:
       - { name: id, in: path, required: true, schema: { type: string } }
     post:
       tags: [Predictions]
-      summary: Set the winner of a hand-made pair, or call it off (winnerTeamId null = everyone gets their coins back) (admin)
+      summary: >-
+        Set the winner of a hand-made pair or one of its rounds, or call it off (winnerTeamId null = everyone gets their coins back) (admin).
+        A round's result opens the next round; once a team has won enough rounds (3 of a BO5) the pair is settled and unplayed rounds are refunded.
       requestBody:
         required: true
         content:
@@ -646,6 +648,20 @@ paths:
       responses:
         "200": { description: Market }
         "409": { description: A bracket market (settled by the match result) }
+  /api/v1/predict/markets/{id}/rounds:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [Predictions]
+      summary: Set how many rounds of a hand-made pair are predicted one by one (1 = only the match) (admin). Rounds are GAME markets whose match is the pair's key; one is open at a time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [bestOf], properties: { bestOf: { type: integer, minimum: 1, maximum: 7 } } }
+      responses:
+        "200": { description: Market }
+        "409": { description: Not a hand-made pair, the match is over, or a removed round already has a result }
   /api/v1/predict/tournaments/{id}/status:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -677,6 +693,7 @@ paths:
                 teamBId: { type: string }
                 label: { type: string, maxLength: 60, description: 'Its name, e.g. "รอบชิง" (default "A vs B")' }
                 locksAt: { type: string, format: date-time, nullable: true, description: Closes by itself at this time }
+                bestOf: { type: integer, minimum: 1, maximum: 7, description: "BO3/BO5/BO7: also predict each round (opened one at a time); the match closes once a team has won enough rounds" }
       responses:
         "201": { description: Market }
         "400": { description: Both teams must be in the tournament and different }

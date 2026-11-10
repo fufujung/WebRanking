@@ -688,6 +688,8 @@ export interface Market {
   /** What to call it: "ใครจะเป็นแชมป์", "คู่ที่ 3", or a hand-made pair's name. */
   title: string;
   label: string | null;
+  /** A hand-made pair played over rounds (BO3/BO5): its rounds are GAME markets whose match is this key. */
+  bestOf?: number | null;
   /** Per-game markets: the game in the series (1..BO) and the match key they belong to. */
   game: number | null;
   match: string | null;

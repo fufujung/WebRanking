@@ -221,7 +221,7 @@ async function syncTournament(tournamentId: string) {
     }
   }
   // Matches and games gone from the bracket (reset, a team moved out, fewer games): everyone gets their coins back.
-  for (const m of t.markets) if ((m.kind === "MATCH" || m.kind === "GAME") && !live.has(m.key) && m.status !== "REFUNDED") await step((tx) => applyOutcome(tx, m.id, { kind: "refund" }));
+  for (const m of t.markets) if ((m.kind === "MATCH" || m.kind === "GAME") && !isRoundKey(m.key) && !live.has(m.key) && m.status !== "REFUNDED") await step((tx) => applyOutcome(tx, m.id, { kind: "refund" }));
 
   // The champion: open while teams sign up and the bracket is drafted, closed once play starts.
   const teams = t.entries.map((e) => e.teamId);
@@ -232,11 +232,45 @@ async function syncTournament(tournamentId: string) {
     const manualPair = t.markets.some((m) => m.kind === "CUSTOM" && m.key !== "SPECIAL_PAIR");
     if (specialPair || !manualPair) await step(async (tx) => {
       const pair = await ensure(tx, "CUSTOM", "SPECIAL_PAIR", teams, null);
+      // A new pair gets the event's rounds (BO3 = 3 rounds to predict); the organizer can change them.
+      if (!specialPair && t.bestOf > 1) await setRounds(tx, pair, Math.min(t.bestOf, MAX_ROUNDS));
+      else if (specialPair && !sameTeams(parseIds(specialPair.teamIds), teams)) {
+        // New teams: the rounds start over with them.
+        for (const r of t.markets.filter((x) => x.key.startsWith("SPECIAL_PAIR#"))) {
+          await clearBets(tx, r.id);
+          await tx.market.update({ where: { id: r.id }, data: { teamIds: JSON.stringify(teams), status: "CLOSED", winnerTeamId: null, settledAt: null } });
+        }
+        await openNextRound(tx, specialPair);
+      }
       // Closed once the event starts, unless the organizer opened it again by hand.
       if (pair.status === "OPEN" && !pair.reopenedAt && (t.status !== "UPCOMING" || t._count.matches > 0)) await tx.market.update({ where: { id: pair.id }, data: { status: "CLOSED" } });
     });
   } else if (specialPair && specialPair.status !== "REFUNDED") {
-    await step((tx) => applyOutcome(tx, specialPair.id, { kind: "refund" }));
+    await step(async (tx) => {
+      await applyOutcome(tx, specialPair.id, { kind: "refund" });
+      await finishSeries(tx, specialPair.id);
+    });
+  }
+  // Hand-made pairs follow a result recorded for their two teams after they were set up: each round from
+  // its game, the pair from the match (a draw gives the coins back). The match is over, so predicting ends.
+  for (const pair of t.markets.filter((m) => m.kind === "CUSTOM" && m.status !== "SETTLED" && m.status !== "REFUNDED")) {
+    const [a, b] = parseIds(pair.teamIds);
+    const match = await prisma.match.findFirst({
+      where: { tournamentId, createdAt: { gte: pair.createdAt }, OR: [{ teamAId: a, teamBId: b }, { teamAId: b, teamBId: a }] },
+      orderBy: { createdAt: "asc" },
+      include: { games: { select: { number: true, scoreA: true, scoreB: true } } },
+    });
+    if (!match) continue;
+    await step(async (tx) => {
+      for (const r of t.markets.filter((x) => x.key.startsWith(`${pair.key}#`) && x.status !== "SETTLED" && x.status !== "REFUNDED")) {
+        const game = match.games.find((g) => g.number === Number(r.key.split("#")[1]));
+        if (!game) continue; // not played: given back once the pair is settled
+        const winner = game.scoreA === game.scoreB ? null : game.scoreA > game.scoreB ? match.teamAId : match.teamBId;
+        await applyOutcome(tx, r.id, winner ? { kind: "winner", teamId: winner } : { kind: "refund" });
+      }
+      await applyOutcome(tx, pair.id, match.winnerId ? { kind: "winner", teamId: match.winnerId } : { kind: "refund" });
+      await finishSeries(tx, pair.id);
+    });
   }
   const champMarket = markets.get("CHAMPION");
   await step(async (tx) => {
@@ -291,6 +325,66 @@ export function syncPredictions(tournamentId: string) {
 
 const syncForRead = (tournamentId: string) => marketSync.forRead(tournamentId);
 
+/** A round of a pair set up by hand ("<pair key>#<n>"), not a game of a bracket match. */
+export const isRoundKey = (key: string) => {
+  const [pair, n] = key.split("#");
+  return Boolean(n) && (pair.startsWith("custom:") || pair === "SPECIAL_PAIR");
+};
+const MAX_ROUNDS = 7;
+const roundsNeeded = (bestOf: number) => Math.floor(bestOf / 2) + 1;
+
+/** Makes the rounds 1..bestOf of a hand-made pair (rounds past it are taken away with the coins given back). */
+async function setRounds(tx: Tx, pair: { id: string; tournamentId: string; key: string; teamIds: string }, bestOf: number) {
+  const rounds = await tx.market.findMany({ where: { tournamentId: pair.tournamentId, key: { startsWith: `${pair.key}#` } } });
+  for (const r of rounds) {
+    if (Number(r.key.split("#")[1]) <= bestOf) continue;
+    if (r.status === "SETTLED") throw fail(409, "That round has a result", `รอบ ${r.key.split("#")[1]} มีผลแล้ว ลดจำนวนรอบไม่ได้`);
+    await applyOutcome(tx, r.id, { kind: "refund" });
+    await tx.bet.deleteMany({ where: { marketId: r.id } });
+    await tx.market.delete({ where: { id: r.id } });
+  }
+  for (let n = 1; n <= bestOf && bestOf > 1; n++) {
+    if (rounds.some((r) => r.key === `${pair.key}#${n}`)) continue;
+    // Only the round being played is open; the next one opens when this one has its result.
+    await tx.market.create({ data: { tournamentId: pair.tournamentId, kind: "GAME", key: `${pair.key}#${n}`, teamIds: pair.teamIds, status: "CLOSED" } });
+  }
+  await tx.market.update({ where: { id: pair.id }, data: { bestOf: bestOf > 1 ? bestOf : null } });
+  await openNextRound(tx, pair);
+}
+
+const roundNo = (key: string) => Number(key.split("#")[1]);
+
+/** Opens the first round without a result, unless a round is open already or the match is over. */
+async function openNextRound(tx: Tx, pair: { id: string; tournamentId: string; key: string }) {
+  const p = await tx.market.findUniqueOrThrow({ where: { id: pair.id } });
+  if (p.status === "SETTLED" || p.status === "REFUNDED") return;
+  const rounds = (await tx.market.findMany({ where: { tournamentId: pair.tournamentId, key: { startsWith: `${pair.key}#` } } })).sort((a, b) => roundNo(a.key) - roundNo(b.key));
+  if (rounds.some((r) => r.status === "OPEN")) return;
+  const next = rounds.find((r) => r.status !== "SETTLED" && r.status !== "REFUNDED");
+  if (next) await tx.market.update({ where: { id: next.id }, data: statusData("OPEN") });
+}
+
+/**
+ * After a round's result: once a team has won enough rounds (3 of a BO5) the pair is won by it, and the
+ * rounds that were not played give their coins back. Settling the pair itself also ends its open rounds.
+ */
+async function finishSeries(tx: Tx, pairId: string) {
+  const pair = await tx.market.findUniqueOrThrow({ where: { id: pairId } });
+  const rounds = await tx.market.findMany({ where: { tournamentId: pair.tournamentId, key: { startsWith: `${pair.key}#` } } });
+  if (pair.status !== "SETTLED" && pair.status !== "REFUNDED" && pair.bestOf) {
+    const wins = new Map<string, number>();
+    for (const r of rounds) if (r.status === "SETTLED" && r.winnerTeamId) wins.set(r.winnerTeamId, (wins.get(r.winnerTeamId) ?? 0) + 1);
+    // A round nobody picked right is REFUNDED but still has its winner.
+    for (const r of rounds) if (r.status === "REFUNDED" && r.winnerTeamId) wins.set(r.winnerTeamId, (wins.get(r.winnerTeamId) ?? 0) + 1);
+    const champ = [...wins].find(([, n]) => n >= roundsNeeded(pair.bestOf!));
+    if (champ) await applyOutcome(tx, pair.id, { kind: "winner", teamId: champ[0] });
+  }
+  const done = await tx.market.findUniqueOrThrow({ where: { id: pairId } });
+  if (done.status === "SETTLED" || done.status === "REFUNDED") {
+    for (const r of rounds) if (r.status === "OPEN" || r.status === "CLOSED") await applyOutcome(tx, r.id, { kind: "refund" });
+  }
+}
+
 /** A market's name for people: the champion, "คู่ที่ 3 · เกม 2", or a hand-made pair's name. */
 export function marketTitle(m: { kind: string; key: string; label?: string | null; teamIds: string }, number: number | null, teamName: (id: string) => string) {
   if (m.kind === "CHAMPION") return "ใครจะเป็นแชมป์";
@@ -305,13 +399,13 @@ export function closingTime(m: { locksAt: Date | null; reopenedAt?: Date | null 
   return m.locksAt && !(m.reopenedAt && m.reopenedAt >= m.locksAt) ? m.locksAt : null;
 }
 
-export function marketOpen(m: { kind: string; status: string; locksAt: Date | null; reopenedAt?: Date | null }, t: { bracketStatus: string }, now = new Date()) {
+export function marketOpen(m: { kind: string; key?: string; status: string; locksAt: Date | null; reopenedAt?: Date | null }, t: { bracketStatus: string }, now = new Date()) {
   if (m.status !== "OPEN") return false;
   const locksAt = closingTime(m);
   if (locksAt && now >= locksAt) return false;
   if (m.kind === "CHAMPION") return t.bracketStatus === "NONE" || t.bracketStatus === "DRAFT";
-  // A pair the organizer set up opens straight away, until they close it (or its closing time).
-  if (m.kind === "CUSTOM") return true;
+  // A pair the organizer set up (and each of its rounds) opens straight away, until they close it (or its closing time).
+  if (m.kind === "CUSTOM" || (m.key !== undefined && isRoundKey(m.key))) return true;
   // A bracket match opens once it has a start time or the bracket is under way; organizers close a
   // match with no start time themselves before it is played.
   return m.locksAt !== null || t.bracketStatus === "LIVE";
@@ -402,7 +496,12 @@ export async function setTournamentMarketsStatus(tournamentId: string, body: unk
     const now = new Date();
     const where =
       status === "OPEN"
-        ? { tournamentId, OR: [{ status: "CLOSED" }, { status: "OPEN", locksAt: { lte: now } }] }
+        ? {
+            tournamentId,
+            OR: [{ status: "CLOSED" }, { status: "OPEN", locksAt: { lte: now } }],
+            // Rounds of a hand-made pair open one at a time (the next opens when a round has its result).
+            NOT: [{ key: { startsWith: "SPECIAL_PAIR#" } }, { AND: [{ key: { startsWith: "custom:" } }, { key: { contains: "#" } }] }],
+          }
         : { tournamentId, status: "OPEN" };
     const { count } = await prisma.market.updateMany({ where, data: statusData(status, now) });
     return { changed: count };
@@ -415,6 +514,8 @@ const customInput = z.object({
   label: z.string().trim().max(60).optional().transform((v) => v || null),
   /** Optional: predictions close by themselves at this time (the organizer can still close them earlier). */
   locksAt: z.coerce.date().nullish(),
+  /** Played over rounds: BO3/BO5/BO7 also opens each round to predict on its own (1 = the result only). */
+  bestOf: z.coerce.number().int().min(1).max(MAX_ROUNDS).optional(),
 });
 
 /**
@@ -424,7 +525,7 @@ const customInput = z.object({
 export async function createCustomMarket(tournamentId: string, body: unknown) {
   const parsed = customInput.safeParse(body);
   if (!parsed.success) throw fail(400, "Validation failed", "เลือกสองทีมที่จะให้ทาย", { field: String(parsed.error.issues[0]?.path[0] ?? "") });
-  const { teamAId, teamBId, label, locksAt } = parsed.data;
+  const { teamAId, teamBId, label, locksAt, bestOf = 1 } = parsed.data;
   if (teamAId === teamBId) throw fail(400, "Pick two different teams", "เลือกสองทีมที่ต่างกัน", { field: "teamBId" });
   // A time already passed would close the pair the moment it is made.
   if (locksAt && locksAt.getTime() <= Date.now()) throw fail(400, "The closing time has passed", "เวลาปิดรับเลยมาแล้ว เลือกเวลาในอนาคต หรือเว้นว่างไว้", { field: "locksAt" });
@@ -433,8 +534,12 @@ export async function createCustomMarket(tournamentId: string, body: unknown) {
   if (entries.length !== 2) throw fail(400, "Both teams must be in the tournament", "ทั้งสองทีมต้องอยู่ในรายการนี้", { field: "teamAId" });
   return serial(async () => {
     const n = await prisma.market.count({ where: { tournamentId, kind: "CUSTOM" } });
-    return prisma.market.create({
-      data: { tournamentId, kind: "CUSTOM", key: `custom:${n + 1}:${Date.now().toString(36)}`, label, teamIds: JSON.stringify([teamAId, teamBId]), locksAt: locksAt ?? null },
+    return prisma.$transaction(async (tx) => {
+      const pair = await tx.market.create({
+        data: { tournamentId, kind: "CUSTOM", key: `custom:${n + 1}:${Date.now().toString(36)}`, label, teamIds: JSON.stringify([teamAId, teamBId]), locksAt: locksAt ?? null },
+      });
+      if (bestOf > 1) await setRounds(tx, pair, bestOf);
+      return tx.market.findUniqueOrThrow({ where: { id: pair.id } });
     });
   });
 }
@@ -446,9 +551,33 @@ export async function settleCustomMarket(marketId: string, body: unknown) {
     prisma.$transaction(async (tx) => {
       const m = await tx.market.findUnique({ where: { id: marketId } });
       if (!m) throw notFound("Market");
-      if (m.kind !== "CUSTOM") throw fail(409, "Only hand-made pairs are settled by hand", "คู่ในสายแข่งได้ผลจากการบันทึกผลแมตช์");
+      const round = isRoundKey(m.key);
+      if (m.kind !== "CUSTOM" && !round) throw fail(409, "Only hand-made pairs are settled by hand", "คู่ในสายแข่งได้ผลจากการบันทึกผลแมตช์");
       if (winnerTeamId && !parseIds(m.teamIds).includes(winnerTeamId)) throw fail(400, "Pick one of the teams", "เลือกทีมที่อยู่ในคู่นี้", { field: "winnerTeamId" });
+      const pair = round ? await tx.market.findUnique({ where: { tournamentId_key: { tournamentId: m.tournamentId, key: m.key.split("#")[0] } } }) : m;
+      if (round && (pair?.status === "SETTLED" || pair?.status === "REFUNDED")) throw fail(409, "The match is over", "แมตช์นี้จบแล้ว แก้ผลรายรอบไม่ได้");
       await applyOutcome(tx, m.id, winnerTeamId ? { kind: "winner", teamId: winnerTeamId } : { kind: "refund" });
+      // A round's result counts towards the pair even when nobody picked the winner (the round is refunded).
+      if (round && winnerTeamId) await tx.market.update({ where: { id: m.id }, data: { winnerTeamId } });
+      if (pair) await finishSeries(tx, pair.id);
+      // This round is over: the next one opens.
+      if (round && pair) await openNextRound(tx, pair);
+      return tx.market.findUniqueOrThrow({ where: { id: marketId } });
+    }),
+  );
+}
+
+/** Sets how many rounds of a hand-made pair are predicted one by one (1 = only who wins the pair). */
+export async function setPairRounds(marketId: string, body: unknown) {
+  const parsed = z.object({ bestOf: z.coerce.number().int().min(1).max(MAX_ROUNDS) }).safeParse(body);
+  if (!parsed.success) throw fail(400, "Validation failed", `เลือกจำนวนรอบ 1-${MAX_ROUNDS}`, { field: "bestOf" });
+  return serial(() =>
+    prisma.$transaction(async (tx) => {
+      const m = await tx.market.findUnique({ where: { id: marketId } });
+      if (!m) throw notFound("Market");
+      if (m.kind !== "CUSTOM") throw fail(409, "Only hand-made pairs have rounds", "ตั้งรอบได้เฉพาะคู่ที่สร้างเอง (คู่ในสายแข่งใช้ BO ของทัวร์)");
+      if (m.status === "SETTLED" || m.status === "REFUNDED") throw fail(409, "The match is over", "แมตช์นี้จบแล้ว");
+      await setRounds(tx, m, parsed.data.bestOf);
       return tx.market.findUniqueOrThrow({ where: { id: marketId } });
     }),
   );
@@ -463,6 +592,11 @@ export async function deleteCustomMarket(marketId: string) {
       if (m.kind !== "CUSTOM") throw fail(409, "Only hand-made pairs can be deleted", "ลบได้เฉพาะคู่ที่สร้างเอง");
       await applyOutcome(tx, m.id, { kind: "refund" });
       await tx.bet.deleteMany({ where: { marketId } });
+      for (const r of await tx.market.findMany({ where: { tournamentId: m.tournamentId, key: { startsWith: `${m.key}#` } } })) {
+        await applyOutcome(tx, r.id, { kind: "refund" });
+        await tx.bet.deleteMany({ where: { marketId: r.id } });
+        await tx.market.delete({ where: { id: r.id } });
+      }
       // Keep a tombstone so a deleted automatic pair is not recreated on the next read.
       if (m.key !== "SPECIAL_PAIR") await tx.market.delete({ where: { id: marketId } });
     }),
@@ -486,7 +620,8 @@ export async function tournamentMarkets(tournamentId: string, discordId?: string
   const teams = new Map((await prisma.team.findMany({ where: { id: { in: teamIds } }, select: { id: true, name: true, tag: true, logoUrl: true } })).map((x) => [x.id, x]));
   const slotByCode = new Map(slots.map((s) => [s.code, s]));
   const rows = markets
-    .filter((m) => m.status !== "REFUNDED" || m.bets.length)
+    // A pair played over rounds (and each round) stays listed even with nobody on it: it shows the score.
+    .filter((m) => m.status !== "REFUNDED" || m.bets.length || isRoundKey(m.key) || m.bestOf)
     .map((m) => {
       const pool = m.bets.reduce((n, b) => n + b.amount, 0);
       const [code, game] = m.kind === "GAME" ? m.key.split("#") : [m.key, null];
@@ -503,7 +638,11 @@ export async function tournamentMarkets(tournamentId: string, discordId?: string
         kind: m.kind,
         key: m.key,
         /** What to call it: the champion, "คู่ที่ 3", or a hand-made pair's own name ("ทีม A vs ทีม B" by default). */
-        title: marketTitle(m, slot?.number ?? null, (id) => teams.get(id)?.name ?? "ทีม"),
+        title: isRoundKey(m.key)
+          ? `${marketTitle(markets.find((x) => x.key === code) ?? m, null, (id) => teams.get(id)?.name ?? "ทีม")} · รอบ ${game}`
+          : marketTitle(m, slot?.number ?? null, (id) => teams.get(id)?.name ?? "ทีม"),
+        /** A hand-made pair played over rounds: how many (its rounds are GAME markets with match = this key). */
+        bestOf: m.bestOf ?? null,
         label: m.label,
         /** The game in the series (1..BO) for a per-game market; the series market itself has none. */
         game: game ? Number(game) : null,

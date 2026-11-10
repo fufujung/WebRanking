@@ -114,6 +114,17 @@ export const predictCommand: ApplicationCommandData = {
           description: "ชื่อคู่ เช่น รอบชิง (ไม่ใส่ก็ได้)",
           maxLength: 60,
         },
+        {
+          type: O.Integer,
+          name: "bestof",
+          description: "รูปแบบ: BO3/BO5 ทายรายรอบได้ด้วย (ไม่ใส่ = แมตช์เดียว)",
+          choices: [
+            { name: "แมตช์เดียว", value: 1 },
+            { name: "BO3 (3 รอบ)", value: 3 },
+            { name: "BO5 (5 รอบ)", value: 5 },
+            { name: "BO7 (7 รอบ)", value: 7 },
+          ],
+        },
       ],
     },
   ],
@@ -133,6 +144,8 @@ export interface MarketView {
   title?: string;
   game: number | null;
   match: string | null;
+  /** A hand-made pair played over rounds (BO3/BO5): its rounds are GAME markets with match = its key. */
+  bestOf?: number | null;
   number: number | null;
   status: "OPEN" | "CLOSED" | "SETTLED" | "REFUNDED";
   open: boolean;
@@ -232,6 +245,8 @@ export function marketEmbed(
   t: { id: string; name: string },
   m: MarketView,
   siteUrl?: string,
+  /** A pair played over rounds: "A 2 – 1 B". */
+  score = "",
 ): APIEmbed {
   const link = siteLink(siteUrl, `/predict?t=${t.id}`);
   const done = m.status === "SETTLED" || m.status === "REFUNDED";
@@ -254,6 +269,7 @@ export function marketEmbed(
           `${o.team.id === m.winnerTeamId ? "✅" : "•"} **${o.team.name}**\n\`${bar(o.percent)}\` ${o.percent}% · ${o.coins} เหรียญ · ${o.people} คน${o.coins > 0 && !done ? ` · ผลตอบแทน x${(Math.floor((m.pool / o.coins) * 100) / 100).toFixed(m.pool / o.coins >= 10 ? 1 : 2)}` : ""}`,
       ),
       "",
+      m.bestOf ? `🎯 BO${m.bestOf} ทายรายรอบได้ (กดปุ่มทายรายรอบ)${score ? ` · สกอร์ **${score}**` : ""}` : "",
       `รวม ${m.pool} เหรียญ จาก ${m.people} คน`,
       state,
       m.topWinners.length
@@ -310,6 +326,7 @@ export function marketButtons(
                 .setLabel("ยกเลิก คืนเหรียญ (ผู้จัด)")
                 .setEmoji("↩️")
                 .setStyle(ButtonStyle.Secondary),
+              ...(m.bestOf ? [roundsButton(m, tournamentId)] : []),
             ]
           : []),
       ),
@@ -342,6 +359,7 @@ export function marketButtons(
         .setCustomId(`pk:cancel:${m.id}`)
         .setLabel("ยกเลิกคำทาย")
         .setStyle(ButtonStyle.Secondary),
+      ...(m.kind === "CUSTOM" && m.bestOf ? [roundsButton(m, tournamentId)] : []),
       ...(games?.count && m.kind === "MATCH"
         ? [
             new ButtonBuilder()
@@ -361,6 +379,22 @@ export function marketButtons(
   return rows;
 }
 
+/** A hand-made pair's rounds, by the pair's id (its key has ":" in it, which customIds split on). */
+const roundsButton = (m: MarketView, tournamentId: string) =>
+  new ButtonBuilder()
+    .setCustomId(`pk:rounds:${tournamentId}:${m.id}`)
+    .setLabel(`ทายรายรอบ (BO${m.bestOf})`)
+    .setEmoji("🎯")
+    .setStyle(ButtonStyle.Success);
+
+/** "A 2 – 1 B": rounds won so far. */
+export function roundScore(pair: MarketView, rounds: MarketView[]) {
+  const [a, b] = pair.options.map((o) => o.team);
+  if (!a || !b || !rounds.length) return "";
+  const wins = (id: string) => rounds.filter((r) => r.winnerTeamId === id).length;
+  return `${a.name} ${wins(a.id)} – ${wins(b.id)} ${b.name}`;
+}
+
 /** The games of a series that are still open for this match card, so its "per game" button knows how many there are. */
 const gamesOf = (markets: MarketView[], m: MarketView) =>
   markets.filter((g) => g.kind === "GAME" && g.match === m.key && g.open);
@@ -368,12 +402,14 @@ const gamesOf = (markets: MarketView[], m: MarketView) =>
 /** Per-game picks of one series: a line per game with the split and the member's pick, and a button per team. */
 export function gamesReply(
   games: (MarketView & { mine?: { teamId: string; amount: number } | null })[],
+  rounds?: { score: string },
 ) {
+  const word = rounds ? "รอบ" : "เกม";
   const name = (g: MarketView, id: string) =>
     g.options.find((o) => o.team.id === id)?.team.name ?? "ทีม";
   const lines = games.map(
     (g) =>
-      `**เกม ${g.game}** · ${g.options.map((o) => `${o.team.name} ${o.percent}%`).join(" / ")} · ${g.pool} เหรียญ${g.mine ? ` · คุณทาย ${name(g, g.mine.teamId)} ${g.mine.amount}` : ""}${g.open ? "" : " · ปิดแล้ว"}`,
+      `**${word} ${g.game}** · ${g.options.map((o) => `${o.team.name} ${o.percent}%`).join(" / ")} · ${g.pool} เหรียญ${g.mine ? ` · คุณทาย ${name(g, g.mine.teamId)} ${g.mine.amount}` : ""}${g.open ? "" : g.status === "SETTLED" || (g.status === "REFUNDED" && g.winnerTeamId) ? ` · ✅ ${name(g, g.winnerTeamId ?? "")} ชนะ` : g.status === "REFUNDED" ? " · ยกเลิก" : " · ปิดอยู่"}`,
   );
   const open = games.filter((g) => g.open);
   const perRow = open.length > 5 ? 2 : 1;
@@ -385,7 +421,7 @@ export function gamesReply(
           g.options.slice(0, 2).map((o) =>
             new ButtonBuilder()
               .setCustomId(`pk:bet:${g.id}:${o.team.id}`)
-              .setLabel(`เกม ${g.game} · ${o.team.name}`.slice(0, 80))
+              .setLabel(`${word} ${g.game} · ${o.team.name}`.slice(0, 80))
               .setStyle(
                 g.mine?.teamId === o.team.id
                   ? ButtonStyle.Success
@@ -398,11 +434,40 @@ export function gamesReply(
   }
   return {
     content: [
-      `🎯 ทายรายเกม: กดทีมที่คิดว่าชนะเกมนั้น แต่ละเกมแบ่งเหรียญแยกกัน เกมที่ไม่ได้แข่ง (เช่นจบ 3-0) คืนเหรียญ`,
+      rounds
+        ? `🎯 ทายรายรอบ: เปิดให้ทายทีละรอบ กดทีมที่คิดว่าชนะรอบนั้น แต่ละรอบแบ่งเหรียญแยกกัน รอบที่ไม่ได้แข่ง (เช่นจบ 3-0) คืนเหรียญ${rounds.score ? `\nสกอร์ตอนนี้: **${rounds.score}**` : ""}`
+        : `🎯 ทายรายเกม: กดทีมที่คิดว่าชนะเกมนั้น แต่ละเกมแบ่งเหรียญแยกกัน เกมที่ไม่ได้แข่ง (เช่นจบ 3-0) คืนเหรียญ`,
       ...lines,
     ].join("\n"),
     components: rows,
   };
+}
+
+/** Organizers: the result of the round being played (who won, or call it off), and closing it once it starts. */
+export function roundAdmin(rounds: MarketView[], tournamentId: string) {
+  const now = rounds.find((r) => r.status !== "SETTLED" && r.status !== "REFUNDED");
+  if (!now) return [];
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      ...now.options.slice(0, 2).map((o) =>
+        new ButtonBuilder()
+          .setCustomId(`pk:win:${now.id}:${o.team.id}:${tournamentId}`)
+          .setLabel(`รอบ ${now.game}: ${o.team.name} ชนะ (ผู้จัด)`.slice(0, 80))
+          .setEmoji("🏁")
+          .setStyle(ButtonStyle.Success),
+      ),
+      new ButtonBuilder()
+        .setCustomId(`pk:${now.status === "OPEN" ? "close" : "reopen"}:${now.id}:${tournamentId}`)
+        .setLabel(now.status === "OPEN" ? `ปิดรับรอบ ${now.game} (ผู้จัด)` : `เปิดรับรอบ ${now.game} (ผู้จัด)`)
+        .setEmoji(now.status === "OPEN" ? "🔒" : "🔓")
+        .setStyle(now.status === "OPEN" ? ButtonStyle.Danger : ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`pk:void:${now.id}:${tournamentId}`)
+        .setLabel(`ยกเลิกรอบ ${now.game} (ผู้จัด)`)
+        .setEmoji("↩️")
+        .setStyle(ButtonStyle.Secondary),
+    ),
+  ];
 }
 
 export function amountModal(
@@ -527,6 +592,7 @@ export class PredictManager {
       );
       // Per-game picks live behind the match card's "per game" button, not as cards of their own.
       for (const m of markets.filter((x) => x.kind !== "GAME")) {
+        const score = m.kind === "CUSTOM" && m.bestOf ? roundScore(m, markets.filter((r) => r.kind === "GAME" && r.match === m.key)) : "";
         for (const channelId of channels)
           await this.showCard(
             client,
@@ -534,6 +600,7 @@ export class PredictManager {
             m,
             channelId,
             gamesOf(markets, m).length,
+            score,
           );
       }
     }
@@ -546,6 +613,7 @@ export class PredictManager {
     m: MarketView,
     channelId: string,
     games = 0,
+    score = "",
   ) {
     const key = `${channelId}:${m.id}`;
     const card = this.cards.get(key);
@@ -557,6 +625,7 @@ export class PredictManager {
       m.locksAt,
       m.winnerTeamId,
       games,
+      score,
     ]);
     const components = marketButtons(m, { tournamentId: t.id, count: games });
     if (!card) {
@@ -564,7 +633,7 @@ export class PredictManager {
       const channel = await client.channels.fetch(channelId).catch(() => null);
       if (!channel?.isSendable()) return;
       const msg = await channel
-        .send({ embeds: [marketEmbed(t, m, this.opts.siteUrl)], components })
+        .send({ embeds: [marketEmbed(t, m, this.opts.siteUrl, score)], components })
         .catch(
           (e) => void this.opts.log("prediction card failed:", e?.message),
         );
@@ -588,7 +657,7 @@ export class PredictManager {
     const done = m.status === "SETTLED" || m.status === "REFUNDED";
     if (msg)
       await msg
-        .edit({ embeds: [marketEmbed(t, m, this.opts.siteUrl)], components })
+        .edit({ embeds: [marketEmbed(t, m, this.opts.siteUrl, score)], components })
         .catch((e) =>
           this.opts.log("prediction card edit failed:", e?.message),
         );
@@ -676,8 +745,8 @@ export class PredictManager {
           );
           text =
             action === "win"
-              ? "🏁 บันทึกผลแล้ว แจกเหรียญให้คนทายถูกแล้ว"
-              : "↩️ ยกเลิกคู่นี้ คืนเหรียญทุกคนแล้ว";
+              ? "🏁 บันทึกผลแล้ว แจกเหรียญให้คนทายถูกแล้ว (ถ้าเป็นรายรอบ รอบถัดไปเปิดให้ทายแล้ว)"
+              : "↩️ ยกเลิกแล้ว คืนเหรียญทุกคนแล้ว";
         }
         await this.sync(i.client);
         return void (await i.editReply(text));
@@ -722,6 +791,30 @@ export class PredictManager {
         if (!games.length)
           return void (await i.editReply("แมตช์นี้ไม่มีให้ทายรายเกม"));
         return void (await i.editReply(gamesReply(games)));
+      }
+      if (action === "rounds" && marketId && teamId) {
+        // pk:rounds:<tournamentId>:<pair market id>: the rounds to pick, and (for organizers) the current round's result.
+        await i.deferReply({ ephemeral: true });
+        const { markets } = await this.api.get<{
+          markets: (MarketView & {
+            mine: { teamId: string; amount: number } | null;
+          })[];
+        }>(
+          `/predict/tournaments/${encodeURIComponent(marketId)}?discordId=${encodeURIComponent(i.user.id)}`,
+        );
+        const pair = markets.find((m) => m.id === teamId);
+        const rounds = pair
+          ? markets
+              .filter((g) => g.kind === "GAME" && g.match === pair.key)
+              .sort((a, b) => (a.game ?? 0) - (b.game ?? 0))
+          : [];
+        if (!pair || !rounds.length)
+          return void (await i.editReply("คู่นี้ไม่มีให้ทายรายรอบ"));
+        const reply = gamesReply(rounds, { score: roundScore(pair, rounds) });
+        const pairDone = pair.status === "SETTLED" || pair.status === "REFUNDED";
+        if (!pairDone && this.canManage(marketId, i.user.id, info))
+          reply.components.splice(4, Infinity, ...roundAdmin(rounds, marketId)); // Discord shows at most 5 rows
+        return void (await i.editReply(reply));
       }
       if (action === "mine" && marketId) {
         await i.deferReply({ ephemeral: true });
@@ -898,11 +991,15 @@ export class PredictManager {
               teamAId: i.options.getString("a", true),
               teamBId: i.options.getString("b", true),
               label: i.options.getString("name") ?? undefined,
+              bestOf: i.options.getInteger("bestof") ?? 1,
             },
           );
           await this.sync(i.client);
+          const bo = i.options.getInteger("bestof") ?? 1;
           return void (await i.editReply(
-            `✅ เปิดให้ทายแล้ว การ์ดขึ้นในห้องประกาศ · กด 🔒 ปิดรับทาย ในการ์ดก่อนเริ่มแข่ง แล้วกดทีมที่ชนะ`,
+            bo > 1
+              ? `✅ เปิดให้ทายแล้ว (BO${bo}) การ์ดขึ้นในห้องประกาศ · กด 🎯 ทายรายรอบ ในการ์ด แล้วกดทีมที่ชนะแต่ละรอบ รอบถัดไปจะเปิดเอง ครบแล้วแมตช์ปิดและแจกเหรียญเอง`
+              : `✅ เปิดให้ทายแล้ว การ์ดขึ้นในห้องประกาศ · กด 🔒 ปิดรับทาย ในการ์ดก่อนเริ่มแข่ง แล้วกดทีมที่ชนะ`,
           ));
         }
         const r = await this.api.post<{ changed: number }>(

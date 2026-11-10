@@ -127,7 +127,7 @@ test("special prediction drafts require complete rosters and keep bracket market
   ] });
   assert.equal((await markets(t.id)).markets.length, 0);
   await ok("PUT", `/tournaments/${t.id}/special-teams`, { teams: draft.teams.map((team: any, side: number) => ({ ...team, slots: [0, 1, 2].map((i) => ({ name: `Draft side ${side} player ${i}` })) })) });
-  assert.equal((await markets(t.id)).markets.filter((m: any) => m.open).length, 1);
+  assert.equal((await markets(t.id)).markets.filter((m: any) => m.open && m.kind !== "GAME").length, 1);
   await ok("PATCH", `/tournaments/${t.id}`, { format: "SINGLE_ELIMINATION" });
   const bracketMarkets = (await markets(t.id)).markets;
   assert.equal(bracketMarkets.some((m: any) => m.key === "SPECIAL_PAIR" && m.open), false);
@@ -528,4 +528,115 @@ test("a pair whose closing time has passed opens again with 'open all' (or on it
   assert.equal((await view()).open, false);
   await ok("PATCH", `/predict/markets/${pair.id}`, { status: "OPEN" });
   assert.equal((await view()).open, true);
+});
+
+test("a BO5 pair is predicted round by round: one round open at a time, closed once a team has 3, the rest refunded", async () => {
+  const t = await newTournament({ format: null });
+  const a = await registerTeam(t.id, "Round A");
+  const b = await registerTeam(t.id, "Round B");
+  const bad = await call("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: a.id, teamBId: b.id, bestOf: 9 });
+  assert.equal(bad.status, 400, "at most 7 rounds");
+  const pair = await ok("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: a.id, teamBId: b.id, bestOf: 5 });
+  assert.equal(pair.bestOf, 5);
+  const all = async () => (await markets(t.id)).markets;
+  const rounds = async () => (await all()).filter((m: any) => m.match === pair.key).sort((x: any, y: any) => x.game - y.game);
+  let r = await rounds();
+  assert.equal(r.length, 5);
+  assert.deepEqual(r.map((m: any) => m.open), [true, false, false, false, false], "only round 1 is open");
+  assert.equal(r[0].title, "Round A vs Round B · รอบ 1");
+  assert.equal((await all()).find((m: any) => m.id === pair.id).open, true, "who wins the match is open too");
+
+  const fan = discord();
+  const fan2 = discord();
+  await wallet(fan);
+  await wallet(fan2);
+  assert.equal((await bet(fan, r[1].id, a.id, 5)).status, 409, "round 2 is not open yet");
+  assert.equal((await bet(fan, r[0].id, a.id, 10)).status, 200);
+  assert.equal((await bet(fan2, r[0].id, b.id, 10)).status, 200);
+  assert.equal((await bet(fan, pair.id, a.id, 20)).status, 200);
+  assert.equal((await bet(fan2, pair.id, b.id, 20)).status, 200);
+  // "Open all" does not open rounds ahead of time.
+  await ok("POST", `/predict/tournaments/${t.id}/status`, { status: "OPEN" });
+  assert.equal((await rounds())[2].open, false);
+
+  const start = (await wallet(fan)).coins;
+  // Round 1 to A: it pays, and round 2 opens.
+  await ok("POST", `/predict/markets/${r[0].id}/settle`, { winnerTeamId: a.id });
+  assert.equal((await wallet(fan)).coins, start + 20);
+  r = await rounds();
+  assert.equal(r[0].status, "SETTLED");
+  assert.equal(r[1].open, true, "the next round opens by itself");
+  // Round 2 to B with nobody on it (refunded but still counts), round 3 called off, rounds 4 and 5 to A.
+  await ok("POST", `/predict/markets/${r[1].id}/settle`, { winnerTeamId: b.id });
+  r = await rounds();
+  assert.equal(r[1].status, "REFUNDED");
+  assert.equal(r[2].open, true);
+  await ok("POST", `/predict/markets/${r[2].id}/settle`, { winnerTeamId: null });
+  r = await rounds();
+  assert.equal(r[3].open, true, "a called-off round moves on to the next");
+  await ok("POST", `/predict/markets/${r[3].id}/settle`, { winnerTeamId: a.id });
+  r = await rounds();
+  assert.equal((await all()).find((m: any) => m.id === pair.id).status, "OPEN", "1 win short of 3");
+  await bet(fan2, r[4].id, b.id, 7);
+  await bet(fan, r[4].id, a.id, 7);
+  const before5 = (await wallet(fan2)).coins;
+  await ok("POST", `/predict/markets/${r[4].id}/settle`, { winnerTeamId: a.id });
+  const p = (await all()).find((m: any) => m.id === pair.id);
+  assert.equal(p.status, "SETTLED", "A reached 3 rounds: the match is over");
+  assert.equal(p.winnerTeamId, a.id);
+  assert.equal((await wallet(fan)).coins, start + 20 - 7 + 14 + 40, "round 5 and the match pay as well");
+  assert.equal((await wallet(fan2)).coins, before5, "fan2 lost round 5 and the match");
+  // The match is over: rounds can't be changed any more.
+  assert.equal((await call("POST", `/predict/markets/${r[1].id}/settle`, { winnerTeamId: a.id })).status, 409);
+
+  // A BO3 decided 2-0: round 3 gives its coins back; the organizer can also change the number of rounds.
+  const bo3 = await ok("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: a.id, teamBId: b.id, bestOf: 3 });
+  const r3 = async () => (await all()).filter((m: any) => m.match === bo3.key).sort((x: any, y: any) => x.game - y.game);
+  assert.equal((await ok("PUT", `/predict/markets/${bo3.id}/rounds`, { bestOf: 5 })).bestOf, 5);
+  assert.equal((await r3()).length, 5);
+  await ok("PUT", `/predict/markets/${bo3.id}/rounds`, { bestOf: 3 });
+  let q = await r3();
+  assert.equal(q.length, 3);
+  assert.equal((await call("PUT", `/predict/markets/${bo3.id}/rounds`, { bestOf: 3 }, reader)).status, 403);
+  await ok("POST", `/predict/markets/${q[0].id}/settle`, { winnerTeamId: b.id });
+  q = await r3();
+  await bet(fan, q[1].id, a.id, 3);
+  await ok("POST", `/predict/markets/${q[1].id}/settle`, { winnerTeamId: b.id });
+  q = await r3();
+  assert.equal((await all()).find((m: any) => m.id === bo3.id).winnerTeamId, b.id);
+  assert.equal(q[2].open, false);
+  assert.equal(q[2].status, "REFUNDED", "round 3 was never played");
+
+  // Deleting a pair takes its rounds too, coins back.
+  const gone = await ok("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: a.id, teamBId: b.id, bestOf: 3 });
+  const g1 = (await all()).find((m: any) => m.match === gone.key && m.game === 1);
+  const c0 = (await wallet(fan)).coins;
+  await bet(fan, g1.id, a.id, 4);
+  await ok("DELETE", `/predict/markets/${gone.id}`);
+  assert.equal((await wallet(fan)).coins, c0);
+  assert.equal((await all()).some((m: any) => m.match === gone.key), false);
+});
+
+test("a recorded match settles a hand-made pair and its rounds from the games", async () => {
+  const t = await newTournament({ format: null });
+  const a = await registerTeam(t.id, "Auto A");
+  const b = await registerTeam(t.id, "Auto B");
+  const pair = await ok("POST", `/predict/tournaments/${t.id}/markets`, { teamAId: a.id, teamBId: b.id, bestOf: 3 });
+  const fan = discord();
+  await wallet(fan);
+  const r = (await markets(t.id)).markets.filter((m: any) => m.match === pair.key).sort((x: any, y: any) => x.game - y.game);
+  await bet(fan, r[0].id, b.id, 10);
+  await bet(fan, pair.id, b.id, 10);
+  const start = (await wallet(fan)).coins;
+  // Recorded the other way round (B as team A): B wins 2-0.
+  await ok("POST", "/matches", { tournamentId: t.id, teamAId: b.id, teamBId: a.id, games: [{ scoreA: 21, scoreB: 10 }, { scoreA: 21, scoreB: 15 }] });
+  const view = (await markets(t.id)).markets;
+  const p = view.find((m: any) => m.id === pair.id);
+  assert.equal(p.winnerTeamId, b.id);
+  const rr = view.filter((m: any) => m.match === pair.key).sort((x: any, y: any) => x.game - y.game);
+  assert.equal(rr[0].winnerTeamId, b.id);
+  assert.equal(rr[1].winnerTeamId, b.id);
+  assert.equal(rr[2].open, false);
+  // Only fan picked: winning back their own stake is a refund either way.
+  assert.equal((await wallet(fan)).coins, start + 20);
 });
