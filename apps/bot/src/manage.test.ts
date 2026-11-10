@@ -464,6 +464,60 @@ describe("prediction prizes", () => {
   });
 });
 
+describe("predicting round by round (BO5)", () => {
+  test("/predict pair bestof:5 opens the match and round 1; organizers settle rounds from the rounds button, the match closes at 3", async () => {
+    const t = (await api.post<{ id: string }>("/tournaments", { name: "Round Cup", startDate: "2026-11-01T12:00:00Z" })).id;
+    const alpha = (await api.post<{ id: string }>("/teams", { name: "Round Alpha" })).id;
+    const bravo = (await api.post<{ id: string }>("/teams", { name: "Round Bravo" })).id;
+    await api.post(`/tournaments/${t}/entries`, { teamId: alpha });
+    await api.post(`/tournaments/${t}/entries`, { teamId: bravo });
+    const nope = command("predict", "pair", { tournament: t, a: alpha, b: bravo, bestof: 5 }, FAN);
+    await bot.onCommand(nope);
+    assert.match(said(last(nope)), refused);
+    const make = command("predict", "pair", { tournament: t, a: alpha, b: bravo, bestof: 5 });
+    await bot.onCommand(make);
+    assert.match(said(last(make)), /BO5/);
+    const view = async () => (await api.get<{ markets: any[] }>(`/predict/tournaments/${t}`)).markets;
+    const pair = (await view()).find((m) => m.kind === "CUSTOM");
+    assert.equal(pair.bestOf, 5);
+
+    // A member opens the rounds: buttons to pick round 1 only, and no organizer buttons.
+    await api.post(`/predict/members/${FAN}/daily`, { name: "Fan" });
+    const fanRounds = press(`pk:rounds:${t}:${pair.id}`, FAN);
+    await bot.onButton(fanRounds);
+    const r1 = (await view()).find((m) => m.match === pair.key && m.game === 1);
+    assert.match(said(last(fanRounds)), /ทายรายรอบ/);
+    assert.match(said(last(fanRounds)), /\*\*รอบ 1\*\*/);
+    assert.deepEqual(customIds(last(fanRounds)), [`pk:bet:${r1.id}:${alpha}`, `pk:bet:${r1.id}:${bravo}`]);
+    await api.post(`/predict/members/${FAN}/bets`, { marketId: r1.id, teamId: alpha, amount: 10 });
+
+    // The organizer sees the result buttons for round 1; a member pressing one is refused.
+    const orgRounds = press(`pk:rounds:${t}:${pair.id}`);
+    await bot.onButton(orgRounds);
+    const win = `pk:win:${r1.id}:${alpha}:${t}`;
+    assert.ok(customIds(last(orgRounds)).includes(win));
+    assert.ok(customIds(last(orgRounds)).includes(`pk:close:${r1.id}:${t}`));
+    const sneaky = press(win, FAN);
+    await bot.onButton(sneaky);
+    assert.match(said(last(sneaky)), refused);
+    await bot.onButton(press(win));
+
+    // Rounds 2 and 3 to Alpha too: 3-0, the match is settled and rounds 4-5 are refunded.
+    for (const n of [2, 3]) {
+      const r = (await view()).find((m) => m.match === pair.key && m.game === n);
+      assert.equal(r.open, true, `round ${n} opened by itself`);
+      await bot.onButton(press(`pk:win:${r.id}:${alpha}:${t}`));
+    }
+    const after = await view();
+    assert.equal(after.find((m) => m.id === pair.id).winnerTeamId, alpha);
+    assert.deepEqual(after.filter((m) => m.match === pair.key).map((m) => m.status).sort(), ["REFUNDED", "REFUNDED", "REFUNDED", "REFUNDED", "SETTLED"]);
+    const final = press(`pk:rounds:${t}:${pair.id}`);
+    await bot.onButton(final);
+    assert.match(said(last(final)), /Round Alpha 3 – 0 Round Bravo/);
+    assert.equal(customIds(last(final)).length, 0, "nothing left to press");
+  });
+});
+
 describe("lucky draw drafts and blacklist delete", () => {
   test("/luckydraw open lists drafts made on the website and opens one", async () => {
     const draft = await api.post<{ id: string }>("/draws", { title: "แจกคีย์บอร์ด", keyword: "#OT1" });

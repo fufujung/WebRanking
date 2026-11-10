@@ -1,3 +1,4 @@
+import { syncPredictions } from "./predict.js";
 import { assertTwoTeamCapacity } from "./specialTeams.js";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -153,6 +154,8 @@ export async function saveMatch(input: MatchInput, existingId?: string) {
     return matchId;
   });
   await recomputeRatings();
+  // A pair set up by hand for these two teams takes its result (and its rounds' results) from this match.
+  await syncPredictions(input.tournamentId).catch((e) => console.error("Prediction sync after a match failed:", e));
   const saved = await getMatch(id);
   if (!existingId) announceMatch(saved);
   return saved;

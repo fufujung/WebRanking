@@ -584,6 +584,8 @@ model Market {
   locksAt      DateTime?
   /// When an organizer last opened it again by hand: a closing time already passed by then no longer applies.
   reopenedAt   DateTime?
+  /// A pair set up by hand played over rounds: how many (BO5 = 5 rounds, each predicted on its own as "<key>#<n>").
+  bestOf       Int?
   winnerTeamId String?
   settledAt    DateTime?
   createdAt    DateTime  @default(now())

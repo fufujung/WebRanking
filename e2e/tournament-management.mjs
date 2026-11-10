@@ -143,6 +143,32 @@ try {
   await page.goto(`${base}/admin/tournaments/${fixture.specialId}#predict`);
   await page.locator('[data-topic-panel="predict"] [data-market]').waitFor();
   await page.locator('[data-topic-panel="predict"] [data-market]').getByText(/Browser side A vs Browser side B/).waitFor();
+  // The simple "open predictions" form: two teams, BO3, one button; then each round's winner, and the match closes at 2.
+  // A full load: the hash-only jump above keeps the router's older #address, which a server action would restore.
+  await page.reload();
+  const predictPanel = page.locator('[data-topic-panel="predict"]');
+  for (const [side, team] of [["ทีม A", "Browser side A"], ["ทีม B", "Browser side B"]]) {
+    await predictPanel.getByRole("combobox", { name: side, exact: true }).fill(team);
+    await predictPanel.getByRole("option", { name: team }).first().click();
+  }
+  await predictPanel.getByRole("radio", { name: "BO3 (3 รอบ)" }).click();
+  await predictPanel.locator("summary", { hasText: "ตัวเลือกเพิ่มเติม" }).click();
+  await predictPanel.locator('input[name="label"]').fill("E2E BO3");
+  await predictPanel.getByRole("button", { name: "🎯 เปิดทาย", exact: true }).click();
+  const bo3 = predictPanel.locator("[data-market]", { hasText: "E2E BO3" });
+  await bo3.locator('[data-round="1"]').getByText("🟢 เปิดทายอยู่").waitFor();
+  await bo3.locator('[data-round="2"]').getByText("⏳ รอรอบก่อนหน้า").waitFor();
+  await page.screenshot({ path: path.join(output, "predict-rounds-admin.png"), fullPage: true });
+  await bo3.getByRole("button", { name: "🏁 Browser side A ชนะรอบนี้" }).click();
+  await bo3.locator('[data-round="2"]').getByText("🟢 เปิดทายอยู่").waitFor();
+  await bo3.getByRole("button", { name: "🏁 Browser side A ชนะรอบนี้" }).click();
+  await bo3.locator(".predict-score", { hasText: "2 – 0" }).waitFor();
+  await bo3.getByText("✅ Browser side A ชนะ", { exact: false }).first().waitFor();
+  await page.setViewportSize({ width: 390, height: 900 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "predict admin mobile overflow");
+  await page.screenshot({ path: path.join(output, "predict-rounds-admin-mobile.png"), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  console.log("Passed: open a BO3 pair in two clicks, rounds open one at a time, the match closes once a team wins 2.");
   await page.goto(`${base}/predict?t=${fixture.specialId}`);
   await page.getByText("Browser side A", { exact: true }).first().waitFor();
   await page.getByText("Browser side B", { exact: true }).first().waitFor();

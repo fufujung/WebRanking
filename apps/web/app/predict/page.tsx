@@ -116,24 +116,30 @@ function Games({
   lockFor: string | null;
 }) {
   const open = games.filter((g) => g.open).length;
+  // A hand-made pair's rounds: opened one at a time by the organizer, with the score so far.
+  const rounds = games.some((g) => g.match?.startsWith("custom:") || g.match === "SPECIAL_PAIR");
+  const word = rounds ? "รอบ" : "เกม";
+  const teams = games[0]?.options.map((o) => o.team) ?? [];
+  const score = rounds && teams.length === 2 ? `${teams[0].name} ${games.filter((g) => g.winnerTeamId === teams[0].id).length} – ${games.filter((g) => g.winnerTeamId === teams[1].id).length} ${teams[1].name}` : null;
   return (
     <details
       className="market-games"
-      open={games.some((g) => g.mine) || undefined}
+      open={games.some((g) => g.mine) || (rounds && open > 0) || undefined}
     >
       <summary>
-         ทายรายเกม · {games.length} เกม{open ? ` (เปิด ${open})` : ""}
+         ทายราย{word} · {games.length} {word}{open ? ` (เปิด ${open})` : ""}{score ? ` · ${score}` : ""}
       </summary>
       <p className="muted small">
-        แต่ละเกมแบ่งเหรียญแยกกัน เกมที่ไม่ได้แข่ง (เช่นจบ 3-0 ใน BO5)
-        หรือบันทึกผลไม่มีคะแนนรายเกม คืนเหรียญ
+        {rounds
+          ? "เปิดให้ทายทีละรอบ แต่ละรอบแบ่งเหรียญแยกกัน รอบที่ไม่ได้แข่ง (เช่นจบ 3-0 ใน BO5) คืนเหรียญ"
+          : "แต่ละเกมแบ่งเหรียญแยกกัน เกมที่ไม่ได้แข่ง (เช่นจบ 3-0 ใน BO5) หรือบันทึกผลไม่มีคะแนนรายเกม คืนเหรียญ"}
       </p>
       {games.map((g) => {
         const state = marketState(g);
         return (
           <div key={g.id} className="market-game">
             <div className="row between">
-              <strong>เกม {g.game}</strong>
+              <strong>{word} {g.game}</strong>
               <span className={state.cls}>{state.text}</span>
             </div>
             <Options m={g} />
@@ -354,7 +360,7 @@ export default async function PredictPage({
   // Per-game markets show inside their match's card.
   const markets = all.filter((m) => m.kind !== "GAME");
   const gamesOf = (m: Market) =>
-    m.kind === "MATCH"
+    m.kind === "MATCH" || m.kind === "CUSTOM"
       ? all.filter((g) => g.kind === "GAME" && g.match === m.key)
       : [];
   const open = markets.filter((m) => m.open || gamesOf(m).some((g) => g.open));

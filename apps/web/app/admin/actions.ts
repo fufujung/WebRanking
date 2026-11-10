@@ -809,14 +809,19 @@ export async function createPair(tournamentId: string, _: FormState, form: FormD
   if (close && !locksAt) return { error: "เวลาปิดรับไม่ถูกต้อง" };
   return predictRun(
     tournamentId,
-    () => api(`/predict/tournaments/${encodeURIComponent(tournamentId)}/markets`, { method: "POST", json: { teamAId: text(form, "teamAId"), teamBId: text(form, "teamBId"), label: text(form, "label") || undefined, locksAt } }),
-    "เปิดคู่ให้ทายแล้ว",
+    () => api(`/predict/tournaments/${encodeURIComponent(tournamentId)}/markets`, { method: "POST", json: { teamAId: text(form, "teamAId"), teamBId: text(form, "teamBId"), label: text(form, "label") || undefined, locksAt, bestOf: Number(text(form, "bestOf")) || 1 } }),
+    Number(text(form, "bestOf")) > 1 ? "เปิดทายแล้ว รอบ 1 เปิดให้ทายแล้ว" : "เปิดทายแล้ว",
   );
 }
 
 /** The winner of a hand-made pair, or null to call it off (coins back). */
 export async function settlePair(tournamentId: string, marketId: string, winnerTeamId: string | null) {
-  return predictRun(tournamentId, () => api(`/predict/markets/${encodeURIComponent(marketId)}/settle`, { method: "POST", json: { winnerTeamId } }), winnerTeamId ? "บันทึกผลแล้ว แจกเหรียญให้คนทายถูกแล้ว" : "ยกเลิกคู่นี้ คืนเหรียญแล้ว");
+  return predictRun(tournamentId, () => api(`/predict/markets/${encodeURIComponent(marketId)}/settle`, { method: "POST", json: { winnerTeamId } }), winnerTeamId ? "บันทึกผลแล้ว แจกเหรียญให้คนทายถูกแล้ว" : "ยกเลิกแล้ว คืนเหรียญแล้ว");
+}
+
+/** How many rounds of a hand-made pair are predicted one by one (1 = only who wins the match). */
+export async function setPairRounds(tournamentId: string, marketId: string, bestOf: number) {
+  return predictRun(tournamentId, () => api(`/predict/markets/${encodeURIComponent(marketId)}/rounds`, { method: "PUT", json: { bestOf } }), bestOf > 1 ? `เปลี่ยนเป็น BO${bestOf} แล้ว` : "เลิกทายรายรอบแล้ว");
 }
 
 export async function deletePair(tournamentId: string, marketId: string) {

@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import { requireAdmin } from "../lib/apiKeys.js";
 import { discordId } from "../lib/members.js";
-import { cancelBet, claimDaily, COINS, createCustomMarket, deleteCustomMarket, leaderboard, predictionTournaments, placeBet, setMarketStatus, setTournamentMarketsStatus, settleCustomMarket, tournamentMarkets, wallet, watchCoins } from "../lib/predict.js";
+import { cancelBet, claimDaily, COINS, createCustomMarket, deleteCustomMarket, leaderboard, predictionTournaments, placeBet, setMarketStatus, setTournamentMarketsStatus, settleCustomMarket, setPairRounds, tournamentMarkets, wallet, watchCoins } from "../lib/predict.js";
 import { addCodes, award, codePool, confirmReceived, deleteFreeCodes, deleteReward, listRewards, markNotified, unnotifiedRewards, updateReward } from "../lib/rewards.js";
 
 /**
@@ -73,6 +73,10 @@ predict.post("/tournaments/:id/status", requireAdmin, async (req, res) => {
 /** A pair set up by hand ("ทีม A vs ทีม B"), for events without a bracket. */
 predict.post("/tournaments/:id/markets", requireAdmin, async (req, res) => {
   res.status(201).json(await createCustomMarket(String(req.params.id), req.body));
+});
+/** How many rounds of a hand-made pair are predicted one by one ({ bestOf: 5 } = 5 rounds). */
+predict.put("/markets/:id/rounds", requireAdmin, async (req, res) => {
+  res.json(await setPairRounds(String(req.params.id), req.body));
 });
 predict.post("/markets/:id/settle", requireAdmin, async (req, res) => {
   res.json(await settleCustomMarket(String(req.params.id), req.body));
