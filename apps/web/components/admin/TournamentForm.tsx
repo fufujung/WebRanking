@@ -46,7 +46,8 @@ export function TournamentForm({ tournament, games, seasons = [], participantsLo
             <option value="">ไม่ผูกซีซั่น (ใครก็ลงได้)</option>
             {seasons.map((s) => <option key={s.id} value={s.id}>{s.name}{s.players !== undefined ? ` (${s.players} คน)` : ""}</option>)}
           </select>
-          <span className="muted small">ผูกซีซั่นแล้วลงแข่งได้เฉพาะคนที่มีชื่อในซีซั่น · <a href="/admin/seasons">จัดการซีซั่น</a></span>
+          {tournament && !tournament.seasonId && <span className="error small">ยังไม่ได้ผูกซีซั่น: รายการนี้และต้นเรื่องจะไม่ขึ้นในหน้าซีซั่น เลือกซีซั่นแล้วกดบันทึก</span>}
+          <span className="muted small">ผูกซีซั่นแล้ว ผู้เล่นที่ลงแข่งจะอยู่ในรายชื่อซีซั่นนั้นให้เอง และการสุ่มทีมเลือกจากคนที่สมัครซีซั่นนั้นเท่านั้น · <a href="/admin/seasons">จัดการซีซั่น</a></span>
         </label>
       )}
 

@@ -65,8 +65,9 @@ export default async function EditTournament({
     `/predict/tournaments/${t.id}`,
   );
   const [reserve, season, { data: ranks }] = await Promise.all([
+    // With a season, only the substitutes who signed up for that season.
     api<{ data: ReservePlayer[] }>(
-      `/special/reserve/private${qs({ gameId: t.gameId })}`,
+      `/special/reserve/private${qs({ gameId: t.gameId, seasonId: t.seasonId ?? undefined })}`,
     ).then((r) => r.data),
     t.seasonId
       ? apiOrNull<SeasonView>(
@@ -81,23 +82,25 @@ export default async function EditTournament({
     ),
   );
   const signUp = new Map(reserve.map((r) => [r.playerId, r]));
-  const candidates: Candidate[] = (
-    season
-      ? season.players.map((p) => ({
-          id: p.id,
-          name: p.name,
-          uid: p.uid ?? null,
-          server: p.server ?? null,
-          mmr: p.specialMmr,
-        }))
-      : reserve.map((r) => ({
-          id: r.playerId,
-          name: r.player.name,
-          uid: r.player.uid,
-          server: r.player.server,
-          mmr: r.player.specialMmr,
-        }))
-  ).map((p) => {
+  // A season's event draws from the people of that season: its list plus the substitutes who signed up for it.
+  const fromReserve = reserve.map((r) => ({
+    id: r.playerId,
+    name: r.player.name,
+    uid: r.player.uid,
+    server: r.player.server,
+    mmr: r.player.specialMmr,
+  }));
+  const fromSeason = (season?.players ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    uid: p.uid ?? null,
+    server: p.server ?? null,
+    mmr: p.specialMmr,
+  }));
+  const candidates: Candidate[] = [
+    ...fromSeason,
+    ...fromReserve.filter((r) => !fromSeason.some((p) => p.id === r.id)),
+  ].map((p) => {
     const r = signUp.get(p.id);
     return {
       playerId: p.id,

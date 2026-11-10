@@ -147,15 +147,13 @@ test("changing draft shape removes draft slots and seeds only", async () => {
   assert.equal(await prisma.bracketMatch.count({ where: { tournamentId: t.id } }), 0);
 });
 
-test("season changes keep participants eligible and reject atomically", async () => {
+test("moving an event into a season puts its participants on the season's list", async () => {
   const t = await event({ entryMode: "SOLO" });
   const player = await prisma.player.create({ data: { name: "Season player" } });
   await prisma.soloSignup.create({ data: { tournamentId: t.id, playerId: player.id, position: "ALL", rank: "Gold" } });
   const season = await prisma.specialSeason.create({ data: { name: "New season", startDate: new Date("2027-01-01") } });
-  assert.equal((await call("PATCH", `/tournaments/${t.id}`, { seasonId: season.id, name: "Rejected" })).status, 409);
-  assert.equal((await prisma.tournament.findUniqueOrThrow({ where: { id: t.id } })).name, "Editable");
-  await prisma.seasonPlayer.create({ data: { seasonId: season.id, playerId: player.id } });
   assert.equal((await call("PATCH", `/tournaments/${t.id}`, { seasonId: season.id })).status, 200);
+  assert.ok(await prisma.seasonPlayer.findFirst({ where: { seasonId: season.id, playerId: player.id } }));
 });
 
 test("editing event dates preserves explicit match schedules", async () => {

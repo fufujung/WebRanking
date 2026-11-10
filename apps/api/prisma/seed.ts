@@ -38,7 +38,9 @@ if (!/^ADMIN_PATH=\S/m.test(webLines)) {
   fs.writeFileSync(webEnv, `${webLines.replace(/^ADMIN_PATH=.*\r?\n?/m, "").replace(/\s*$/, "\n")}ADMIN_PATH=${secretPath()}\n`);
 }
 const loginPath = /^ADMIN_PATH=(\S+)/m.exec(fs.readFileSync(webEnv, "utf8"))![1];
-console.log(`Admin login page (keep it private): http://localhost:3000/${loginPath}`);
+// Only on a person's own screen: the auto-updater runs setup unattended and its output goes to the server logs.
+if (process.stdout.isTTY) console.log(`Admin login page (keep it private): http://localhost:3000/${loginPath}`);
+else console.log("Admin login page: see ADMIN_PATH in apps/web/.env.local");
 
 // The Discord bot gets its own key. A DISCORD_TOKEN already pasted into apps/bot/.env is kept.
 const botLines = fs.existsSync(botEnv) ? fs.readFileSync(botEnv, "utf8").split(/\r?\n/) : [];

@@ -13,7 +13,7 @@ import { syncBlacklist } from "../lib/blacklist.js";
 import { syncPredictions } from "../lib/predict.js";
 import { trashTournament } from "../lib/trash.js";
 import { confirmTeams, drawTeams, removeSignup, soloView } from "../lib/solo.js";
-import { tournamentSeason } from "../lib/seasons.js";
+import { addToSeason, tournamentSeason } from "../lib/seasons.js";
 import { setStories, tournamentStories } from "../lib/stories.js";
 import { deleteDraft, draftRef, saveDraft, tournamentDrafts } from "../lib/drafts.js";
 import { assertTwoTeamCapacity, saveSpecialTeams, specialTeamsView } from "../lib/specialTeams.js";
@@ -133,9 +133,9 @@ tournaments.patch("/:id", requireAdmin, async (req, res) => {
       throw fail(409, "Roster limits conflict with participants", "จำนวนผู้เล่นขั้นต่ำหรือสูงสุดขัดกับรายชื่อทีมปัจจุบัน กรุณาปรับรายชื่อก่อน");
     }
     if (next.seasonId !== existing.seasonId && next.seasonId) {
-      const players = [...new Set([...existing.soloSignups.map((s) => s.playerId), ...existing.entries.flatMap((e) => e.roster.map((p) => p.playerId))])];
-      const members = await tx.seasonPlayer.count({ where: { seasonId: next.seasonId, playerId: { in: players } } });
-      if (members !== players.length) throw fail(409, "Participants are missing from season", "มีผู้สมัครที่ไม่ได้อยู่ในซีซั่นนี้ กรุณาเพิ่มรายชื่อในซีซั่นก่อน");
+      // The event moves into a season: everyone who plays in it goes onto that season's list.
+      const players = [...existing.soloSignups.map((s) => s.playerId), ...existing.entries.flatMap((e) => e.roster.map((p) => p.playerId))];
+      await addToSeason(tx, next.seasonId, players);
     }
     const specialChanged = next.special !== existing.special;
     // A seeded draft no longer fits a new format: drop it so it is seeded again.
